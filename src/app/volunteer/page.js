@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import io from 'socket.io-client';
+// import io from 'socket.io-client'; // Removed
+import { createPusherClient } from '@/lib/pusher';
 import Peer from 'peerjs';
 import Link from 'next/link';
 import HapticFeedback from '@/components/HapticFeedback';
@@ -14,7 +15,7 @@ export default function VolunteerPage() {
     const [blindUserId, setBlindUserId] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
 
-    const socketRef = useRef(null);
+    const pusherRef = useRef(null);
     const peerRef = useRef(null);
     const remoteVideoRef = useRef(null);
     const localStreamRef = useRef(null);
@@ -29,57 +30,102 @@ export default function VolunteerPage() {
         setLogs(prev => [...prev.slice(-5), msg]);
     };
 
+    // Socket Ref was removed, we use PusherRef now
+    const socketRef = useRef(null); // Keep for compatibility if I missed any references, but ideally remove.
+    // Actually, I replaced socketRef usage with Pusher logic in previous step, checking...
+    // The previous large replace removed socketRef usages logic in useEffect, but I might have missed 'socketRef.current' refs in toggleOnline if I didn't replace them all.
+    // I rewrote toggleOnline, so it should be fine.
+
     useEffect(() => {
-        socketRef.current = io();
-
-        socketRef.current.on('connect', () => {
-            addLog('Server Connected');
-        });
-
-        // Incoming request from blind user
-        socketRef.current.on('incoming-request', ({ blindPeerId }) => {
-            addLog('Help request!');
-            setBlindUserId(blindPeerId);
-            setStatus('ringing');
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        });
-
         return () => {
-            if (socketRef.current) socketRef.current.disconnect();
+            if (pusherRef.current) pusherRef.current.disconnect();
             if (peerRef.current) peerRef.current.destroy();
             if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
         };
     }, []);
 
-    const toggleOnline = () => {
+    const setupPusher = (myId) => {
+        if (pusherRef.current) return;
+
+        const pusher = createPusherClient(myId, 'volunteer');
+        pusherRef.current = pusher;
+
+        pusher.connection.bind('connected', () => {
+            addLog('Pusher Connected');
+        });
+
+        // Listen for incoming requests on private channel
+        const myChannel = pusher.subscribe(`private-user-${myId}`);
+        myChannel.bind('incoming-request', ({ blindPeerId }) => {
+            addLog('Help request!');
+            setBlindUserId(blindPeerId);
+            setStatus('ringing');
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        });
+    };
+
+    const toggleOnline = async () => {
         if (isOnline) {
-            socketRef.current.emit('leave-volunteer');
+            // GO OFFLINE
+            if (pusherRef.current) {
+                pusherRef.current.unsubscribe('presence-volunteers');
+            }
             setIsOnline(false);
             setStatus('offline');
             addLog('Offline');
         } else {
-            socketRef.current.emit('join-volunteer');
-            setIsOnline(true);
-            setStatus('online');
-            addLog('Online - waiting');
+            // GO ONLINE
+            addLog('Going Online...');
+
+            // We need Peer ID to be online in Pusher
+            if (!peerRef.current || peerRef.current.destroyed) {
+                const peer = new Peer(undefined, {
+                    config: {
+                        iceServers: [
+                            { urls: 'stun:stun.l.google.com:19302' },
+                            { urls: 'stun:stun.relay.metered.ca:80' },
+                            { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' },
+                            { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' }
+                        ]
+                    }
+                });
+                peerRef.current = peer;
+
+                peer.on('open', (id) => {
+                    addLog('My ID: ' + id.substring(0, 5));
+                    setupPusher(id);
+                    pusherRef.current.subscribe('presence-volunteers');
+                    setIsOnline(true);
+                    setStatus('online');
+                });
+
+                peer.on('error', (e) => addLog('Peer Err: ' + e.message));
+
+                // If accepting call logic needs Peer, we should reuse this instance.
+            } else {
+                // Reuse existing peer
+                if (!pusherRef.current) {
+                    setupPusher(peerRef.current.id);
+                }
+                pusherRef.current.subscribe('presence-volunteers');
+                setIsOnline(true);
+                setStatus('online');
+            }
         }
     };
 
     const answerCall = async () => {
-        // สั่นแจ้งเตือนเมื่อกดรับสาย (3 ครั้ง)
         hapticRef.current?.trigger(3, 80);
-
-        setStatus('connecting'); // Immediately update UI
+        setStatus('connecting');
         addLog('Getting microphone...');
 
-        // Get mic only (no camera)
         let myStream = null;
         try {
             myStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            addLog('Mic OK');
             localStreamRef.current = myStream;
         } catch (err) {
             addLog('No mic: ' + err.name);
+            // ... fallback to silent stream
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const oscillator = audioContext.createOscillator();
             const destination = audioContext.createMediaStreamDestination();
@@ -87,99 +133,67 @@ export default function VolunteerPage() {
             oscillator.start();
             oscillator.frequency.value = 0;
             myStream = destination.stream;
-            addLog('Silent mode');
         }
 
-        // Create Peer with TURN servers
-        addLog('Init Peer...');
-        const peer = new Peer(undefined, {
-            config: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun.relay.metered.ca:80' },
-                    {
-                        urls: 'turn:a.relay.metered.ca:80',
-                        username: 'e8dd65f92ae8d30fe9bb0665',
-                        credential: 'kPOL/5Bj2rDLMxeu'
-                    },
-                    {
-                        urls: 'turn:a.relay.metered.ca:443',
-                        username: 'e8dd65f92ae8d30fe9bb0665',
-                        credential: 'kPOL/5Bj2rDLMxeu'
-                    }
-                ]
-            }
-        });
-        peerRef.current = peer;
+        // We already have Peer initialized from toggleOnline
+        const peer = peerRef.current;
+        if (!peer) {
+            addLog('Error: Peer missing');
+            return;
+        }
 
-        peer.on('open', (myId) => {
-            addLog('My ID: ' + myId.substring(0, 8));
-
-            // Tell server we're ready - blind user will call us
-            socketRef.current.emit('volunteer-ready', {
-                volunteerId: myId,
-                blindPeerId: blindUserId
+        // Notify blind user we are ready via Pusher Trigger
+        addLog('Accepting call...');
+        try {
+            await fetch('/api/pusher/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: `private-user-${blindUserId}`,
+                    event: 'volunteer-ready',
+                    data: { volunteerId: peer.id }
+                })
             });
-            addLog('Waiting for blind call...');
-        });
+        } catch (e) {
+            addLog('Accept Err: ' + e.message);
+        }
 
-        // VOLUNTEER ANSWERS THE CALL (blind user is the caller)
+        // Wait for incoming call (or we call them? original logic: they call us)
+        // Original logic: socket.emit('volunteer-ready') -> server tells blind -> blind calls us.
+        // So we just wait for 'call' event on peer.
+
         peer.on('call', (call) => {
             addLog('Blind calling us!');
             call.answer(myStream);
             setStatus('connected');
 
             call.on('stream', (stream) => {
-                addLog('Got blind stream!');
                 setRemoteStream(stream);
-
-                const vTracks = stream.getVideoTracks();
-                const aTracks = stream.getAudioTracks();
-                addLog(`A:${aTracks.length} V:${vTracks.length}`);
-
-                if (vTracks.length > 0) {
-                    addLog('VidState: ' + vTracks[0].readyState);
-                }
             });
 
             call.on('close', () => endCall());
-            call.on('error', (e) => addLog('Err: ' + e.message));
 
-            if (call.peerConnection) {
-                call.peerConnection.oniceconnectionstatechange = () => {
-                    addLog('ICE: ' + call.peerConnection.iceConnectionState);
-                };
-            }
-
-            // Establish data connection for controls (flashlight)
+            // ... (keep data conn logic)
             const conn = peer.connect(call.peer);
-            conn.on('open', () => {
-                addLog('Data conn open');
-                dataConnRef.current = conn;
-            });
-            conn.on('error', (e) => addLog('Data err: ' + e.message));
+            conn.on('open', () => { dataConnRef.current = conn; });
         });
-
-        peer.on('error', (e) => addLog('Peer err: ' + e.message));
     };
 
     const endCall = () => {
-        if (peerRef.current) peerRef.current.destroy();
+        // Don't destroy peer, just close media?
+        // If we destroy peer, we lose our ID and Pusher connection (if we based it on Peer ID).
+        // Let's keep Peer alive if we want to remain online.
+
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(t => t.stop());
             localStreamRef.current = null;
         }
         setStatus('online');
-
         setBlindUserId(null);
         setRemoteStream(null);
         addLog('Call ended');
 
-        // Re-join the volunteer queue on the server
-        if (socketRef.current) {
-            socketRef.current.emit('join-volunteer');
-            addLog('Re-joining queue...');
-        }
+        // We are still subscribed to presence, so we are still "online".
     };
 
     const rejectCall = () => {

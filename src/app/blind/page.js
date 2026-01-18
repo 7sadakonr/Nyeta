@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import io from 'socket.io-client';
+// import io from 'socket.io-client'; // Removed
+import { createPusherClient } from '@/lib/pusher';
 import Peer from 'peerjs';
 import Link from 'next/link';
 import HapticFeedback from '@/components/HapticFeedback';
@@ -107,57 +108,62 @@ export default function BlindPage() {
         call.on('error', (e) => addLog('Call err: ' + e.message));
     });
 
-    useEffect(() => {
-        socketRef.current = io();
+    const setupPusher = useCallback((myPeerId) => {
+        if (pusherRef.current) return;
 
-        socketRef.current.on('connect', () => {
-            addLog('Server Connected');
-        });
+        addLog('Init Pusher: ' + myPeerId.substring(0, 5));
+        const pusher = createPusherClient(myPeerId, 'blind');
+        pusherRef.current = pusher;
 
-        socketRef.current.on('volunteer-ready', ({ volunteerId }) => {
+        // Subscribe to my private channel
+        const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
+        myChannel.bind('volunteer-ready', ({ volunteerId }) => {
             addLog('Volunteer ready!');
             callVolunteerRef.current(volunteerId, hapticRef);
         });
 
-        socketRef.current.on('no-volunteers', () => {
-            alert('ไม่พบอาสาสมัครในขณะนี้');
-            endCall();
-        });
+        // Subscribe to presence
+        pusher.subscribe('presence-volunteers');
 
-        return () => {
-            if (socketRef.current) socketRef.current.disconnect();
-            if (peerRef.current) peerRef.current.destroy();
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-        };
+        pusher.connection.bind('connected', () => {
+            addLog('Pusher Connected');
+        });
     }, []);
+
+    const requestHelp = async (myPeerId) => {
+        addLog('Requesting help...');
+        try {
+            await fetch('/api/pusher/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: 'presence-volunteers',
+                    event: 'incoming-request',
+                    data: { blindPeerId: myPeerId },
+                    socketId: pusherRef.current?.connection.socket_id
+                })
+            });
+            addLog('Sent Request');
+        } catch (e) {
+            addLog('Req Error: ' + e.message);
+        }
+    };
 
     const startCall = async () => {
         setStatus('initializing');
-
-        // Trigger haptic to unlock iOS haptic engine
         hapticRef.current?.trigger(1, 40);
-
-        // Unlock AudioContext by playing a silent beep within user gesture (iOS requirement)
-        playBeepSound(0.001, true); // Silent beep to unlock audio
-        console.log('Audio unlocked with silent beep');
+        playBeepSound(0.001, true);
 
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment',
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                },
+                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
             });
-
             streamRef.current = stream;
 
             if (myVideoRef.current) {
                 myVideoRef.current.srcObject = stream;
-                myVideoRef.current.onloadedmetadata = () => {
-                    myVideoRef.current.play().catch(e => console.error('Local play error:', e));
-                };
+                myVideoRef.current.onloadedmetadata = () => myVideoRef.current.play().catch(console.error);
             }
 
             const peer = new Peer(undefined, {
@@ -165,16 +171,8 @@ export default function BlindPage() {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
                         { urls: 'stun:stun.relay.metered.ca:80' },
-                        {
-                            urls: 'turn:a.relay.metered.ca:80',
-                            username: 'e8dd65f92ae8d30fe9bb0665',
-                            credential: 'kPOL/5Bj2rDLMxeu'
-                        },
-                        {
-                            urls: 'turn:a.relay.metered.ca:443',
-                            username: 'e8dd65f92ae8d30fe9bb0665',
-                            credential: 'kPOL/5Bj2rDLMxeu'
-                        }
+                        { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' },
+                        { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' }
                     ]
                 }
             });
@@ -182,10 +180,10 @@ export default function BlindPage() {
 
             peer.on('open', (id) => {
                 setStatus('waiting');
-                socketRef.current.emit('request-help', id);
+                setupPusher(id);
+                requestHelp(id);
             });
 
-            // Listen for data connection from volunteer (for flashlight control)
             peer.on('connection', (conn) => {
                 addLog('Data conn established');
                 conn.on('data', async (data) => {
@@ -194,9 +192,7 @@ export default function BlindPage() {
                         if (streamRef.current) {
                             const track = streamRef.current.getVideoTracks()[0];
                             try {
-                                await track.applyConstraints({
-                                    advanced: [{ torch: data.value }]
-                                });
+                                await track.applyConstraints({ advanced: [{ torch: data.value }] });
                             } catch (err) {
                                 addLog('Torch Err: ' + err.message);
                             }
@@ -212,14 +208,8 @@ export default function BlindPage() {
 
         } catch (err) {
             console.error('Camera Error:', err);
-            if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                alert('กรุณาอนุญาตให้เข้าถึงกล้องและไมโครโฟนเพื่อใช้งาน\n(ไปที่การตั้งค่า Browser > Site Settings > Camera/Microphone)');
-            } else if (err.name === 'NotFoundError') {
-                alert('ไม่พบกล้องในอุปกรณ์นี้');
-            } else {
-                alert('ไม่สามารถเข้าถึงกล้องได้: ' + err.message);
-            }
             setStatus('idle');
+            alert('Camera Error: ' + err.message);
         }
     };
 

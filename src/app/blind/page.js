@@ -65,7 +65,7 @@ export default function BlindPage() {
     const [logs, setLogs] = useState([]);
     const addLog = (msg) => {
         console.log(msg);
-        // setLogs(prev => [...prev.slice(-5), msg]); // Disable on-screen logs for premium look
+        setLogs(prev => [...prev.slice(-8), msg]); // Enable on-screen logs for debug
     };
 
     const callVolunteerRef = useRef((volunteerId, hapticRefParam) => {
@@ -289,6 +289,13 @@ export default function BlindPage() {
                     <span className="font-bold text-lg">Back</span>
                 </Link>
             </div>
+
+            {/* Debug Logs (visible on mobile) */}
+            {logs.length > 0 && (
+                <div className="absolute top-20 left-2 right-2 z-40 bg-black/80 text-green-400 text-xs p-2 rounded-lg font-mono max-h-40 overflow-auto">
+                    {logs.map((log, i) => <div key={i}>{log}</div>)}
+                </div>
+            )}
 
             {/* IDLE STATE */}
             {status === 'idle' && (

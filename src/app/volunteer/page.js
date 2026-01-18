@@ -54,14 +54,8 @@ export default function VolunteerPage() {
             addLog('Pusher Connected');
         });
 
-        // Listen for incoming requests on private channel
-        const myChannel = pusher.subscribe(`private-user-${myId}`);
-        myChannel.bind('incoming-request', ({ blindPeerId }) => {
-            addLog('Help request!');
-            setBlindUserId(blindPeerId);
-            setStatus('ringing');
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        });
+        // Private channel for receiving volunteer-ready confirmation (if needed later)
+        pusher.subscribe(`private-user-${myId}`);
     };
 
     const toggleOnline = async () => {
@@ -94,10 +88,21 @@ export default function VolunteerPage() {
                 peer.on('open', (id) => {
                     addLog('My ID: ' + id.substring(0, 5));
                     setupPusher(id);
-                    pusherRef.current.subscribe('presence-volunteers');
+
+                    // Subscribe to presence channel and listen for incoming requests
+                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+                    presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
+                        addLog('Help request from: ' + blindPeerId.substring(0, 5));
+                        setBlindUserId(blindPeerId);
+                        setStatus('ringing');
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    });
+
                     setIsOnline(true);
                     setStatus('online');
                 });
+
+                peer.on('error', (e) => addLog('Peer Err: ' + e.message));
 
                 peer.on('error', (e) => addLog('Peer Err: ' + e.message));
 

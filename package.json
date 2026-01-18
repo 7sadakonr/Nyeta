@@ -1,0 +1,28 @@
+{
+  "name": "blind-ass",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.js",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "devcert": "^1.2.2",
+    "ip": "^2.0.1",
+    "next": "16.1.1",
+    "peerjs": "^1.5.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.7.4",
+    "socket.io-client": "^4.7.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.1.1",
+    "tailwindcss": "^4.0.0"
+  }
+}

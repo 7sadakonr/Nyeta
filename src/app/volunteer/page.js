@@ -91,7 +91,15 @@ export default function VolunteerPage() {
                     setupPusher(id);
 
                     // Subscribe to presence channel to be visible as online
-                    pusherRef.current.subscribe('presence-volunteers');
+                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+
+                    // Also listen on presence channel for fallback (broadcast) calls
+                    presenceChannel.bind('incoming-request', ({ blindPeerId, socketId }) => {
+                        // socketId check to avoid huge self-echo if we were the sender (not relevant here but good practice)
+                        setBlindUserId(blindPeerId);
+                        setStatus('ringing');
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    });
 
                     setIsOnline(true);
                     setStatus('online');
@@ -105,7 +113,13 @@ export default function VolunteerPage() {
                 if (!pusherRef.current) {
                     setupPusher(peerRef.current.id);
                 }
-                pusherRef.current.subscribe('presence-volunteers');
+                const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+                presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
+                    setBlindUserId(blindPeerId);
+                    setStatus('ringing');
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                });
+
                 setIsOnline(true);
                 setStatus('online');
             }

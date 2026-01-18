@@ -157,10 +157,12 @@ export default function BlindPage() {
         playBeepSound(0.001, true);
 
         try {
+            addLog('Getting camera...');
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
             });
+            addLog('Camera OK');
             streamRef.current = stream;
 
             if (myVideoRef.current) {
@@ -168,6 +170,7 @@ export default function BlindPage() {
                 myVideoRef.current.onloadedmetadata = () => myVideoRef.current.play().catch(console.error);
             }
 
+            addLog('Creating Peer...');
             const peer = new Peer(undefined, {
                 config: {
                     iceServers: [
@@ -181,6 +184,7 @@ export default function BlindPage() {
             peerRef.current = peer;
 
             peer.on('open', (id) => {
+                addLog('Peer open: ' + id.substring(0, 5));
                 setStatus('waiting');
                 setupPusher(id);
                 requestHelp(id);
@@ -204,7 +208,7 @@ export default function BlindPage() {
             });
 
             peer.on('error', (e) => {
-                console.error('Peer error', e);
+                addLog('Peer Err: ' + e.message);
                 setStatus('idle');
             });
 

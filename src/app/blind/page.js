@@ -23,6 +23,33 @@ export default function BlindPage() {
     const hapticRef = useRef(null);
     const audioContextRef = useRef(null);
     const beepIntervalRef = useRef(null);
+    const connectedVolunteerRef = useRef(null);
+    const volunteersRef = useRef([]);
+
+    // Moved endCall up to be accessible by setupPusher
+    const endCall = useCallback(() => {
+        // Signal volunteer to end call
+        if (connectedVolunteerRef.current && pusherRef.current) {
+            fetch('/api/pusher/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: `private-user-${connectedVolunteerRef.current}`,
+                    event: 'end-call',
+                    data: { from: 'blind' } // optional
+                })
+            }).catch(e => console.error('End call signal error:', e));
+        }
+        connectedVolunteerRef.current = null;
+
+        if (peerRef.current) peerRef.current.destroy();
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(t => t.stop());
+            // streamRef.current = null; // Don't nullify immediately if we want to reuse? No, better nullify.
+            // Actually, keep streamRef nullification consistent with original logic
+        }
+        setStatus('idle');
+    }, []);
 
     // Helper function to play beep sound - works on iOS
     const playBeepSound = useCallback((volume = 0.3, silent = false) => {
@@ -71,6 +98,7 @@ export default function BlindPage() {
 
     const callVolunteerRef = useRef((volunteerId, hapticRefParam) => {
         addLog('callVolunteer: ' + volunteerId.substring(0, 8));
+        connectedVolunteerRef.current = volunteerId;
 
         if (!peerRef.current || !streamRef.current) {
             addLog('Error: No peer or stream');
@@ -109,7 +137,7 @@ export default function BlindPage() {
         call.on('error', (e) => addLog('Call err: ' + e.message));
     });
 
-    const volunteersRef = useRef([]);
+
 
     const setupPusher = useCallback((myPeerId) => {
         if (pusherRef.current) return;
@@ -121,6 +149,10 @@ export default function BlindPage() {
         const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
         myChannel.bind('volunteer-ready', ({ volunteerId }) => {
             callVolunteerRef.current(volunteerId, hapticRef);
+        });
+        myChannel.bind('end-call', () => {
+            console.log('Received end-call signal');
+            endCall();
         });
 
         // Subscribe to presence to get volunteer list
@@ -246,14 +278,7 @@ export default function BlindPage() {
         }
     };
 
-    const endCall = useCallback(() => {
-        if (peerRef.current) peerRef.current.destroy();
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-            streamRef.current = null;
-        }
-        setStatus('idle');
-    }, []);
+
 
     const confirmConnection = () => {
         if (streamRef.current) {

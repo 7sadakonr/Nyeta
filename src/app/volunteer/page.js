@@ -86,14 +86,8 @@ export default function VolunteerPage() {
                 peer.on('open', (id) => {
                     setupPusher(id);
 
-                    // Subscribe to presence channel and listen for incoming requests
-                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
-
-                    presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
-                        setBlindUserId(blindPeerId);
-                        setStatus('ringing');
-                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    });
+                    // Subscribe to presence channel to be visible as online
+                    pusherRef.current.subscribe('presence-volunteers');
 
                     setIsOnline(true);
                     setStatus('online');
@@ -107,12 +101,7 @@ export default function VolunteerPage() {
                 if (!pusherRef.current) {
                     setupPusher(peerRef.current.id);
                 }
-                const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
-                presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
-                    setBlindUserId(blindPeerId);
-                    setStatus('ringing');
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                });
+                pusherRef.current.subscribe('presence-volunteers');
                 setIsOnline(true);
                 setStatus('online');
             }

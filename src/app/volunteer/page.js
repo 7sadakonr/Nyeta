@@ -50,8 +50,13 @@ export default function VolunteerPage() {
         const pusher = createPusherClient(myId, 'volunteer');
         pusherRef.current = pusher;
 
-        // Private channel for receiving volunteer-ready confirmation
-        pusher.subscribe(`private-user-${myId}`);
+        // Private channel for receiving incoming calls (random selection)
+        const privateChannel = pusher.subscribe(`private-user-${myId}`);
+        privateChannel.bind('incoming-request', ({ blindPeerId }) => {
+            setBlindUserId(blindPeerId);
+            setStatus('ringing');
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        });
     };
 
     const toggleOnline = async () => {
@@ -81,14 +86,8 @@ export default function VolunteerPage() {
                 peer.on('open', (id) => {
                     setupPusher(id);
 
-                    // Subscribe to presence channel and listen for incoming requests
-                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
-
-                    presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
-                        setBlindUserId(blindPeerId);
-                        setStatus('ringing');
-                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    });
+                    // Subscribe to presence channel to be visible as online
+                    pusherRef.current.subscribe('presence-volunteers');
 
                     setIsOnline(true);
                     setStatus('online');

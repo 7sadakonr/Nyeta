@@ -1,40 +1,61 @@
 import { pusherServer } from '@/lib/pusher';
 
 export async function POST(req) {
-    const data = await req.formData();
-    const socketId = data.get('socket_id');
-    const channel = data.get('channel_name');
+    try {
+        // Pusher-js sends data as application/x-www-form-urlencoded
+        const body = await req.text();
+        const params = new URLSearchParams(body);
+        const socketId = params.get('socket_id');
+        const channel = params.get('channel_name');
 
-    // Custom user info from client (sent via headers or body, but here simplify)
-    // For simplicity, we trust the client to send their "peerId" in the body if needed,
-    // OR we can just generate a random ID if not provided.
-    // Ideally, this should be a real user session.
+        console.log('Auth request:', { socketId, channel });
 
-    // Wait, standard pusher-js auth sends socket_id and channel_name.
-    // To get creating user info, we can pass it in headers or query params if needed,
-    // but for creating the presence auth, we basically just need a "user_id".
+        if (!socketId || !channel) {
+            return new Response(JSON.stringify({ error: 'Missing socket_id or channel_name' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
 
-    // Let's assume we pass user_id/peer_id via query param or just generate one logic.
-    // Better: Client should send 'user_id' in body or we can parse it.
+        const userId = req.headers.get('x-user-id') || `user-${Date.now()}`;
+        const userType = req.headers.get('x-user-type') || 'unknown';
 
-    // Actually, standard auth body is: socket_id, channel_name.
-    // We can add more data.
+        // For presence channels, we need presence data
+        if (channel.startsWith('presence-')) {
+            const presenceData = {
+                user_id: userId,
+                user_info: {
+                    userType: userType,
+                },
+            };
+            const authResponse = pusherServer.authorizeChannel(socketId, channel, presenceData);
+            console.log('Presence auth success:', channel);
+            return new Response(JSON.stringify(authResponse), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
 
-    // Let's rely on a custom header 'x-user-id' for simplicity
-    const userId = req.headers.get('x-user-id') || `user-${Date.now()}`;
-    const userType = req.headers.get('x-user-type') || 'unknown'; // 'blind' or 'volunteer'
+        // For private channels
+        if (channel.startsWith('private-')) {
+            const authResponse = pusherServer.authorizeChannel(socketId, channel);
+            console.log('Private auth success:', channel);
+            return new Response(JSON.stringify(authResponse), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }
 
-    const presenceData = {
-        user_id: userId,
-        user_info: {
-            userType: userType,
-        },
-    };
+        return new Response(JSON.stringify({ error: 'Invalid channel type' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+        });
 
-    const authResponse = pusherServer.authorizeChannel(socketId, channel, presenceData);
-
-    return new Response(JSON.stringify(authResponse), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-    });
+    } catch (error) {
+        console.error('Auth error:', error);
+        return new Response(JSON.stringify({ error: error.message }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 }

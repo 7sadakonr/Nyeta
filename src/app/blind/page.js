@@ -109,6 +109,8 @@ export default function BlindPage() {
         call.on('error', (e) => addLog('Call err: ' + e.message));
     });
 
+    const volunteersRef = useRef([]);
+
     const setupPusher = useCallback((myPeerId) => {
         if (pusherRef.current) return;
 
@@ -121,17 +123,57 @@ export default function BlindPage() {
             callVolunteerRef.current(volunteerId, hapticRef);
         });
 
-        // Subscribe to presence
-        pusher.subscribe('presence-volunteers');
+        // Subscribe to presence to get volunteer list
+        const presenceChannel = pusher.subscribe('presence-volunteers');
+        presenceChannel.bind('pusher:subscription_succeeded', (members) => {
+            volunteersRef.current = [];
+            members.each((member) => {
+                volunteersRef.current.push(member.id);
+            });
+            console.log('Volunteers online:', volunteersRef.current.length);
+        });
+        presenceChannel.bind('pusher:member_added', (member) => {
+            if (!volunteersRef.current.includes(member.id)) {
+                volunteersRef.current.push(member.id);
+            }
+        });
+        presenceChannel.bind('pusher:member_removed', (member) => {
+            volunteersRef.current = volunteersRef.current.filter(id => id !== member.id);
+        });
     }, []);
 
     const requestHelp = async (myPeerId) => {
         try {
+            // Get current volunteers (excluding self)
+            const volunteers = volunteersRef.current.filter(id => id !== myPeerId);
+
+            if (volunteers.length === 0) {
+                console.log('No volunteers online');
+                // Fallback: broadcast to presence channel
+                await fetch('/api/pusher/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: 'presence-volunteers',
+                        event: 'incoming-request',
+                        data: { blindPeerId: myPeerId },
+                        socketId: pusherRef.current?.connection.socket_id
+                    })
+                });
+                return;
+            }
+
+            // Randomly select one volunteer
+            const randomIndex = Math.floor(Math.random() * volunteers.length);
+            const selectedVolunteer = volunteers[randomIndex];
+            console.log('Selected volunteer:', selectedVolunteer);
+
+            // Send to selected volunteer's private channel
             await fetch('/api/pusher/trigger', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    channel: 'presence-volunteers',
+                    channel: `private-user-${selectedVolunteer}`,
                     event: 'incoming-request',
                     data: { blindPeerId: myPeerId },
                     socketId: pusherRef.current?.connection.socket_id

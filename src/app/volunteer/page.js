@@ -50,8 +50,13 @@ export default function VolunteerPage() {
         const pusher = createPusherClient(myId, 'volunteer');
         pusherRef.current = pusher;
 
-        // Private channel for receiving volunteer-ready confirmation (if needed)
-        pusher.subscribe(`private-user-${myId}`);
+        // Private channel for receiving direct calls (random selection)
+        const privateChannel = pusher.subscribe(`private-user-${myId}`);
+        privateChannel.bind('incoming-request', ({ blindPeerId }) => {
+            setBlindUserId(blindPeerId);
+            setStatus('ringing');
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        });
     };
 
     const toggleOnline = async () => {

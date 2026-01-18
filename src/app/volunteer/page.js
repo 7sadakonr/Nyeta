@@ -50,13 +50,8 @@ export default function VolunteerPage() {
         const pusher = createPusherClient(myId, 'volunteer');
         pusherRef.current = pusher;
 
-        // Private channel for receiving incoming calls (random selection)
-        const privateChannel = pusher.subscribe(`private-user-${myId}`);
-        privateChannel.bind('incoming-request', ({ blindPeerId }) => {
-            setBlindUserId(blindPeerId);
-            setStatus('ringing');
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        });
+        // Private channel for receiving volunteer-ready confirmation (if needed)
+        pusher.subscribe(`private-user-${myId}`);
     };
 
     const toggleOnline = async () => {
@@ -86,8 +81,14 @@ export default function VolunteerPage() {
                 peer.on('open', (id) => {
                     setupPusher(id);
 
-                    // Subscribe to presence channel to be visible as online
-                    pusherRef.current.subscribe('presence-volunteers');
+                    // Subscribe to presence channel and listen for incoming requests
+                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+
+                    presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
+                        setBlindUserId(blindPeerId);
+                        setStatus('ringing');
+                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                    });
 
                     setIsOnline(true);
                     setStatus('online');
@@ -101,7 +102,12 @@ export default function VolunteerPage() {
                 if (!pusherRef.current) {
                     setupPusher(peerRef.current.id);
                 }
-                pusherRef.current.subscribe('presence-volunteers');
+                const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+                presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
+                    setBlindUserId(blindPeerId);
+                    setStatus('ringing');
+                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                });
                 setIsOnline(true);
                 setStatus('online');
             }

@@ -109,7 +109,11 @@ export default function BlindPage() {
     });
 
     const setupPusher = useCallback((myPeerId) => {
-        if (pusherRef.current) return;
+        addLog('setupPusher called');
+        if (pusherRef.current) {
+            addLog('Pusher already exists, skip');
+            return;
+        }
 
         try {
             addLog('Init Pusher: ' + myPeerId.substring(0, 5));

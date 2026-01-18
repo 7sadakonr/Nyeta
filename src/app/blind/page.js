@@ -111,23 +111,33 @@ export default function BlindPage() {
     const setupPusher = useCallback((myPeerId) => {
         if (pusherRef.current) return;
 
-        addLog('Init Pusher: ' + myPeerId.substring(0, 5));
-        const pusher = createPusherClient(myPeerId, 'blind');
-        pusherRef.current = pusher;
+        try {
+            addLog('Init Pusher: ' + myPeerId.substring(0, 5));
+            const pusher = createPusherClient(myPeerId, 'blind');
+            pusherRef.current = pusher;
 
-        // Subscribe to my private channel
-        const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
-        myChannel.bind('volunteer-ready', ({ volunteerId }) => {
-            addLog('Volunteer ready!');
-            callVolunteerRef.current(volunteerId, hapticRef);
-        });
+            // Subscribe to my private channel
+            const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
+            myChannel.bind('volunteer-ready', ({ volunteerId }) => {
+                addLog('Volunteer ready!');
+                callVolunteerRef.current(volunteerId, hapticRef);
+            });
 
-        // Subscribe to presence
-        pusher.subscribe('presence-volunteers');
+            // Subscribe to presence
+            pusher.subscribe('presence-volunteers');
 
-        pusher.connection.bind('connected', () => {
-            addLog('Pusher Connected');
-        });
+            pusher.connection.bind('connected', () => {
+                addLog('Pusher Connected');
+            });
+
+            pusher.connection.bind('error', (err) => {
+                addLog('Pusher Err: ' + JSON.stringify(err));
+            });
+
+            addLog('Pusher setup done');
+        } catch (e) {
+            addLog('Setup Err: ' + e.message);
+        }
     }, []);
 
     const requestHelp = async (myPeerId) => {

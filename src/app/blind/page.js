@@ -151,6 +151,7 @@ export default function BlindPage() {
     };
 
     const startCall = async () => {
+        addLog('Starting call...');
         setStatus('initializing');
         hapticRef.current?.trigger(1, 40);
         playBeepSound(0.001, true);

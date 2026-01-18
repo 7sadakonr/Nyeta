@@ -16,6 +16,7 @@ export default function BlindPage() {
     const myVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
     const peerRef = useRef(null);
+    const pusherRef = useRef(null); // Added for Pusher
     const socketRef = useRef(null);
     const streamRef = useRef(null);
     const incomingStreamRef = useRef(null);
@@ -172,11 +173,21 @@ export default function BlindPage() {
 
         try {
             addLog('Getting camera...');
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: true
-            });
-            addLog('Camera OK');
+            let stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: true
+                });
+                addLog('Camera OK');
+            } catch (camErr) {
+                addLog('No camera, using dummy stream');
+                // Create dummy stream for testing
+                const canvas = document.createElement('canvas');
+                canvas.width = 640;
+                canvas.height = 480;
+                stream = canvas.captureStream(1);
+            }
             streamRef.current = stream;
 
             if (myVideoRef.current) {

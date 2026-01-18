@@ -50,11 +50,7 @@ export default function VolunteerPage() {
         const pusher = createPusherClient(myId, 'volunteer');
         pusherRef.current = pusher;
 
-        pusher.connection.bind('connected', () => {
-            addLog('Pusher Connected');
-        });
-
-        // Private channel for receiving volunteer-ready confirmation (if needed later)
+        // Private channel for receiving volunteer-ready confirmation
         pusher.subscribe(`private-user-${myId}`);
     };
 
@@ -69,9 +65,6 @@ export default function VolunteerPage() {
             addLog('Offline');
         } else {
             // GO ONLINE
-            addLog('Going Online...');
-
-            // We need Peer ID to be online in Pusher
             if (!peerRef.current || peerRef.current.destroyed) {
                 const peer = new Peer(undefined, {
                     config: {
@@ -86,35 +79,22 @@ export default function VolunteerPage() {
                 peerRef.current = peer;
 
                 peer.on('open', (id) => {
-                    addLog('My ID: ' + id.substring(0, 5));
                     setupPusher(id);
 
                     // Subscribe to presence channel and listen for incoming requests
                     const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
 
-                    // Debug: Log subscription events
-                    presenceChannel.bind('pusher:subscription_succeeded', (members) => {
-                        addLog('Subscribed! Members: ' + members.count);
-                    });
-                    presenceChannel.bind('pusher:subscription_error', (error) => {
-                        addLog('Sub Error: ' + JSON.stringify(error));
-                    });
-
                     presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
-                        addLog('Help request from: ' + blindPeerId.substring(0, 5));
                         setBlindUserId(blindPeerId);
                         setStatus('ringing');
                         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                     });
-                    addLog('Event bound to incoming-request');
 
                     setIsOnline(true);
                     setStatus('online');
                 });
 
-                peer.on('error', (e) => addLog('Peer Err: ' + e.message));
-
-                peer.on('error', (e) => addLog('Peer Err: ' + e.message));
+                peer.on('error', (e) => console.error('Peer error:', e));
 
                 // If accepting call logic needs Peer, we should reuse this instance.
             } else {

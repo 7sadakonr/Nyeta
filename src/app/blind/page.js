@@ -66,7 +66,7 @@ export default function BlindPage() {
     const [logs, setLogs] = useState([]);
     const addLog = (msg) => {
         console.log(msg);
-        setLogs(prev => [...prev.slice(-8), msg]); // Enable on-screen logs for debug
+        // setLogs(prev => [...prev.slice(-8), msg]); // Disabled for production
     };
 
     const callVolunteerRef = useRef((volunteerId, hapticRefParam) => {
@@ -110,45 +110,24 @@ export default function BlindPage() {
     });
 
     const setupPusher = useCallback((myPeerId) => {
-        addLog('setupPusher called');
-        if (pusherRef.current) {
-            addLog('Pusher already exists, skip');
-            return;
-        }
+        if (pusherRef.current) return;
 
-        try {
-            addLog('Init Pusher: ' + myPeerId.substring(0, 5));
-            const pusher = createPusherClient(myPeerId, 'blind');
-            pusherRef.current = pusher;
+        const pusher = createPusherClient(myPeerId, 'blind');
+        pusherRef.current = pusher;
 
-            // Subscribe to my private channel
-            const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
-            myChannel.bind('volunteer-ready', ({ volunteerId }) => {
-                addLog('Volunteer ready!');
-                callVolunteerRef.current(volunteerId, hapticRef);
-            });
+        // Subscribe to my private channel
+        const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
+        myChannel.bind('volunteer-ready', ({ volunteerId }) => {
+            callVolunteerRef.current(volunteerId, hapticRef);
+        });
 
-            // Subscribe to presence
-            pusher.subscribe('presence-volunteers');
-
-            pusher.connection.bind('connected', () => {
-                addLog('Pusher Connected');
-            });
-
-            pusher.connection.bind('error', (err) => {
-                addLog('Pusher Err: ' + JSON.stringify(err));
-            });
-
-            addLog('Pusher setup done');
-        } catch (e) {
-            addLog('Setup Err: ' + e.message);
-        }
+        // Subscribe to presence
+        pusher.subscribe('presence-volunteers');
     }, []);
 
     const requestHelp = async (myPeerId) => {
-        addLog('Requesting help...');
         try {
-            const response = await fetch('/api/pusher/trigger', {
+            await fetch('/api/pusher/trigger', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -158,36 +137,21 @@ export default function BlindPage() {
                     socketId: pusherRef.current?.connection.socket_id
                 })
             });
-            const result = await response.json();
-            addLog('Trigger response: ' + response.status + ' ' + JSON.stringify(result));
         } catch (e) {
-            addLog('Req Error: ' + e.message);
+            console.error('Request error:', e);
         }
     };
 
     const startCall = async () => {
-        addLog('Starting call...');
         setStatus('initializing');
         hapticRef.current?.trigger(1, 40);
         playBeepSound(0.001, true);
 
         try {
-            addLog('Getting camera...');
-            let stream;
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-                    audio: true
-                });
-                addLog('Camera OK');
-            } catch (camErr) {
-                addLog('No camera, using dummy stream');
-                // Create dummy stream for testing
-                const canvas = document.createElement('canvas');
-                canvas.width = 640;
-                canvas.height = 480;
-                stream = canvas.captureStream(1);
-            }
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+                audio: true
+            });
             streamRef.current = stream;
 
             if (myVideoRef.current) {
@@ -195,7 +159,6 @@ export default function BlindPage() {
                 myVideoRef.current.onloadedmetadata = () => myVideoRef.current.play().catch(console.error);
             }
 
-            addLog('Creating Peer...');
             const peer = new Peer(undefined, {
                 config: {
                     iceServers: [
@@ -209,23 +172,20 @@ export default function BlindPage() {
             peerRef.current = peer;
 
             peer.on('open', (id) => {
-                addLog('Peer open: ' + id.substring(0, 5));
                 setStatus('waiting');
                 setupPusher(id);
                 requestHelp(id);
             });
 
             peer.on('connection', (conn) => {
-                addLog('Data conn established');
                 conn.on('data', async (data) => {
                     if (data.type === 'TOGGLE_FLASH') {
-                        addLog('Toggle Flash: ' + data.value);
                         if (streamRef.current) {
                             const track = streamRef.current.getVideoTracks()[0];
                             try {
                                 await track.applyConstraints({ advanced: [{ torch: data.value }] });
                             } catch (err) {
-                                addLog('Torch Err: ' + err.message);
+                                console.error('Torch error:', err);
                             }
                         }
                     }
@@ -233,7 +193,7 @@ export default function BlindPage() {
             });
 
             peer.on('error', (e) => {
-                addLog('Peer Err: ' + e.message);
+                console.error('Peer error:', e);
                 setStatus('idle');
             });
 
@@ -320,12 +280,7 @@ export default function BlindPage() {
                 </Link>
             </div>
 
-            {/* Debug Logs (visible on mobile) */}
-            {logs.length > 0 && (
-                <div className="absolute top-20 left-2 right-2 z-40 bg-black/80 text-green-400 text-xs p-2 rounded-lg font-mono max-h-40 overflow-auto">
-                    {logs.map((log, i) => <div key={i}>{log}</div>)}
-                </div>
-            )}
+
 
             {/* IDLE STATE */}
             {status === 'idle' && (

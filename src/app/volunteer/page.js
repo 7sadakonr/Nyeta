@@ -52,10 +52,6 @@ export default function VolunteerPage() {
 
         // Private channel for receiving direct calls (random selection)
         const privateChannel = pusher.subscribe(`private-user-${myId}`);
-        privateChannel.bind('end-call', () => {
-            console.log('Recv end-call');
-            endCall(true); // true = remote ended
-        });
         privateChannel.bind('incoming-request', ({ blindPeerId }) => {
             setBlindUserId(blindPeerId);
             setStatus('ringing');
@@ -191,23 +187,10 @@ export default function VolunteerPage() {
         });
     };
 
-    const endCall = async (isRemote = false) => {
-        // Signal blind user if we are ending it manually
-        if (!isRemote && blindUserId && pusherRef.current) {
-            try {
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: `private-user-${blindUserId}`,
-                        event: 'end-call',
-                        data: { from: 'volunteer' }
-                    })
-                });
-            } catch (e) {
-                console.error('End signal err:', e);
-            }
-        }
+    const endCall = () => {
+        // Don't destroy peer, just close media?
+        // If we destroy peer, we lose our ID and Pusher connection (if we based it on Peer ID).
+        // Let's keep Peer alive if we want to remain online.
 
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(t => t.stop());

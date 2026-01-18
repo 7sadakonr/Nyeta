@@ -133,7 +133,7 @@ export default function BlindPage() {
     const requestHelp = async (myPeerId) => {
         addLog('Requesting help...');
         try {
-            await fetch('/api/pusher/trigger', {
+            const response = await fetch('/api/pusher/trigger', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -143,7 +143,8 @@ export default function BlindPage() {
                     socketId: pusherRef.current?.connection.socket_id
                 })
             });
-            addLog('Sent Request');
+            const result = await response.json();
+            addLog('Trigger response: ' + response.status + ' ' + JSON.stringify(result));
         } catch (e) {
             addLog('Req Error: ' + e.message);
         }

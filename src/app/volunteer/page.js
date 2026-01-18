@@ -91,12 +91,22 @@ export default function VolunteerPage() {
 
                     // Subscribe to presence channel and listen for incoming requests
                     const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
+
+                    // Debug: Log subscription events
+                    presenceChannel.bind('pusher:subscription_succeeded', (members) => {
+                        addLog('Subscribed! Members: ' + members.count);
+                    });
+                    presenceChannel.bind('pusher:subscription_error', (error) => {
+                        addLog('Sub Error: ' + JSON.stringify(error));
+                    });
+
                     presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
                         addLog('Help request from: ' + blindPeerId.substring(0, 5));
                         setBlindUserId(blindPeerId);
                         setStatus('ringing');
                         if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
                     });
+                    addLog('Event bound to incoming-request');
 
                     setIsOnline(true);
                     setStatus('online');

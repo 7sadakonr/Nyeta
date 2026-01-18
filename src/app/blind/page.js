@@ -23,6 +23,7 @@ export default function BlindPage() {
     const hapticRef = useRef(null);
     const audioContextRef = useRef(null);
     const beepIntervalRef = useRef(null);
+    const fallbackTimeoutRef = useRef(null); // Timeout for retry broadcast
     const volunteersRef = useRef([]);
 
     // Moved endCall up to be accessible by setupPusher
@@ -132,6 +133,7 @@ export default function BlindPage() {
         // Subscribe to my private channel
         const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
         myChannel.bind('volunteer-ready', ({ volunteerId }) => {
+            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current); // Clear fallback
             callVolunteerRef.current(volunteerId, hapticRef);
         });
 
@@ -191,6 +193,22 @@ export default function BlindPage() {
                     socketId: pusherRef.current?.connection.socket_id
                 })
             });
+
+            // Fallback: If no one answers in 4 seconds, broadcast to EVERYONE
+            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+            fallbackTimeoutRef.current = setTimeout(async () => {
+                console.log('No answer from random, broadcasting to all...');
+                await fetch('/api/pusher/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: 'presence-volunteers',
+                        event: 'incoming-request',
+                        data: { blindPeerId: myPeerId, fallback: true },
+                        socketId: pusherRef.current?.connection.socket_id
+                    })
+                });
+            }, 4000);
         } catch (e) {
             console.error('Request error:', e);
         }

@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Blind Assist",
+  title: "Nyeta",
   description: "Visual assistance for blind users",
   viewport: {
     width: "device-width",
@@ -23,7 +23,7 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Blind Assist",
+    title: "Nyeta",
   },
 };
 

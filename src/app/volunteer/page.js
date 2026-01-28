@@ -32,9 +32,40 @@ export default function VolunteerPage() {
 
     // Socket Ref was removed, we use PusherRef now
     const socketRef = useRef(null); // Keep for compatibility if I missed any references, but ideally remove.
-    // Actually, I replaced socketRef usage with Pusher logic in previous step, checking...
-    // The previous large replace removed socketRef usages logic in useEffect, but I might have missed 'socketRef.current' refs in toggleOnline if I didn't replace them all.
-    // I rewrote toggleOnline, so it should be fine.
+
+    const endCall = async (notifyRemote = true) => {
+        // notifyRemote defaults to true (e.g. invalid 'close' event or manual hangup)
+        // If notifyRemote is true, we try to tell the blind user.
+        // We use blindUserId from state. CAUTION: If this function is called from a stale closure where blindUserId is null, it won't trigger.
+        // However, for Manual 'End Call' button, it's fresh.
+        // For 'close' event, it's captured when answerCall executed.
+
+        if (notifyRemote && blindUserId && pusherRef.current) {
+            try {
+                await fetch('/api/pusher/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: `private-user-${blindUserId}`,
+                        event: 'end-call',
+                        data: { by: 'volunteer' },
+                        socketId: pusherRef.current?.connection.socket_id
+                    })
+                });
+            } catch (err) {
+                console.error('End call notify error:', err);
+            }
+        }
+
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => t.stop());
+            localStreamRef.current = null;
+        }
+        setStatus('online');
+        setBlindUserId(null);
+        setRemoteStream(null);
+        addLog('Call ended');
+    };
 
     useEffect(() => {
         return () => {
@@ -56,6 +87,12 @@ export default function VolunteerPage() {
             setBlindUserId(blindPeerId);
             setStatus('ringing');
             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        });
+
+        // Listen for end-call
+        privateChannel.bind('end-call', () => {
+            addLog('Blind ended call');
+            endCall(false);
         });
     };
 
@@ -187,22 +224,7 @@ export default function VolunteerPage() {
         });
     };
 
-    const endCall = () => {
-        // Don't destroy peer, just close media?
-        // If we destroy peer, we lose our ID and Pusher connection (if we based it on Peer ID).
-        // Let's keep Peer alive if we want to remain online.
 
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(t => t.stop());
-            localStreamRef.current = null;
-        }
-        setStatus('online');
-        setBlindUserId(null);
-        setRemoteStream(null);
-        addLog('Call ended');
-
-        // We are still subscribed to presence, so we are still "online".
-    };
 
     const rejectCall = () => {
         setBlindUserId(null);

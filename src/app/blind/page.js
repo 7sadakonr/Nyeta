@@ -26,8 +26,28 @@ export default function BlindPage() {
     const fallbackTimeoutRef = useRef(null); // Timeout for retry broadcast
     const volunteersRef = useRef([]);
 
+    const currentVolunteerIdRef = useRef(null); // Track connected volunteer
+
     // Moved endCall up to be accessible by setupPusher
-    const endCall = useCallback(() => {
+    const endCall = useCallback(async (notifyRemote = true) => {
+        if (notifyRemote && currentVolunteerIdRef.current && pusherRef.current) {
+            try {
+                await fetch('/api/pusher/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: `private-user-${currentVolunteerIdRef.current}`,
+                        event: 'end-call',
+                        data: { by: 'blind' },
+                        socketId: pusherRef.current?.connection.socket_id
+                    })
+                });
+            } catch (err) {
+                console.error('End call notify error:', err);
+            }
+        }
+        currentVolunteerIdRef.current = null;
+
         if (peerRef.current) peerRef.current.destroy();
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(t => t.stop());
@@ -84,6 +104,7 @@ export default function BlindPage() {
 
     const callVolunteerRef = useRef((volunteerId, hapticRefParam) => {
         addLog('callVolunteer: ' + volunteerId.substring(0, 8));
+        currentVolunteerIdRef.current = volunteerId; // Store ID
 
         if (!peerRef.current || !streamRef.current) {
             addLog('Error: No peer or stream');
@@ -116,7 +137,7 @@ export default function BlindPage() {
         });
 
         call.on('close', () => {
-            endCall();
+            endCall(false); // Already closed, no need to notify
         });
 
         call.on('error', (e) => addLog('Call err: ' + e.message));
@@ -137,6 +158,12 @@ export default function BlindPage() {
             callVolunteerRef.current(volunteerId, hapticRef);
         });
 
+        // Listen for end-call event
+        myChannel.bind('end-call', () => {
+            console.log('Received end-call from volunteer');
+            endCall(false); // Don't notify back to avoid loop
+        });
+
         // Subscribe to presence to get volunteer list
         const presenceChannel = pusher.subscribe('presence-volunteers');
         presenceChannel.bind('pusher:subscription_succeeded', (members) => {
@@ -154,7 +181,8 @@ export default function BlindPage() {
         presenceChannel.bind('pusher:member_removed', (member) => {
             volunteersRef.current = volunteersRef.current.filter(id => id !== member.id);
         });
-    }, []);
+    }, [endCall]); // Added endCall to internal dependency (though recursive ref needs care, usually ok with useCallback)
+
 
     const requestHelp = async (myPeerId) => {
         try {

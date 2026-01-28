@@ -64,7 +64,7 @@ export default function Home() {
       </div>
 
       <footer className="absolute bottom-4 left-0 right-0 text-center text-slate-900/40 md:text-slate-500/60 text-sm font-medium pointer-events-none mix-blend-multiply md:mix-blend-normal">
-        Next.js • Socket.io • Tailwind • PeerJS
+        Nyeta
       </footer>
     </main>
   );

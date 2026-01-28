@@ -48,13 +48,31 @@ export default function BlindPage() {
         }
         currentVolunteerIdRef.current = null;
 
-        if (peerRef.current) peerRef.current.destroy();
+        // Don't destroy peerRef here, to keep ID alive for next call!
+        // if (peerRef.current) peerRef.current.destroy(); 
+
+        // Only close active calls/connections
+        // We might need to iterate peerRef.current.connections if we want to be thorough,
+        // but typically just stopping tracks and resetting state is enough for the logic.
+
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(t => t.stop());
-            // streamRef.current = null; // Don't nullify immediately if we want to reuse? No, better nullify.
-            // Actually, keep streamRef nullification consistent with original logic
+            // streamRef.current = null; // We can re-get user media next time or keep it? 
+            // Better to stop it to release camera/mic privacy indicator.
         }
+
         setStatus('idle');
+    }, []);
+
+    // Cleanup Peer on unmount ONLY
+    useEffect(() => {
+        return () => {
+            if (peerRef.current) {
+                console.log('Component unmounting, destroying peer');
+                peerRef.current.destroy();
+                peerRef.current = null;
+            }
+        };
     }, []);
 
     // Helper function to play beep sound - works on iOS
@@ -248,6 +266,8 @@ export default function BlindPage() {
         playBeepSound(0.001, true);
 
         try {
+            // 1. Get User Media FIRST (Always need fresh stream?)
+            // Actually, we must get a new stream because we stopped the tracks in endCall.
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
@@ -259,6 +279,16 @@ export default function BlindPage() {
                 myVideoRef.current.onloadedmetadata = () => myVideoRef.current.play().catch(console.error);
             }
 
+            // 2. Reuse Peer Connection if valid
+            if (peerRef.current && !peerRef.current.destroyed && peerRef.current.id) {
+                console.log('Reusing existing Peer connection:', peerRef.current.id);
+                // We assume Pusher is already set up if Peer is alive
+                setStatus('waiting');
+                requestHelp(peerRef.current.id);
+                return;
+            }
+
+            console.log('Creating NEW Peer connection...');
             const peer = new Peer(undefined, {
                 config: {
                     iceServers: [
@@ -294,7 +324,13 @@ export default function BlindPage() {
 
             peer.on('error', (e) => {
                 console.error('Peer error:', e);
-                setStatus('idle');
+                // If ID is taken or fatal error, maybe reset status
+                if (e.type === 'peer-unavailable' || e.type === 'network' || e.type === 'server-error') {
+                    // Optional: handle specific fatal errors
+                }
+
+                // Don't necessarily go to 'idle' on every error, but for critical ones yes.
+                // setStatus('idle'); 
             });
 
         } catch (err) {

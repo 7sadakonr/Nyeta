@@ -25,11 +25,14 @@ export default function BlindPage() {
     const beepIntervalRef = useRef(null);
     const fallbackTimeoutRef = useRef(null); // Timeout for retry broadcast
     const volunteersRef = useRef([]);
+    const triedVolunteersRef = useRef([]); // Track attempted volunteers
+    const waitingForVolunteersRef = useRef(false); // Wait for presence before calling
 
     const currentVolunteerIdRef = useRef(null); // Track connected volunteer
 
     // Moved endCall up to be accessible by setupPusher
     const endCall = useCallback(async (notifyRemote = true) => {
+        if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current); // Clear any pending retry
         if (notifyRemote && currentVolunteerIdRef.current && pusherRef.current) {
             try {
                 await fetch('/api/pusher/trigger', {
@@ -163,6 +166,70 @@ export default function BlindPage() {
 
 
 
+    // Moved RequestHelp UP to be accessible by setupPusher
+    const requestHelp = async (myPeerId) => {
+        try {
+            // 1. Filter available volunteers (excluding self and already tried)
+            // 1. Filter available volunteers (excluding self and already tried)
+            let availableVolunteers = volunteersRef.current.filter(id => id !== myPeerId && !triedVolunteersRef.current.includes(id));
+
+            console.log(`RequestHelp: Total=${volunteersRef.current.length}, Tried=${triedVolunteersRef.current.length}, Available=${availableVolunteers.length}`);
+
+            // 2. If we exhausted the list, reset and loop again
+            if (availableVolunteers.length === 0 && volunteersRef.current.filter(id => id !== myPeerId).length > 0) {
+                console.log('Tried all volunteers, resetting list and looping...');
+                triedVolunteersRef.current = [];
+                availableVolunteers = volunteersRef.current.filter(id => id !== myPeerId);
+            }
+
+            // 3. If truly no one is online
+            if (availableVolunteers.length === 0) {
+                console.log('No volunteers online, waiting/retrying...');
+                // DO NOT BROADCAST. Just retry in 5s.
+                if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+                fallbackTimeoutRef.current = setTimeout(() => {
+                    console.log('Retrying requestHelp...');
+                    // But we need myPeerId? It's passed in.
+                    // If we use recursion, ensure we have the ID.
+                    // Actually, if nobody is online, just wait. When someone joins, presence channel fixes it?
+                    // Nope, we should just retry periodically in case of sync issues
+                    requestHelp(myPeerId);
+                }, 5000);
+                return;
+            }
+
+            // 4. Select random volunteer
+            const randomIndex = Math.floor(Math.random() * availableVolunteers.length);
+            const selectedVolunteer = availableVolunteers[randomIndex];
+            console.log('Selected volunteer:', selectedVolunteer);
+
+            // 5. Mark as tried
+            triedVolunteersRef.current.push(selectedVolunteer);
+
+            // 6. Send request
+            await fetch('/api/pusher/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: `private-user-${selectedVolunteer}`,
+                    event: 'incoming-request',
+                    data: { blindPeerId: myPeerId },
+                    socketId: pusherRef.current?.connection.socket_id
+                })
+            });
+
+            // 7. Set 30s Timeout to try next person
+            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+            fallbackTimeoutRef.current = setTimeout(() => {
+                console.log('No answer in 30s, trying next volunteer...');
+                requestHelp(myPeerId); // Recursive call
+            }, 30000);
+
+        } catch (e) {
+            console.error('Request error:', e);
+        }
+    };
+
     const setupPusher = useCallback((myPeerId) => {
         if (pusherRef.current) return;
 
@@ -182,6 +249,16 @@ export default function BlindPage() {
             endCall(false); // Don't notify back to avoid loop
         });
 
+        // Listen for rejection (Busy/Declined)
+        myChannel.bind('call-rejected', () => {
+            console.log('Volunteer rejected/busy, trying next in 1s...');
+            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+            // Wait 1s before retrying to ensure state is clean
+            setTimeout(() => {
+                requestHelp(myPeerId);
+            }, 1000);
+        });
+
         // Subscribe to presence to get volunteer list
         const presenceChannel = pusher.subscribe('presence-volunteers');
         presenceChannel.bind('pusher:subscription_succeeded', (members) => {
@@ -190,6 +267,13 @@ export default function BlindPage() {
                 volunteersRef.current.push(member.id);
             });
             console.log('Volunteers online:', volunteersRef.current.length);
+
+            // Check if we were waiting to call
+            if (waitingForVolunteersRef.current) {
+                console.log('Presence ready, starting pending call...');
+                waitingForVolunteersRef.current = false;
+                requestHelp(myPeerId);
+            }
         });
         presenceChannel.bind('pusher:member_added', (member) => {
             if (!volunteersRef.current.includes(member.id)) {
@@ -199,75 +283,18 @@ export default function BlindPage() {
         presenceChannel.bind('pusher:member_removed', (member) => {
             volunteersRef.current = volunteersRef.current.filter(id => id !== member.id);
         });
-    }, [endCall]); // Added endCall to internal dependency (though recursive ref needs care, usually ok with useCallback)
-
-
-    const requestHelp = async (myPeerId) => {
-        try {
-            // Get current volunteers (excluding self)
-            const volunteers = volunteersRef.current.filter(id => id !== myPeerId);
-
-            if (volunteers.length === 0) {
-                console.log('No volunteers online');
-                // Fallback: broadcast to presence channel
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: 'presence-volunteers',
-                        event: 'incoming-request',
-                        data: { blindPeerId: myPeerId },
-                        socketId: pusherRef.current?.connection.socket_id
-                    })
-                });
-                return;
-            }
-
-            // Randomly select one volunteer
-            const randomIndex = Math.floor(Math.random() * volunteers.length);
-            const selectedVolunteer = volunteers[randomIndex];
-            console.log('Selected volunteer:', selectedVolunteer);
-
-            // Send to selected volunteer's private channel
-            await fetch('/api/pusher/trigger', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    channel: `private-user-${selectedVolunteer}`,
-                    event: 'incoming-request',
-                    data: { blindPeerId: myPeerId },
-                    socketId: pusherRef.current?.connection.socket_id
-                })
-            });
-
-            // Fallback: If no one answers in 4 seconds, broadcast to EVERYONE
-            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
-            fallbackTimeoutRef.current = setTimeout(async () => {
-                console.log('No answer from random, broadcasting to all...');
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: 'presence-volunteers',
-                        event: 'incoming-request',
-                        data: { blindPeerId: myPeerId, fallback: true },
-                        socketId: pusherRef.current?.connection.socket_id
-                    })
-                });
-            }, 4000);
-        } catch (e) {
-            console.error('Request error:', e);
-        }
-    };
+    }, [endCall]); // Removed requestHelp from dep array (cyclic), relying on ref closure or hoisting if possible. 
+    // In React Component, all consts in body are visible if defined before. We moved requestHelp UP.
 
     const startCall = async () => {
         setStatus('initializing');
+        triedVolunteersRef.current = []; // Reset tried list for new call session
+        waitingForVolunteersRef.current = true; // Wait for presence
         hapticRef.current?.trigger(1, 40);
         playBeepSound(0.001, true);
 
         try {
-            // 1. Get User Media FIRST (Always need fresh stream?)
-            // Actually, we must get a new stream because we stopped the tracks in endCall.
+            // 1. Get User Media FIRST
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
                 audio: true
@@ -284,6 +311,7 @@ export default function BlindPage() {
                 console.log('Reusing existing Peer connection:', peerRef.current.id);
                 // We assume Pusher is already set up if Peer is alive
                 setStatus('waiting');
+                waitingForVolunteersRef.current = false; // Don't wait, assume ready
                 requestHelp(peerRef.current.id);
                 return;
             }
@@ -304,7 +332,7 @@ export default function BlindPage() {
             peer.on('open', (id) => {
                 setStatus('waiting');
                 setupPusher(id);
-                requestHelp(id);
+                // requestHelp(id) removed here. Triggered by subscription_succeeded
             });
 
             peer.on('connection', (conn) => {

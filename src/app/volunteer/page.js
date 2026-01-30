@@ -226,7 +226,23 @@ export default function VolunteerPage() {
 
 
 
-    const rejectCall = () => {
+    const rejectCall = async () => {
+        if (blindUserId && pusherRef.current) {
+            try {
+                await fetch('/api/pusher/trigger', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: `private-user-${blindUserId}`,
+                        event: 'call-rejected',
+                        data: { by: pusherRef.current.connection.socket_id },
+                        socketId: pusherRef.current?.connection.socket_id
+                    })
+                });
+            } catch (err) {
+                console.error('Reject notify error:', err);
+            }
+        }
         setBlindUserId(null);
         setStatus('online');
         addLog('Rejected');

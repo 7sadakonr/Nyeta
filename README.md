@@ -116,11 +116,3 @@ Designed for situational awareness and control:
     Access the application at `http://localhost:3000` (or your secure HTTPS URL).
 
 ---
-
-## 👥 Contributors
-
--   **[Your Name]** - *Lead Developer*
--   **[Advisor Name]** - *Project Advisor*
-
-**[Faculty Name]**  
-**[University Name]**

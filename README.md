@@ -6,7 +6,7 @@
 
 ### For Blind Users
 - **Start Call:** Instantly connect with available sighted volunteers via video call.
-- **AI Visual Assistant (Be My AI):** 
+- **AI Visual Assistant (AIVA):** 
   - Capture images and ask questions using voice commands.
   - Powered by **Llama 3.2 Vision** (via Groq API) for fast and accurate image descriptions in Thai.
   - Haptic feedback and sound cues (Earcons) for non-visual navigation.

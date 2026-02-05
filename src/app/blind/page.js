@@ -426,6 +426,47 @@ export default function BlindPage() {
 
     // Capture single image and send to Groq API (Llama 3.2 Vision)
     // Now accepts optional 'customPrompt' from voice input
+    // Helper to format messages for Groq API
+    const formatMessagesForApi = (history, currentMessage) => {
+        // 1. Convert history to API format
+        // Take last 6 messages to avoid token limits
+        const formattedHistory = history.slice(-6).map(msg => {
+            const role = msg.role === 'ai' ? 'assistant' : 'user';
+
+            if (msg.image) {
+                return {
+                    role: role,
+                    content: [
+                        { type: "text", text: msg.content || "" },
+                        { type: "image_url", image_url: { url: msg.image } }
+                    ]
+                };
+            } else {
+                return {
+                    role: role,
+                    content: msg.content
+                };
+            }
+        });
+
+        // 2. System Prompt
+        const systemPrompt = {
+            role: "system",
+            content: `
+คุณคือผู้ช่วยคนตาบอดที่ฉลาดและเป็นมิตร "ตอบเป็นภาษาไทยเท่านั้น"
+หน้าที่ของคุณคือ:
+1. ตอบคำถามของผู้ใช้ หรือบรรยายสิ่งที่เห็นในภาพให้เข้าใจง่าย
+2. **สำคัญมาก**: หากผู้ใช้ถามถึงสิ่งที่อยู่ในภาพก่อนหน้า ให้ใช้ข้อมูลจากประวัติการสนทนา
+3. ถ้าภาพไม่ชัด มืดเกินไป หรือวัตถุหลุดเฟรม ให้แนะนำวิธีถ่ายใหม่
+
+ตอบสั้นกระชับ เป็นกันเอง`.trim()
+        };
+
+        return [systemPrompt, ...formattedHistory, currentMessage];
+    };
+
+    // Capture single image and send to Groq API (Llama 3.2 Vision)
+    // Now accepts optional 'customPrompt' from voice input
     const captureAndAsk = useCallback(async (customPrompt = null) => {
         if (!aiReady || aiStatus === 'thinking') return;
 
@@ -459,95 +500,82 @@ export default function BlindPage() {
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imageBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-
-            // 3. Add user message to chat
             const imageDataUrl = `data:image/jpeg;base64,${imageBase64}`;
+
+            // 3. Prepare User Message
             const userQuestion = customPrompt && typeof customPrompt === 'string'
                 ? `(พูด): "${customPrompt}"`
                 : 'ช่วยบรรยายภาพนี้ให้หน่อย';
 
-            setAiMessages(prev => [...prev, { role: 'user', content: userQuestion, image: imageDataUrl }]);
+            // Add to local state immediately
+            const newUserMessage = { role: 'user', content: userQuestion, image: imageDataUrl };
+            setAiMessages(prev => [...prev, newUserMessage]);
 
-            // 4. Call Groq API (Llama 3.2 Vision)
-            setAiStatus('thinking');
-            addLog('Sending to Groq (Llama 3.2)...');
+            // 4. Send to API with History
+            (async () => {
+                try {
+                    setAiStatus('thinking');
+                    addLog('Sending to Groq (Llama 3.2)...');
 
-            // API Key from Vercel Environment Variable
-            const groqApiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+                    // Use updated history
+                    const historyForApi = [...aiMessages, newUserMessage];
 
-            // Construct Thai System Prompt
-            const systemPrompt = `
-คุณคือผู้ช่วยคนตาบอดที่ฉลาดและเป็นมิตร "ตอบเป็นภาษาไทยเท่านั้น"
-หน้าที่ของคุณคือ:
-1. ตอบคำถามของผู้ใช้ หรือบรรยายสิ่งที่เห็นในภาพให้เข้าใจง่าย
-2. **สำคัญมาก**: ถ้าภาพไม่ชัด มืดเกินไป หรือวัตถุหลุดเฟรม คุณ **ต้องแนะนำวิธีถ่ายใหม่** ให้ผู้ใช้รู้ตัว เช่น:
-   - "ภาพมืดไปครับ ลองเปิดไฟ"
-   - "ขยับกล้องถอยหลังหน่อยครับ เห็นแค่มือ"
-   - "กล้องสั่นครับ ลองถ่ายใหม่อีกที"
+                    const apiMessages = formatMessagesForApi(historyForApi, {
+                        role: "user",
+                        content: [
+                            { type: "text", text: userQuestion },
+                            { type: "image_url", image_url: { url: imageDataUrl } }
+                        ]
+                    });
 
-ถ้าภาพชัดเจนดี ให้ตอบคำถามตามปกติ สั้นกระชับ ไม่เยิ่นเย้อ
-            `.trim();
-
-            const userTextPrompt = customPrompt && typeof customPrompt === 'string'
-                ? customPrompt
-                : "ช่วยดูรูปนี้ให้หน่อยครับ ว่าคืออะไร หรือมีอะไรน่าสนใจบ้าง? ตอบเป็นภาษาไทยนะ";
-
-            const response = await fetch(
-                'https://api.groq.com/openai/v1/chat/completions',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${groqApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: "meta-llama/llama-4-maverick-17b-128e-instruct", // User specific request
-                        messages: [
-                            {
-                                role: "system",
-                                content: systemPrompt
+                    const response = await fetch(
+                        'https://api.groq.com/openai/v1/chat/completions',
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${apiKey}`,
+                                'Content-Type': 'application/json'
                             },
-                            {
-                                role: "user",
-                                content: [
-                                    { type: "text", text: userTextPrompt },
-                                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${imageBase64}` } }
-                                ]
-                            }
-                        ],
-                        max_tokens: 500,
-                        temperature: 0.5
-                    })
+                            body: JSON.stringify({
+                                model: "meta-llama/llama-4-maverick-17b-128e-instruct", // User specific request
+                                messages: apiMessages,
+                                max_tokens: 500,
+                                temperature: 0.5
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+                    addLog('Response received!');
+
+                    // 5. Handle response
+                    if (data.error) {
+                        addLog(`API Error: ${data.error.message || JSON.stringify(data.error)}`);
+                        setAiMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}` }]);
+                    } else if (data.choices && data.choices[0]?.message?.content) {
+                        const aiText = data.choices[0].message.content;
+                        addLog('AI responded!');
+                        setAiMessages(current => [...current, { role: 'ai', content: aiText }]);
+                        playEarcon('success');
+                        hapticRef.current?.trigger(1);
+                    } else {
+                        addLog('No response data');
+                        setAiMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ' }]);
+                    }
+                } catch (error) {
+                    console.error('AI Request Error:', error);
+                    addLog(`Error: ${error.message}`);
+                    setAiMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
+                } finally {
+                    setAiStatus('idle');
                 }
-            );
-
-            const data = await response.json();
-            addLog('Response received!');
-
-            // 5. Handle response
-            if (data.error) {
-                addLog(`API Error: ${data.error.message || JSON.stringify(data.error)}`);
-                setAiMessages(prev => [...prev, { role: 'ai', content: `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}` }]);
-            } else if (data.choices && data.choices[0]?.message?.content) {
-                const aiText = data.choices[0].message.content;
-                addLog('AI responded!');
-                setAiMessages(prev => [...prev, { role: 'ai', content: aiText }]);
-                playEarcon('success');
-                hapticRef.current?.trigger(1);
-            } else {
-                addLog('No response data');
-                setAiMessages(prev => [...prev, { role: 'ai', content: 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ' }]);
-            }
+            })();
 
         } catch (error) {
-            console.error('AI Request Error:', error);
-            addLog(`Error: ${error.message}`);
-            setAiStatus('idle');
-            setAiMessages(prev => [...prev, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
-        } finally {
+            console.error('Capture Error:', error);
             setAiStatus('idle');
         }
-    }, [aiReady, aiStatus, addLog, playEarcon]);
+    }, [aiReady, aiStatus, addLog, playEarcon, aiMessages]);
 
     // Keep ref updated so onresult callback can access latest function
     captureAndAskRef.current = captureAndAsk;
@@ -556,70 +584,67 @@ export default function BlindPage() {
     const askTextOnly = useCallback(async (userText) => {
         if (!aiReady || aiStatus === 'thinking') return;
         if (!userText || userText.trim().length === 0) return;
-        // API Key from Vercel Environment Variable
-        const groqApiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
 
-        try {
-            // 1. Add user message to chat
-            setAiMessages(prev => [...prev, { role: 'user', content: `🎤 ${userText}` }]);
+        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
 
-            // 2. Set status
-            setAiStatus('thinking');
-            playEarcon('capture');
-            hapticRef.current?.trigger(1);
-            addLog(`Text Chat: "${userText}"`);
+        const newUserMessage = { role: 'user', content: `🎤 ${userText}` };
 
-            // 3. Thai System Prompt
-            const systemPrompt = `
-คุณคือผู้ช่วยคนตาบอดที่ฉลาดและเป็นมิตร "ตอบเป็นภาษาไทยเท่านั้น"
-ตอบคำถามอย่างสั้นกระชับ เป็นกันเอง และเข้าใจง่าย
-            `.trim();
+        setAiMessages(prev => [...prev, newUserMessage]);
 
-            // 4. Call Groq API (Text only, no image)
-            const response = await fetch(
-                'https://api.groq.com/openai/v1/chat/completions',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${groqApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: "meta-llama/llama-4-maverick-17b-128e-instruct",
-                        messages: [
-                            { role: "system", content: systemPrompt },
-                            { role: "user", content: userText }
-                        ],
-                        max_tokens: 500,
-                        temperature: 0.7
-                    })
-                }
-            );
-
-            const data = await response.json();
-            addLog('Response received!');
-
-            // 5. Handle response
-            if (data.error) {
-                addLog(`API Error: ${data.error.message}`);
-                setAiMessages(prev => [...prev, { role: 'ai', content: `ขอโทษครับ: ${data.error.message}` }]);
-            } else if (data.choices && data.choices[0]?.message?.content) {
-                const aiText = data.choices[0].message.content;
-                addLog('AI responded!');
-                setAiMessages(prev => [...prev, { role: 'ai', content: aiText }]);
-                playEarcon('success');
+        (async () => {
+            try {
+                setAiStatus('thinking');
+                playEarcon('capture');
                 hapticRef.current?.trigger(1);
-            } else {
-                setAiMessages(prev => [...prev, { role: 'ai', content: 'ขอโทษครับ ไม่ได้รับคำตอบ' }]);
+                addLog(`Text Chat: "${userText}"`);
+
+                const historyForApi = [...aiMessages, newUserMessage];
+
+                const apiMessages = formatMessagesForApi(historyForApi, {
+                    role: "user",
+                    content: userText
+                });
+
+                const response = await fetch(
+                    'https://api.groq.com/openai/v1/chat/completions',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: "meta-llama/llama-4-maverick-17b-128e-instruct", // User specific request
+                            messages: apiMessages,
+                            max_tokens: 500,
+                            temperature: 0.7
+                        })
+                    }
+                );
+
+                const data = await response.json();
+
+                if (data.error) {
+                    addLog(`API Error: ${data.error.message}`);
+                    setAiMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ: ${data.error.message}` }]);
+                } else if (data.choices && data.choices[0]?.message?.content) {
+                    const aiText = data.choices[0].message.content;
+                    setAiMessages(current => [...current, { role: 'ai', content: aiText }]);
+                    playEarcon('success');
+                    hapticRef.current?.trigger(1);
+                } else {
+                    setAiMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ ไม่ได้รับคำตอบ' }]);
+                }
+
+            } catch (error) {
+                console.error('Text Chat Error:', error);
+                setAiMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
+            } finally {
+                setAiStatus('idle');
             }
-        } catch (error) {
-            console.error('Text Chat Error:', error);
-            addLog(`Error: ${error.message}`);
-            setAiMessages(prev => [...prev, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
-        } finally {
-            setAiStatus('idle');
-        }
-    }, [aiReady, aiStatus, addLog, playEarcon]);
+        })();
+
+    }, [aiReady, aiStatus, addLog, playEarcon, aiMessages]);
 
     // Keep askTextOnly ref updated for voice callback
     askTextOnlyRef.current = askTextOnly;

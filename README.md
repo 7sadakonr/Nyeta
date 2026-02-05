@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Nyeta - Blind Assistance Application
 
-## Getting Started
+**Nyeta** is a progressive web application (PWA) designed to empower visually impaired individuals by connecting them with sighted volunteers or AI tools for real-time visual assistance.
 
-First, run the development server:
+## 🌟 Key Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+### For Blind Users
+- **Start Call:** Instantly connect with available sighted volunteers via video call.
+- **AI Visual Assistant (Be My AI):** 
+  - Capture images and ask questions using voice commands.
+  - Powered by **Llama 3.2 Vision** (via Groq API) for fast and accurate image descriptions in Thai.
+  - Haptic feedback and sound cues (Earcons) for non-visual navigation.
+- **Accessibility First:** High-contrast UI, screen reader compatibility, and vibration feedback.
+- **Voice Input:** Use speech recognition to interact with the AI assistant.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### For Volunteers
+- **Volunteer Dashboard:** Simple toggle to go Online/Offline.
+- **Real-time Notifications:** Receive incoming calls instantly when online.
+- **Assistance Tools:** 
+  - View live video stream from the blind user's camera.
+  - **Flashlight Control:** Remotely toggle the blind user's flashlight (Android support) to improve lighting.
+  - **Mute/Unmute** microphone.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## 🛠 Tech Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework:** [Next.js 15+ (App Router)](https://nextjs.org/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Real-time Communication:** 
+  - **WebRTC (PeerJS):** For peer-to-peer video and audio streaming.
+  - **Pusher:** For real-time signaling, presence, and notifications.
+- **AI Integration:** [Groq API](https://groq.com/) (Llama 3.2 Vision Model).
 
-## Learn More
+## 🚀 Getting Started
 
-To learn more about Next.js, take a look at the following resources:
+### Prerequisites
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Node.js 18.17 or later
+- HTTPS environment (Required for Camera/Microphone access)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Installation
 
-## Deploy on Vercel
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/nyeta.git
+   cd nyeta
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Environment Setup:**
+   Create a `.env.local` file in the root directory and add the following keys:
+
+   ```env
+   # Pusher Configuration (Real-time Signaling)
+   NEXT_PUBLIC_PUSHER_KEY=your_pusher_key
+   NEXT_PUBLIC_PUSHER_CLUSTER=your_pusher_cluster
+   
+   # Groq API (For AI Vision)
+   NEXT_PUBLIC_GROQ_API_KEY=your_groq_api_key
+   ```
+
+4. **Run the Development Server:**
+   ```bash
+   npm run dev
+   ```
+   > **Note:** To test on mobile devices, you must access the app via **HTTPS**. Use tools like `ngrok` or `localtunnel` to expose your localhost via HTTPS.
+
+### Usage
+
+1. Open the app on two devices.
+2. **Device 1 (Volunteer):** Select "Volunteer" -> Toggle "Start Volunteering" to go online.
+3. **Device 2 (Blind User):** Select "I Need Help" -> The app will automatically search for available volunteers or allow you to use the AI Assistant.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📄 License
+
+This project is open-source and available under the [MIT License](LICENSE).

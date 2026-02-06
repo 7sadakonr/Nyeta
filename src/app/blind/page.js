@@ -35,6 +35,8 @@ export default function BlindPage() {
     const volunteersRef = useRef([]);
     const triedVolunteersRef = useRef([]); // Track attempted volunteers
     const waitingForVolunteersRef = useRef(false); // Wait for presence before calling
+    const loopCountRef = useRef(0); // Track retry loops for Exit Strategy
+    const volunteerMetaRef = useRef({}); // Store volunteer metadata { id: { joinedAt } }
 
     const currentVolunteerIdRef = useRef(null); // Track connected volunteer
 
@@ -183,33 +185,59 @@ export default function BlindPage() {
 
             console.log(`RequestHelp: Total=${volunteersRef.current.length}, Tried=${triedVolunteersRef.current.length}, Available=${availableVolunteers.length}`);
 
-            // 2. If we exhausted the list, reset and loop again
-            if (availableVolunteers.length === 0 && volunteersRef.current.filter(id => id !== myPeerId).length > 0) {
-                console.log('Tried all volunteers, resetting list and looping...');
+            // 2. If we exhausted the list, check Exit Strategy
+            const totalVolunteers = volunteersRef.current.filter(id => id !== myPeerId).length;
+            if (availableVolunteers.length === 0 && totalVolunteers > 0) {
+                loopCountRef.current++;
+                console.log(`Tried all volunteers, loop count: ${loopCountRef.current}`);
+
+                // EXIT STRATEGY: หยุดวนลูปหลัง 2 รอบ
+                if (loopCountRef.current >= 2) {
+                    console.log('Exit Strategy: Max loops reached, stopping...');
+                    setStatus('exhausted');
+                    hapticRef.current?.trigger(2, 150);
+                    playBeepSound(0.3);
+                    return;
+                }
+
+                // Reset และลองรอบใหม่
                 triedVolunteersRef.current = [];
                 availableVolunteers = volunteersRef.current.filter(id => id !== myPeerId);
             }
 
-            // 3. If truly no one is online
+            // 3. If truly no one is online - NOTIFY USER
             if (availableVolunteers.length === 0) {
                 console.log('No volunteers online, waiting/retrying...');
-                // DO NOT BROADCAST. Just retry in 5s.
+
+                // Update status to show "no volunteers" state
+                setStatus('no-volunteers');
+
+                // Haptic feedback (3 short pulses = "waiting" pattern)
+                hapticRef.current?.trigger(3, 100);
+
+                // Audio cue (low tone = "waiting")
+                playBeepSound(0.2);
+
+                // Retry in 5 seconds
                 if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
                 fallbackTimeoutRef.current = setTimeout(() => {
                     console.log('Retrying requestHelp...');
-                    // But we need myPeerId? It's passed in.
-                    // If we use recursion, ensure we have the ID.
-                    // Actually, if nobody is online, just wait. When someone joins, presence channel fixes it?
-                    // Nope, we should just retry periodically in case of sync issues
+                    setStatus('waiting'); // Reset back to waiting before retry
                     requestHelp(myPeerId);
                 }, 5000);
                 return;
             }
 
-            // 4. Select random volunteer
-            const randomIndex = Math.floor(Math.random() * availableVolunteers.length);
-            const selectedVolunteer = availableVolunteers[randomIndex];
-            console.log('Selected volunteer:', selectedVolunteer);
+            // 4. FAIRNESS QUEUE: เลือกคนที่ว่างนานที่สุดก่อน
+            const sortedVolunteers = availableVolunteers
+                .map(id => ({
+                    id,
+                    joinedAt: volunteerMetaRef.current[id]?.joinedAt || Date.now()
+                }))
+                .sort((a, b) => a.joinedAt - b.joinedAt); // คนเข้ามานานสุดอยู่หน้า
+
+            const selectedVolunteer = sortedVolunteers[0].id;
+            console.log('Selected volunteer (fairness):', selectedVolunteer);
 
             // 5. Mark as tried
             triedVolunteersRef.current.push(selectedVolunteer);
@@ -226,12 +254,12 @@ export default function BlindPage() {
                 })
             });
 
-            // 7. Set 30s Timeout to try next person
+            // 7. Set 15s Timeout to try next person (ลดจาก 30s)
             if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
             fallbackTimeoutRef.current = setTimeout(() => {
-                console.log('No answer in 30s, trying next volunteer...');
+                console.log('No answer in 15s, trying next volunteer...');
                 requestHelp(myPeerId); // Recursive call
-            }, 30000);
+            }, 15000);
 
         } catch (e) {
             console.error('Request error:', e);
@@ -678,12 +706,16 @@ export default function BlindPage() {
             }, 1000);
         });
 
-        // Subscribe to presence to get volunteer list
         const presenceChannel = pusher.subscribe('presence-volunteers');
         presenceChannel.bind('pusher:subscription_succeeded', (members) => {
             volunteersRef.current = [];
+            volunteerMetaRef.current = {}; // Reset metadata
             members.each((member) => {
                 volunteersRef.current.push(member.id);
+                // เก็บ joinedAt metadata สำหรับ Fairness Queue
+                volunteerMetaRef.current[member.id] = {
+                    joinedAt: member.info?.joinedAt || Date.now()
+                };
             });
             console.log('Volunteers online:', volunteersRef.current.length);
 
@@ -697,10 +729,16 @@ export default function BlindPage() {
         presenceChannel.bind('pusher:member_added', (member) => {
             if (!volunteersRef.current.includes(member.id)) {
                 volunteersRef.current.push(member.id);
+                // เก็บ metadata สำหรับ Fairness Queue
+                volunteerMetaRef.current[member.id] = {
+                    joinedAt: member.info?.joinedAt || Date.now()
+                };
             }
         });
         presenceChannel.bind('pusher:member_removed', (member) => {
             volunteersRef.current = volunteersRef.current.filter(id => id !== member.id);
+            // ลบ metadata
+            delete volunteerMetaRef.current[member.id];
         });
     }, [endCall]); // Removed requestHelp from dep array (cyclic), relying on ref closure or hoisting if possible. 
     // In React Component, all consts in body are visible if defined before. We moved requestHelp UP.
@@ -708,6 +746,7 @@ export default function BlindPage() {
     const startCall = async () => {
         setStatus('initializing');
         triedVolunteersRef.current = []; // Reset tried list for new call session
+        loopCountRef.current = 0; // Reset loop count for Exit Strategy
         waitingForVolunteersRef.current = true; // Wait for presence
         hapticRef.current?.trigger(1, 40);
         playBeepSound(0.001, true);
@@ -1154,6 +1193,100 @@ export default function BlindPage() {
                                         <path d="m6 6 12 12" />
                                     </svg>
                                     Cancel Request
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* NO VOLUNTEERS STATE */}
+                    {status === 'no-volunteers' && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                            <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" />
+
+                            {/* Dark Overlay */}
+                            <div className="absolute inset-0 bg-gradient-to-b from-red-900/30 to-black"></div>
+
+                            <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
+                                {/* Warning Icon */}
+                                <div className="relative mb-8">
+                                    <div className="absolute inset-0 bg-amber-500/20 rounded-full animate-pulse"></div>
+                                    <div className="relative bg-amber-500/10 p-6 rounded-full border border-amber-500/50 backdrop-blur-md">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
+                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <div className="text-3xl font-bold text-center mb-2 text-amber-400">ไม่มีอาสาออนไลน์</div>
+                                <div className="text-gray-400 text-center mb-4">ขณะนี้ยังไม่มีอาสาสมัครพร้อมให้บริการ</div>
+
+                                {/* Retry Indicator */}
+                                <div className="flex items-center gap-2 text-sky-400 mb-8">
+                                    <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <span className="text-sm">กำลังค้นหาใหม่อัตโนมัติ...</span>
+                                </div>
+
+                                <button
+                                    onClick={endCall}
+                                    className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M18 6 6 18" />
+                                        <path d="m6 6 12 12" />
+                                    </svg>
+                                    ยกเลิก
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* EXHAUSTED STATE - หมดอาสาแล้ว */}
+                    {status === 'exhausted' && (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                            <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale" />
+
+                            {/* Dark Overlay */}
+                            <div className="absolute inset-0 bg-linear-to-b from-red-900/40 to-black"></div>
+
+                            <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
+                                {/* Stop Icon */}
+                                <div className="relative mb-8">
+                                    <div className="relative bg-red-500/20 p-6 rounded-full border border-red-500/50 backdrop-blur-md">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <line x1="15" y1="9" x2="9" y2="15"></line>
+                                            <line x1="9" y1="9" x2="15" y2="15"></line>
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <div className="text-3xl font-bold text-center mb-2 text-red-400">ไม่มีอาสาว่าง</div>
+                                <div className="text-gray-400 text-center mb-8">ขณะนี้อาสาสมัครทุกคนไม่ว่าง<br />กรุณาลองใหม่ภายหลัง</div>
+
+                                {/* Retry Button */}
+                                <button
+                                    onClick={() => {
+                                        setStatus('idle');
+                                        setTimeout(() => startCall(), 100);
+                                    }}
+                                    className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-black py-6 rounded-2xl text-xl font-bold transition-all shadow-lg flex items-center justify-center gap-3 mb-4"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                        <path d="M3 3v5h5" />
+                                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                                        <path d="M16 21h5v-5" />
+                                    </svg>
+                                    ลองอีกครั้ง
+                                </button>
+
+                                <button
+                                    onClick={endCall}
+                                    className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-4 rounded-2xl text-lg font-medium transition-all border border-zinc-700"
+                                >
+                                    ยกเลิก
                                 </button>
                             </div>
                         </div>

@@ -1,6 +1,6 @@
 # Nyeta: Real-time Visual Assistance System for the Visually Impaired with AI Integration
 
-**Graduation Project** | **[University Name]**
+**Graduation Project** | **Ragamangala University of Technology Suvarnabhumi Huntra]**
 
 ---
 

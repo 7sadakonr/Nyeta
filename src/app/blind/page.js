@@ -7,6 +7,7 @@ import Peer from 'peerjs';
 import Link from 'next/link';
 import HapticFeedback from '@/components/HapticFeedback';
 import { useWakeLock } from '@/hooks/useWakeLock';
+// useObjectDetector is dynamically imported to avoid SSR issues with TensorFlow.js
 
 export default function BlindPage() {
     const [status, setStatus] = useState('idle'); // idle, calling, connected, failed
@@ -19,6 +20,13 @@ export default function BlindPage() {
     const [aiReady, setAiReady] = useState(false); // true when camera is ready
     const [aiMessages, setAiMessages] = useState([]); // Chat history: [{role: 'user'|'ai', content: '', image?: ''}]
     const aiStreamRef = useRef(null);
+
+    // Object Detection State (TensorFlow.js - Simple Interval Approach)
+    const [objectDetectorEnabled, setObjectDetectorEnabled] = useState(false);
+    const [detectedObjects, setDetectedObjects] = useState(''); // Text for VoiceOver
+    const [guidanceText, setGuidanceText] = useState(''); // Direction guidance text
+    const detectorModelRef = useRef(null);
+    const detectionIntervalRef = useRef(null);
 
 
     const myVideoRef = useRef(null);
@@ -87,6 +95,109 @@ export default function BlindPage() {
             }
         };
     }, []);
+
+    // Load TensorFlow.js model and run detection loop
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!objectDetectorEnabled || mode !== 'ai' || !aiReady) return;
+        if (!myVideoRef.current) return;
+
+        let isMounted = true;
+
+        const startDetection = async () => {
+            try {
+                setGuidanceText('กำลังโหลดโมเดล AI...');
+
+                // Dynamic import TensorFlow.js
+                const tf = await import('@tensorflow/tfjs');
+                const cocoSsd = await import('@tensorflow-models/coco-ssd');
+
+                console.log('Loading COCO-SSD model...');
+                const model = await cocoSsd.load();
+                detectorModelRef.current = model;
+                console.log('COCO-SSD model loaded!');
+
+                if (!isMounted) return;
+                setGuidanceText('โมเดลพร้อมแล้ว กำลังสแกน...');
+
+                // Start detection interval (every 1 second for stability)
+                detectionIntervalRef.current = setInterval(async () => {
+                    if (!isMounted || !myVideoRef.current || !detectorModelRef.current) return;
+
+                    const video = myVideoRef.current;
+                    if (video.readyState < 2) return;
+
+                    try {
+                        const predictions = await detectorModelRef.current.detect(video);
+
+                        if (predictions.length > 0) {
+                            // Build object list text
+                            const objectNames = predictions
+                                .slice(0, 3) // Max 3 objects
+                                .map(p => p.class)
+                                .join(', ');
+                            setDetectedObjects(`เจอ: ${objectNames}`);
+
+                            // Calculate guidance for closest object to center
+                            const videoWidth = video.videoWidth;
+                            const videoHeight = video.videoHeight;
+                            const frameCenterX = videoWidth / 2;
+                            const frameCenterY = videoHeight / 2;
+
+                            const closest = predictions
+                                .map(p => {
+                                    const [x, y, w, h] = p.bbox;
+                                    const objCenterX = x + w / 2;
+                                    const objCenterY = y + h / 2;
+                                    const distance = Math.sqrt(
+                                        Math.pow(objCenterX - frameCenterX, 2) +
+                                        Math.pow(objCenterY - frameCenterY, 2)
+                                    );
+                                    return { ...p, objCenterX, objCenterY, distance };
+                                })
+                                .sort((a, b) => a.distance - b.distance)[0];
+
+                            // Direction guidance
+                            const toleranceX = videoWidth * 0.2;
+                            const toleranceY = videoHeight * 0.2;
+                            const diffX = closest.objCenterX - frameCenterX;
+                            const diffY = closest.objCenterY - frameCenterY;
+
+                            let direction = '';
+                            if (Math.abs(diffX) < toleranceX && Math.abs(diffY) < toleranceY) {
+                                direction = '✅ อยู่ตรงกลางแล้ว พร้อมถ่าย!';
+                            } else {
+                                direction = '📍 เลื่อนกล้อง';
+                                if (diffX < -toleranceX) direction += ' ไปทางซ้าย';
+                                else if (diffX > toleranceX) direction += ' ไปทางขวา';
+                                if (diffY < -toleranceY) direction += ' ขึ้นบน';
+                                else if (diffY > toleranceY) direction += ' ลงล่าง';
+                            }
+                            setGuidanceText(direction);
+                        } else {
+                            setDetectedObjects('');
+                            setGuidanceText('🔍 ไม่เจอวัตถุ กวาดกล้องช้าๆ');
+                        }
+                    } catch (err) {
+                        console.error('Detection error:', err);
+                    }
+                }, 1000); // Every 1 second
+
+            } catch (error) {
+                console.error('Failed to load COCO-SSD:', error);
+                setGuidanceText('ไม่สามารถโหลดโมเดลได้');
+            }
+        };
+
+        startDetection();
+
+        return () => {
+            isMounted = false;
+            if (detectionIntervalRef.current) {
+                clearInterval(detectionIntervalRef.current);
+            }
+        };
+    }, [objectDetectorEnabled, mode, aiReady]);
 
     // Helper function to play beep sound - works on iOS
     const playBeepSound = useCallback((volume = 0.3, silent = false) => {
@@ -332,7 +443,8 @@ export default function BlindPage() {
             }
 
             setAiReady(true);
-            addLog('Camera ready! Tap to capture.');
+            setObjectDetectorEnabled(true); // Enable object detection when camera is ready
+            addLog('Camera ready! Object detection active.');
 
         } catch (err) {
             console.error('AI Init Error:', err);
@@ -452,6 +564,22 @@ export default function BlindPage() {
         }
     }, [isListening]);
 
+    // Auto-speak Object Detection Guidance (using Web Speech API)
+    const lastSpokenRef = useRef('');
+    useEffect(() => {
+        if (!objectDetectorEnabled || !guidanceText || isListening || aiStatus === 'thinking') return;
+        if (guidanceText === lastSpokenRef.current) return; // Don't repeat same message
+
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(guidanceText.replace(/[\u2705\ud83d\udd0d\ud83d\udccd]/g, '')); // Remove emojis
+            utterance.lang = 'th-TH';
+            utterance.rate = 1.2;
+            speechSynthesis.speak(utterance);
+            lastSpokenRef.current = guidanceText;
+        }
+    }, [guidanceText, objectDetectorEnabled, isListening, aiStatus]);
+
     // Capture single image and send to Groq API (Llama 3.2 Vision)
     // Now accepts optional 'customPrompt' from voice input
     // Helper to format messages for Groq API
@@ -481,13 +609,32 @@ export default function BlindPage() {
         const systemPrompt = {
             role: "system",
             content: `
-คุณคือผู้ช่วยคนตาบอดที่ฉลาดและเป็นมิตร "ตอบเป็นภาษาไทยเท่านั้น"
-หน้าที่ของคุณคือ:
-1. ตอบคำถามของผู้ใช้ หรือบรรยายสิ่งที่เห็นในภาพให้เข้าใจง่าย
-2. **สำคัญมาก**: หากผู้ใช้ถามถึงสิ่งที่อยู่ในภาพก่อนหน้า ให้ใช้ข้อมูลจากประวัติการสนทนา
-3. ถ้าภาพไม่ชัด มืดเกินไป หรือวัตถุหลุดเฟรม ให้แนะนำวิธีถ่ายใหม่
+คุณคือ "วิสัยทัศน์อัจฉริยะ" ผู้ช่วยส่วนตัวของผู้พิการทางสายตา หน้าที่ของคุณคือการเป็นดวงตาที่ละเอียด รอบคอบ และพึ่งพาได้
 
-ตอบสั้นกระชับ เป็นกันเอง`.trim()
+ลำดับความสำคัญในการทำงาน (Priority Framework):
+
+1. ตรวจสอบอุปสรรคทางกายภาพ (Physical Check):
+   - หากเห็นนิ้วบังเลนส์ หรือภาพมืด/เบลอจนวิเคราะห์ไม่ได้ ให้รีบแจ้งและแนะนำวิธีแก้ทันที (เช่น "มีนิ้วบังมุมขวาบนครับ", "รบกวนเปิดไฟหรือเปิดม่านเพิ่มครับ")
+   - หากวัตถุสำคัญ (เช่น ข้อความ, ใบหน้าคน, สิ่งของ) อยู่ไม่กลางเฟรม ให้บอกทิศทางปรับกล้อง (เช่น "เลื่อนกล้องไปทางขวาช้าๆ", "ถอยกล้องออกมาอีกประมาณหนึ่งช่วงแขน")
+
+2. การอ่านข้อความและเอกสาร (Detailed OCR):
+   - หากมีตัวอักษร ให้อ่านเนื้อหาทั้งหมดอย่างถูกต้อง
+   - กรณีเป็นฉลากสินค้า/ยา: ต้องระบุ "ชื่อผลิตภัณฑ์", "สรรพคุณ/วิธีใช้", และ "วันหมดอายุ" ให้ชัดเจน
+   - หากเป็นเอกสาร: บอกประเภทของเอกสารและหัวข้อสำคัญ
+   - หากตัวหนังสือขาดหาย ให้บอกผู้ใช้ว่าส่วนไหนที่หายไป (เช่น "บรรทัดล่างสุดขาดไป รบกวนกดกล้องลงนิดครับ")
+
+3. การวิเคราะห์สภาพแวดล้อมและความปลอดภัย (Spatial Awareness & Safety):
+   - แจ้งเตือนสิ่งกีดขวางหรืออันตรายในระยะประชิดทันที (เช่น บันได, พื้นต่างระดับ, สายไฟ, วัตถุที่แหลมคม)
+   - บอกตำแหน่งวัตถุโดยใช้ระบบ "หน้าปัดนาฬิกา" หรือ "ซ้าย/ขวา/ตรงหน้า" พร้อมระยะห่างโดยประมาณ
+   - ระบุสี สภาพแสง และลักษณะพื้นผิว (เช่น "เสื้อสีน้ำเงินเข้ม ลายทางขาว", "พื้นถนนขรุขระ")
+
+4. การจดจำบริบท (Contextual Memory):
+   - เชื่อมโยงข้อมูลจากภาพก่อนหน้าเสมอ หากผู้ใช้ถามถึงสิ่งที่เคยส่องไปแล้ว
+
+โทนเสียงและกฎการตอบ:
+- ภาษาไทยเท่านั้น เป็นกันเองแต่สุภาพ (ใช้คำว่า "ครับ/ค่ะ" ตามความเหมาะสม)
+- กระชับ ไม่เวิ่นเว้อ แต่ต้อง "ละเอียดในจุดที่จำเป็น"
+- หากภาพชัดเจนดีแล้ว ให้เริ่มการบรรยายทันทีโดยไม่ประเมินภาพซ้ำซาก`.trim()
         };
 
         return [systemPrompt, ...formattedHistory, currentMessage];
@@ -983,7 +1130,29 @@ export default function BlindPage() {
                             </span>
                         </div>
 
-                        {/* Voice Transcript Overlay */}
+                        {/* Object Detection Status - Simple Text for VoiceOver */}
+                        {objectDetectorEnabled && guidanceText && !voiceTranscript && (
+                            <div
+                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-xl text-center border-2 backdrop-blur-md transition-all duration-300 ${guidanceText.includes('✅')
+                                    ? 'bg-green-500/80 border-green-300 animate-pulse'
+                                    : guidanceText.includes('ไม่เจอ')
+                                        ? 'bg-zinc-800/80 border-zinc-600'
+                                        : 'bg-amber-500/80 border-amber-300'}`}
+                                role="status"
+                                aria-live="assertive"
+                            >
+                                <p className="text-lg font-bold text-white drop-shadow-lg">
+                                    {guidanceText}
+                                </p>
+                                {detectedObjects && (
+                                    <p className="text-sm text-white/80 mt-1">
+                                        {detectedObjects}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Voice Transcript Overlay (Prioritized over detection) */}
                         {voiceTranscript && (
                             <div className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-sm p-3 rounded-lg text-center border border-white/20">
                                 <p className={`text-lg font-medium ${isListening ? 'text-red-400 animate-pulse' : 'text-white'}`}>

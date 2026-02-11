@@ -15,7 +15,7 @@ export default function BlindPage() {
     const [isMuted, setIsMuted] = useState(false);
 
     // AI Assistant State (Simple "Be My AI" Style)
-    const [mode, setMode] = useState('volunteer'); // 'volunteer' | 'ai'
+    const [mode, setMode] = useState('ai'); // 'volunteer' | 'ai'
     const [aiStatus, setAiStatus] = useState('idle'); // 'idle', 'capturing', 'thinking'
     const [aiReady, setAiReady] = useState(false); // true when camera is ready
     const [aiMessages, setAiMessages] = useState([]); // Chat history: [{role: 'user'|'ai', content: '', image?: ''}]
@@ -86,6 +86,12 @@ export default function BlindPage() {
     }, []);
 
     // Cleanup Peer on unmount ONLY
+    // Auto-initialize AI Mode on mount
+    useEffect(() => {
+        initAiMode();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         return () => {
             if (peerRef.current) {
@@ -1034,67 +1040,35 @@ export default function BlindPage() {
         <div className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans">
             <HapticFeedback ref={hapticRef} />
 
-            {/* Top Navigation Bar with Mode Toggle */}
-            <div className="absolute top-0 inset-x-0 z-50 p-6 flex justify-between items-start pointer-events-none">
+            {/* Top Navigation Bar (Simplified - AI First) */}
+            <div className="absolute top-0 inset-x-0 z-50 p-4 flex justify-between items-center pointer-events-none">
                 {/* Back Button */}
-                <Link href="/" className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 text-white px-6 py-3 rounded-full backdrop-blur-md transition-all border border-white/20 shadow-lg" aria-label="Back to Home">
+                <Link href="/" className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 text-white px-5 py-3 rounded-full backdrop-blur-md transition-all border border-white/20 shadow-lg" aria-label="กลับหน้าหลัก">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-                    <span className="font-bold text-lg hidden sm:inline">Back</span>
                 </Link>
 
-                {/* Mode Toggle */}
-                <div className="pointer-events-auto bg-zinc-900/80 backdrop-blur-md p-1 rounded-full border border-white/10 shadow-2xl flex relative">
-                    {/* Active Indicator Background */}
-                    <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-full bg-white/10 transition-all duration-300 ease-spring ${mode === 'volunteer' ? 'left-1' : 'left-[calc(50%+2px)]'}`}></div>
-
-                    <button
-                        onClick={() => {
-                            if (mode !== 'volunteer') {
-                                setMode('volunteer');
-                                hapticRef.current?.trigger(1);
-                                setLogs(prev => [...prev, 'Switched to Volunteer Mode']);
-
-                                // Cleanup AI Resources
-                                if (aiStreamRef.current) {
-                                    aiStreamRef.current.getTracks().forEach(t => t.stop());
-                                    aiStreamRef.current = null;
-                                }
-                                setAiReady(false); // Reset ready state
-                                setAiMessages([]); // Clear chat
-                            }
-                        }}
-                        className={`relative z-10 px-6 py-2 rounded-full font-bold text-sm transition-colors ${mode === 'volunteer' ? 'text-amber-400' : 'text-zinc-400 hover:text-white'}`}
-                        aria-pressed={mode === 'volunteer'}
-                        aria-label="Switch to Volunteer Mode"
-                    >
-                        Volunteer
-                    </button>
-                    <button
-                        onClick={() => {
-                            if (mode !== 'ai') {
-                                setMode('ai');
-                                hapticRef.current?.trigger(1);
-                                setLogs(prev => [...prev, 'Switched to AI Mode']);
-                                // Stop volunteer call if active
-                                if (status !== 'idle') endCall();
-                                // Initialize AI Mode (request permissions + connect)
-                                initAiMode();
-                            }
-                        }}
-                        className={`relative z-10 px-6 py-2 rounded-full font-bold text-sm transition-colors ${mode === 'ai' ? 'text-sky-400' : 'text-zinc-400 hover:text-white'}`}
-                        aria-pressed={mode === 'ai'}
-                        aria-label="Switch to AI Assistant Mode"
-                    >
-                        AI Assistant
-                    </button>
+                {/* AI Status Indicator */}
+                <div className="pointer-events-none" aria-hidden="true">
+                    <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold backdrop-blur-md shadow-lg border transition-colors ${!aiReady ? 'bg-zinc-800/80 text-zinc-400 border-zinc-700' :
+                        aiStatus === 'thinking' ? 'bg-amber-500/90 text-black border-amber-400 animate-pulse' :
+                            'bg-emerald-500/90 text-black border-emerald-400'
+                        }`}>
+                        <span className={`w-2 h-2 rounded-full ${!aiReady ? 'bg-zinc-500' :
+                            aiStatus === 'thinking' ? 'bg-black animate-ping' :
+                                'bg-black'
+                            }`}></span>
+                        {!aiReady ? 'กำลังเริ่ม...' :
+                            aiStatus === 'thinking' ? 'กำลังคิด...' :
+                                'AI พร้อม'}
+                    </span>
                 </div>
             </div>
 
-            {/* ==================== AI MODE UI (ACCESSIBLE) ==================== */}
+            {/* ==================== AI MODE UI (ACCESSIBLE - AI FIRST) ==================== */}
             {mode === 'ai' && (
                 <main
-                    className="w-full h-full flex flex-col relative animate-in fade-in zoom-in duration-300"
-                    aria-label="AI Visual Assistant"
+                    className="w-full h-full flex flex-col relative"
+                    aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา"
                 >
                     {/* Live Status Announcer (Hidden visually, read by VoiceOver) */}
                     <div className="sr-only" aria-live="assertive" aria-atomic="true">
@@ -1104,8 +1078,8 @@ export default function BlindPage() {
                                     aiMessages.length > 0 && aiMessages[aiMessages.length - 1].role === 'ai' ? `AI ตอบกลับว่า: ${aiMessages[aiMessages.length - 1].content}` : ""}
                     </div>
 
-                    {/* Camera View (Top half) - Decorative mainly, but good for partial sighted users */}
-                    <div className="relative h-1/3 bg-black" aria-hidden="true">
+                    {/* Camera View (Expanded - 40% height for better framing) */}
+                    <div className="relative h-[40%] bg-black flex-shrink-0" aria-hidden="true">
                         <video
                             ref={myVideoRef}
                             autoPlay
@@ -1113,27 +1087,12 @@ export default function BlindPage() {
                             playsInline
                             className="absolute inset-0 w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/30"></div>
 
-                        {/* Status Badge (Visual Only) */}
-                        <div className="absolute top-4 left-0 right-0 text-center">
-                            <p className="text-zinc-500 text-[10px] mb-1">Groq Llama 4 Maverick (Experimental)</p>
-                            <span className={`inline-block px-4 py-1 rounded-full text-sm font-bold shadow-md transition-colors ${!aiReady ? 'bg-zinc-800 text-zinc-400' :
-                                aiStatus === 'capturing' ? 'bg-amber-500 text-black' :
-                                    aiStatus === 'thinking' ? 'bg-amber-500 text-black animate-pulse' :
-                                        'bg-green-500 text-black'
-                                }`}>
-                                {!aiReady ? "กำลังเริ่มระบบ..." :
-                                    aiStatus === 'idle' ? "พร้อมถ่ายภาพ" :
-                                        aiStatus === 'capturing' ? "กำลังถ่าย..." :
-                                            aiStatus === 'thinking' ? "กำลังคิด..." : "พร้อม"}
-                            </span>
-                        </div>
-
-                        {/* Object Detection Status - Simple Text for VoiceOver */}
+                        {/* Object Detection Guidance Overlay */}
                         {objectDetectorEnabled && guidanceText && !voiceTranscript && (
                             <div
-                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-xl text-center border-2 backdrop-blur-md transition-all duration-300 ${guidanceText.includes('✅')
+                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 ${guidanceText.includes('✅')
                                     ? 'bg-green-500/80 border-green-300 animate-pulse'
                                     : guidanceText.includes('ไม่เจอ')
                                         ? 'bg-zinc-800/80 border-zinc-600'
@@ -1141,77 +1100,84 @@ export default function BlindPage() {
                                 role="status"
                                 aria-live="assertive"
                             >
-                                <p className="text-lg font-bold text-white drop-shadow-lg">
+                                <p className="text-xl font-bold text-white drop-shadow-lg">
                                     {guidanceText}
                                 </p>
                                 {detectedObjects && (
-                                    <p className="text-sm text-white/80 mt-1">
+                                    <p className="text-base text-white/80 mt-1">
                                         {detectedObjects}
                                     </p>
                                 )}
                             </div>
                         )}
 
-                        {/* Voice Transcript Overlay (Prioritized over detection) */}
+                        {/* Voice Transcript Overlay */}
                         {voiceTranscript && (
-                            <div className="absolute bottom-4 left-4 right-4 bg-black/70 backdrop-blur-sm p-3 rounded-lg text-center border border-white/20">
-                                <p className={`text-lg font-medium ${isListening ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                            <div className="absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-md p-4 rounded-2xl text-center border-2 border-white/20">
+                                <p className={`text-xl font-bold ${isListening ? 'text-red-400 animate-pulse' : 'text-white'}`}>
                                     {voiceTranscript}
                                 </p>
                             </div>
                         )}
                     </div>
 
-                    {/* Chat Messages Area (Main Content) */}
+                    {/* Chat Messages Area */}
                     <section
-                        className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-900"
-                        aria-label="Conversation History"
-                        tabIndex={0} // Make scrollable area focusable
+                        className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950"
+                        aria-label="ประวัติการสนทนา"
+                        tabIndex={0}
                         ref={(el) => {
-                            // Auo-scroll and focus new messages
                             if (el && aiMessages.length > 0) {
                                 el.scrollTop = el.scrollHeight;
                             }
                         }}
                     >
                         {aiMessages.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full text-zinc-500 text-center p-6">
-                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="mb-4 opacity-50"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
-                                <h3 className="text-xl font-bold text-white mb-2">แตะเพื่อมองโลก</h3>
-                                <p className="text-sm">กดปุ่มกล้องเพื่อถ่ายภาพ <br /> หรือ <b>กดปุ่มไมค์ค้าง</b> เพื่อพูดถาม</p>
+                            <div className="flex flex-col items-center justify-center h-full text-center px-8">
+                                {/* Large accessible icon */}
+                                <div className="w-24 h-24 rounded-full bg-sky-500/20 border-2 border-sky-500/40 flex items-center justify-center mb-6">
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                </div>
+                                <h2 className="text-2xl font-black text-white mb-3">ผู้ช่วย AI พร้อมแล้ว</h2>
+                                <p className="text-lg text-zinc-400 leading-relaxed">
+                                    กดปุ่ม <span className="text-sky-400 font-bold">ถ่ายภาพ</span> เพื่อให้ AI บรรยาย
+                                    <br />หรือ <span className="text-red-400 font-bold">กดค้างปุ่มไมค์</span> เพื่อพูดถาม
+                                </p>
                             </div>
                         )}
 
-                        <ul className="space-y-6">
+                        <ul className="space-y-4">
                             {aiMessages.map((msg, i) => (
                                 <li key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                    {/* User (Image) */}
+                                    {/* User message with image */}
                                     {msg.role === 'user' && msg.image && (
-                                        <div className="bg-zinc-800 rounded-2xl rounded-br-sm p-1 max-w-[85%] border border-zinc-700">
+                                        <div className="bg-zinc-800 rounded-2xl rounded-br-sm p-1 max-w-[80%] border border-zinc-700">
                                             <img
                                                 src={msg.image}
-                                                alt={`Captured image ${i / 2 + 1}`}
-                                                className="rounded-xl max-h-48 w-auto object-contain bg-black"
+                                                alt={`ภาพที่ถ่ายครั้งที่ ${Math.floor(i / 2) + 1}`}
+                                                className="rounded-xl max-h-40 w-auto object-contain bg-black"
                                             />
-                                            <p className="sr-only">You sent a photo</p>
+                                            <p className="sr-only">คุณส่งภาพถ่าย</p>
+                                        </div>
+                                    )}
+
+                                    {/* User voice message (no image) */}
+                                    {msg.role === 'user' && !msg.image && (
+                                        <div className="bg-sky-900/50 rounded-2xl rounded-br-sm px-5 py-3 max-w-[85%] border border-sky-700/50">
+                                            <p className="text-base text-sky-100">{msg.content}</p>
                                         </div>
                                     )}
 
                                     {/* AI Response */}
                                     {msg.role === 'ai' && (
                                         <div
-                                            className={`mt-2 rounded-2xl rounded-bl-sm p-5 max-w-[95%] shadow-lg ${msg.content.startsWith('Error') ? 'bg-red-900/80 text-white' : 'bg-zinc-800 text-white border border-zinc-700'
+                                            className={`mt-2 rounded-2xl rounded-bl-sm p-5 max-w-[95%] shadow-lg ${msg.content.startsWith('Error') || msg.content.startsWith('ขอโทษ') || msg.content.startsWith('เกิดข้อผิดพลาด')
+                                                ? 'bg-red-900/60 text-white border border-red-700/50'
+                                                : 'bg-zinc-800 text-white border border-zinc-700'
                                                 }`}
-                                            tabIndex={0} // Allow focus to read specifically
-                                            ref={(el) => {
-                                                // Auto focus latest AI message
-                                                if (el && i === aiMessages.length - 1) {
-                                                    el.focus();
-                                                }
-                                            }}
                                         >
-                                            <p className="text-base leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                                            <p className="sr-only">End of response</p>
+                                            <p className="text-lg leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                                            <p className="sr-only">จบคำตอบ</p>
                                         </div>
                                     )}
                                 </li>
@@ -1219,65 +1185,94 @@ export default function BlindPage() {
                         </ul>
                     </section>
 
-                    {/* Bottom Control Bar */}
-                    <div className="bg-black border-t border-zinc-800 p-6 flex items-center justify-around pb-10" role="group" aria-label="Controls">
-                        {/* Clear Chat Button */}
-                        <button
-                            onClick={() => {
-                                setAiMessages([]);
-                                hapticRef.current?.trigger(1);
-                            }}
-                            className="p-4 rounded-full bg-zinc-900 text-zinc-400 border border-zinc-800 active:bg-zinc-800 focus:ring-2 focus:ring-white focus:outline-none"
-                            aria-label="ล้างแชทเก่า"
-                        >
-                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                        </button>
+                    {/* Bottom Control Bar (Accessible - Large Touch Targets) */}
+                    <div className="bg-black border-t-2 border-zinc-800 px-6 py-5 pb-10" role="group" aria-label="ปุ่มควบคุม">
+                        <div className="flex items-center justify-center gap-6">
+                            {/* Clear Chat Button (Left - Small) */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setAiMessages([]);
+                                    hapticRef.current?.trigger(1);
+                                }}
+                                className="w-14 h-14 rounded-full bg-zinc-900 text-zinc-500 border border-zinc-800 active:bg-zinc-700 focus:ring-2 focus:ring-white focus:outline-none flex items-center justify-center"
+                                aria-label="ล้างแชทเก่า"
+                            >
+                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                            </button>
 
-                        {/* Capture Button (Center) */}
-                        <button
-                            disabled={!aiReady || aiStatus === 'thinking' || isListening}
-                            onClick={() => captureAndAsk()}
-                            className={`
-                                relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-200 shadow-xl
-                                focus:ring-4 focus:ring-sky-300 focus:outline-none 
-                                ${(!aiReady || aiStatus === 'thinking') ? 'bg-zinc-800 opacity-50 cursor-not-allowed' : 'bg-sky-500 hover:bg-sky-400 active:scale-95 active:bg-sky-600'}
-                            `}
-                            aria-label={aiStatus === 'thinking' ? "กำลังคิด..." : "ถ่ายภาพและให้ AI บรรยาย"}
-                            aria-busy={aiStatus === 'thinking'}
-                        >
-                            {aiStatus === 'thinking' ? (
-                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                            ) : (
-                                <div className="flex flex-col items-center">
+                            {/* Capture Button (Center - LARGE for accessibility) */}
+                            <button
+                                type="button"
+                                disabled={!aiReady || aiStatus === 'thinking' || isListening}
+                                onClick={() => captureAndAsk()}
+                                className={`
+                                    relative w-[88px] h-[88px] rounded-full flex items-center justify-center transition-all duration-200
+                                    shadow-[0_0_25px_rgba(56,189,248,0.3)] border-4
+                                    focus:ring-4 focus:ring-sky-300 focus:outline-none
+                                    ${(!aiReady || aiStatus === 'thinking')
+                                        ? 'bg-zinc-800 opacity-50 cursor-not-allowed border-zinc-700'
+                                        : 'bg-sky-500 hover:bg-sky-400 active:scale-90 active:bg-sky-600 border-sky-300'}
+                                `}
+                                aria-label={aiStatus === 'thinking' ? "AI กำลังคิด รอสักครู่" : "ถ่ายภาพเพื่อให้ AI บรรยาย"}
+                                aria-busy={aiStatus === 'thinking'}
+                            >
+                                {aiStatus === 'thinking' ? (
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                                ) : (
                                     <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>
-                                    <span className="sr-only">Snap</span>
-                                </div>
-                            )}
-                        </button>
+                                )}
+                            </button>
 
-                        {/* Voice Input Button (Right) - Hold to Talk */}
-                        <button
-                            onMouseDown={startListening}
-                            onMouseUp={stopListening}
-                            onMouseLeave={stopListening}
-                            onTouchStart={startListening}
-                            onTouchEnd={stopListening}
-                            className={`p-4 rounded-full border active:bg-zinc-800 focus:ring-2 focus:ring-white focus:outline-none transition-all duration-150 ${isListening ? 'bg-red-600 text-white border-red-500 scale-110 shadow-[0_0_15px_rgba(220,38,38,0.7)]' : 'bg-zinc-900 text-zinc-400 border-zinc-800'
-                                }`}
-                            aria-label="กดค้างเพื่อพูด (ปล่อยเพื่อส่ง)"
-                            aria-pressed={isListening}
-                        >
-                            {isListening ? (
-                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                            ) : (
-                                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                            )}
-                        </button>
+                            {/* Voice Input Button (Right - Hold to Talk) */}
+                            <button
+                                type="button"
+                                onMouseDown={startListening}
+                                onMouseUp={stopListening}
+                                onMouseLeave={stopListening}
+                                onTouchStart={startListening}
+                                onTouchEnd={stopListening}
+                                className={`w-16 h-16 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none transition-all duration-150 ${isListening
+                                    ? 'bg-red-600 text-white border-red-400 scale-110 shadow-[0_0_20px_rgba(220,38,38,0.7)]'
+                                    : 'bg-zinc-900 text-zinc-400 border-zinc-700 active:bg-zinc-700'
+                                    }`}
+                                aria-label="กดค้างเพื่อพูดคำถาม ปล่อยเพื่อส่ง"
+                                aria-pressed={isListening}
+                            >
+                                {isListening ? (
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                ) : (
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
-                    {/* Debug Log (Simplified) */}
+                    {/* Floating "Call Volunteer" Button (Bottom-Right Corner) */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            // Cleanup AI resources
+                            if (aiStreamRef.current) {
+                                aiStreamRef.current.getTracks().forEach(t => t.stop());
+                                aiStreamRef.current = null;
+                            }
+                            setAiReady(false);
+                            setObjectDetectorEnabled(false);
+                            // Switch to volunteer mode
+                            setMode('volunteer');
+                            hapticRef.current?.trigger(2);
+                        }}
+                        className="absolute top-20 right-4 z-40 flex items-center gap-2 bg-amber-500/90 hover:bg-amber-400 active:bg-amber-600 active:scale-95 text-black px-4 py-2.5 rounded-full backdrop-blur-md shadow-lg border border-amber-300/50 transition-all"
+                        aria-label="เปลี่ยนเป็นโหมดโทรหาอาสาสมัคร"
+                    >
+                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" strokeWidth="0"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        <span className="font-bold text-sm">โทรหาอาสา</span>
+                    </button>
+
+                    {/* Debug Log */}
                     {logs.length > 0 && (
-                        <div className="absolute bottom-32 left-4 right-4 bg-black/90 p-3 rounded-lg border border-white/10 max-h-24 overflow-y-auto pointer-events-none" aria-hidden="true">
+                        <div className="absolute bottom-36 left-4 right-4 bg-black/90 p-3 rounded-lg border border-white/10 max-h-24 overflow-y-auto pointer-events-none" aria-hidden="true">
                             <div className="font-mono text-[10px] space-y-1">
                                 {logs.slice(-3).map((log, i) => (
                                     <p key={i} className="text-zinc-400 truncate">{log}</p>
@@ -1286,256 +1281,266 @@ export default function BlindPage() {
                         </div>
                     )}
                 </main>
-            )}
+            )
+            }
 
             {/* ==================== VOLUNTEER MODE UI ==================== */}
-            {mode === 'volunteer' && (
-                <>
+            {
+                mode === 'volunteer' && (
+                    <>
 
 
 
 
-                    {/* IDLE STATE */}
-                    {status === 'idle' && (
-                        <button
-                            onClick={startCall}
-                            className="w-full h-full flex flex-col items-center justify-center relative group"
-                        >
-                            <div className="absolute inset-0 bg-linear-to-br from-amber-400 to-orange-600 transition-all duration-500 group-active:scale-[0.98]"></div>
+                        {/* IDLE STATE */}
+                        {status === 'idle' && (
+                            <button
+                                type="button"
+                                onClick={startCall}
+                                className="w-full h-full flex flex-col items-center justify-center relative group"
+                            >
+                                <div className="absolute inset-0 bg-linear-to-br from-amber-400 to-orange-600 transition-all duration-500 group-active:scale-[0.98]"></div>
 
-                            {/* Ripple Effect */}
-                            <div className="absolute w-[500px] h-[500px] bg-white/10 rounded-full animate-ping opacity-20"></div>
+                                {/* Ripple Effect */}
+                                <div className="absolute w-[500px] h-[500px] bg-white/10 rounded-full animate-ping opacity-20"></div>
 
-                            <div className="z-10 flex flex-col items-center">
-                                <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-sm shadow-2xl">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white drop-shadow-md">
-                                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                                <div className="z-10 flex flex-col items-center">
+                                    <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-sm shadow-2xl">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white drop-shadow-md">
+                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                                        </svg>
+                                    </div>
+                                    <span className="text-6xl font-black uppercase tracking-tighter text-white drop-shadow-lg text-center leading-none">
+                                        Call<br />Help
+                                    </span>
+                                    <span className="mt-4 text-xl font-medium text-white/90 bg-black/10 px-4 py-1 rounded-full">
+                                        Tap anywhere to start
+                                    </span>
+                                </div>
+                            </button>
+                        )}
+
+                        {/* INITIALIZING STATE */}
+                        {status === 'initializing' && (
+                            <div className="w-full h-full flex items-center justify-center bg-zinc-900">
+                                <div className="flex flex-col items-center animate-pulse">
+                                    <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-6"></div>
+                                    <div className="text-2xl font-bold text-amber-500 tracking-widest">STARTING CAMERA...</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* WAITING STATE */}
+                        {status === 'waiting' && (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-40 grayscale" />
+
+                                {/* Radar Animation Overlay */}
+                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000_100%)]"></div>
+
+                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
+                                    <div className="relative mb-12">
+                                        <div className="absolute inset-0 bg-sky-500/30 rounded-full animate-ping"></div>
+                                        <div className="relative bg-sky-500/20 p-6 rounded-full border border-sky-500/50 backdrop-blur-md">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
+                                                <circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-3xl font-bold text-center mb-2">Searching...</div>
+                                    <div className="text-gray-400 text-center mb-12">Finding an available volunteer</div>
+
+                                    <button
+                                        type="button"
+                                        onClick={endCall}
+                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M18 6 6 18" />
+                                            <path d="m6 6 12 12" />
+                                        </svg>
+                                        Cancel Request
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* NO VOLUNTEERS STATE */}
+                        {status === 'no-volunteers' && (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" />
+
+                                {/* Dark Overlay */}
+                                <div className="absolute inset-0 bg-gradient-to-b from-red-900/30 to-black"></div>
+
+                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
+                                    {/* Warning Icon */}
+                                    <div className="relative mb-8">
+                                        <div className="absolute inset-0 bg-amber-500/20 rounded-full animate-pulse"></div>
+                                        <div className="relative bg-amber-500/10 p-6 rounded-full border border-amber-500/50 backdrop-blur-md">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
+                                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-3xl font-bold text-center mb-2 text-amber-400">ไม่มีอาสาออนไลน์</div>
+                                    <div className="text-gray-400 text-center mb-4">ขณะนี้ยังไม่มีอาสาสมัครพร้อมให้บริการ</div>
+
+                                    {/* Retry Indicator */}
+                                    <div className="flex items-center gap-2 text-sky-400 mb-8">
+                                        <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
+                                        <span className="text-sm">กำลังค้นหาใหม่อัตโนมัติ...</span>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={endCall}
+                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M18 6 6 18" />
+                                            <path d="m6 6 12 12" />
+                                        </svg>
+                                        ยกเลิก
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EXHAUSTED STATE - หมดอาสาแล้ว */}
+                        {status === 'exhausted' && (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
+                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale" />
+
+                                {/* Dark Overlay */}
+                                <div className="absolute inset-0 bg-linear-to-b from-red-900/40 to-black"></div>
+
+                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
+                                    {/* Stop Icon */}
+                                    <div className="relative mb-8">
+                                        <div className="relative bg-red-500/20 p-6 rounded-full border border-red-500/50 backdrop-blur-md">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="15" y1="9" x2="9" y2="15"></line>
+                                                <line x1="9" y1="9" x2="15" y2="15"></line>
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div className="text-3xl font-bold text-center mb-2 text-red-400">ไม่มีอาสาว่าง</div>
+                                    <div className="text-gray-400 text-center mb-8">ขณะนี้อาสาสมัครทุกคนไม่ว่าง<br />กรุณาลองใหม่ภายหลัง</div>
+
+                                    {/* Retry Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setStatus('idle');
+                                            setTimeout(() => startCall(), 100);
+                                        }}
+                                        className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-black py-6 rounded-2xl text-xl font-bold transition-all shadow-lg flex items-center justify-center gap-3 mb-4"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                                            <path d="M3 3v5h5" />
+                                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                                            <path d="M16 21h5v-5" />
+                                        </svg>
+                                        ลองอีกครั้ง
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={endCall}
+                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-4 rounded-2xl text-lg font-medium transition-all border border-zinc-700"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CONFIRMING STATE */}
+                        {status === 'confirming' && (
+                            <button
+                                type="button"
+                                onClick={confirmConnection}
+                                className="w-full h-full flex flex-col items-center justify-center bg-linear-to-b from-emerald-500 to-teal-700 animate-in fade-in duration-300"
+                            >
+                                <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-md animate-bounce">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white">
+                                        <path d="M9 11l3 3L22 4"></path>
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                                     </svg>
                                 </div>
-                                <span className="text-6xl font-black uppercase tracking-tighter text-white drop-shadow-lg text-center leading-none">
-                                    Call<br />Help
+                                <span className="text-4xl font-black uppercase text-center text-white drop-shadow-md mb-2">
+                                    Volunteer Found!
                                 </span>
-                                <span className="mt-4 text-xl font-medium text-white/90 bg-black/10 px-4 py-1 rounded-full">
-                                    Tap anywhere to start
+                                <span className="text-white/80 text-xl font-medium animate-pulse">
+                                    Tap screen to start talking
                                 </span>
-                            </div>
-                        </button>
-                    )}
+                            </button>
+                        )}
 
-                    {/* INITIALIZING STATE */}
-                    {status === 'initializing' && (
-                        <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-                            <div className="flex flex-col items-center animate-pulse">
-                                <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                                <div className="text-2xl font-bold text-amber-500 tracking-widest">STARTING CAMERA...</div>
-                            </div>
-                        </div>
-                    )}
+                        {/* CONNECTED STATE */}
+                        {status === 'connected' && (
+                            <div className="w-full h-full relative bg-zinc-900">
+                                <video ref={myVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                                <audio ref={remoteVideoRef} autoPlay />
 
-                    {/* WAITING STATE */}
-                    {status === 'waiting' && (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                            <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-40 grayscale" />
+                                {/* Overlay Gradient for contrast */}
+                                <div className="absolute inset-x-0 bottom-0 h-48 bg-linear-to-t from-black/90 to-transparent pointer-events-none"></div>
 
-                            {/* Radar Animation Overlay */}
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000_100%)]"></div>
-
-                            <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                <div className="relative mb-12">
-                                    <div className="absolute inset-0 bg-sky-500/30 rounded-full animate-ping"></div>
-                                    <div className="relative bg-sky-500/20 p-6 rounded-full border border-sky-500/50 backdrop-blur-md">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
-                                            <circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
+                                {/* Controls */}
+                                <div className="absolute bottom-10 inset-x-0 flex items-center justify-center gap-8 z-20">
+                                    {/* Mute Button */}
+                                    <button
+                                        type="button"
+                                        onClick={toggleMute}
+                                        className={`flex items-center justify-center w-16 h-16 rounded-full shadow-xl border-2 border-white/20 transition-all active:scale-95 ${isMuted ? 'bg-white text-zinc-900' : 'bg-zinc-800/60 backdrop-blur-md text-white'}`}
+                                        aria-label={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                                    >
+                                        {isMuted ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <line x1="1" y1="1" x2="23" y2="23"></line>
+                                                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                                                <path d="M17 16.95A7 7 0 0 1 5 12v-2"></path>
+                                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                                            </svg>
+                                        )}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={endCall}
+                                        className="group flex items-center justify-center w-24 h-24 bg-red-600 active:bg-red-700 rounded-full shadow-2xl border-4 border-white/10 transition-transform active:scale-95"
+                                        aria-label="End Call"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                                            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><path d="M22 2l-7 7" /><path d="M15 2l7 7" />
                                         </svg>
-                                    </div>
+                                    </button>
                                 </div>
 
-                                <div className="text-3xl font-bold text-center mb-2">Searching...</div>
-                                <div className="text-gray-400 text-center mb-12">Finding an available volunteer</div>
-
-                                <button
-                                    onClick={endCall}
-                                    className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M18 6 6 18" />
-                                        <path d="m6 6 12 12" />
-                                    </svg>
-                                    Cancel Request
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* NO VOLUNTEERS STATE */}
-                    {status === 'no-volunteers' && (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                            <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" />
-
-                            {/* Dark Overlay */}
-                            <div className="absolute inset-0 bg-gradient-to-b from-red-900/30 to-black"></div>
-
-                            <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                {/* Warning Icon */}
-                                <div className="relative mb-8">
-                                    <div className="absolute inset-0 bg-amber-500/20 rounded-full animate-pulse"></div>
-                                    <div className="relative bg-amber-500/10 p-6 rounded-full border border-amber-500/50 backdrop-blur-md">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
-                                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                            <line x1="12" y1="9" x2="12" y2="13"></line>
-                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                        </svg>
-                                    </div>
+                                {/* Live Indicator */}
+                                <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur text-white px-4 py-1 rounded-full text-xs font-bold tracking-wider flex items-center gap-2 shadow-lg">
+                                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                                    LIVE
                                 </div>
-
-                                <div className="text-3xl font-bold text-center mb-2 text-amber-400">ไม่มีอาสาออนไลน์</div>
-                                <div className="text-gray-400 text-center mb-4">ขณะนี้ยังไม่มีอาสาสมัครพร้อมให้บริการ</div>
-
-                                {/* Retry Indicator */}
-                                <div className="flex items-center gap-2 text-sky-400 mb-8">
-                                    <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-                                    <span className="text-sm">กำลังค้นหาใหม่อัตโนมัติ...</span>
-                                </div>
-
-                                <button
-                                    onClick={endCall}
-                                    className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M18 6 6 18" />
-                                        <path d="m6 6 12 12" />
-                                    </svg>
-                                    ยกเลิก
-                                </button>
                             </div>
-                        </div>
-                    )}
-
-                    {/* EXHAUSTED STATE - หมดอาสาแล้ว */}
-                    {status === 'exhausted' && (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                            <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale" />
-
-                            {/* Dark Overlay */}
-                            <div className="absolute inset-0 bg-linear-to-b from-red-900/40 to-black"></div>
-
-                            <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                {/* Stop Icon */}
-                                <div className="relative mb-8">
-                                    <div className="relative bg-red-500/20 p-6 rounded-full border border-red-500/50 backdrop-blur-md">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
-                                            <circle cx="12" cy="12" r="10"></circle>
-                                            <line x1="15" y1="9" x2="9" y2="15"></line>
-                                            <line x1="9" y1="9" x2="15" y2="15"></line>
-                                        </svg>
-                                    </div>
-                                </div>
-
-                                <div className="text-3xl font-bold text-center mb-2 text-red-400">ไม่มีอาสาว่าง</div>
-                                <div className="text-gray-400 text-center mb-8">ขณะนี้อาสาสมัครทุกคนไม่ว่าง<br />กรุณาลองใหม่ภายหลัง</div>
-
-                                {/* Retry Button */}
-                                <button
-                                    onClick={() => {
-                                        setStatus('idle');
-                                        setTimeout(() => startCall(), 100);
-                                    }}
-                                    className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-black py-6 rounded-2xl text-xl font-bold transition-all shadow-lg flex items-center justify-center gap-3 mb-4"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                        <path d="M3 3v5h5" />
-                                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                                        <path d="M16 21h5v-5" />
-                                    </svg>
-                                    ลองอีกครั้ง
-                                </button>
-
-                                <button
-                                    onClick={endCall}
-                                    className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-4 rounded-2xl text-lg font-medium transition-all border border-zinc-700"
-                                >
-                                    ยกเลิก
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* CONFIRMING STATE */}
-                    {status === 'confirming' && (
-                        <button
-                            onClick={confirmConnection}
-                            className="w-full h-full flex flex-col items-center justify-center bg-linear-to-b from-emerald-500 to-teal-700 animate-in fade-in duration-300"
-                        >
-                            <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-md animate-bounce">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                                    <path d="M9 11l3 3L22 4"></path>
-                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                                </svg>
-                            </div>
-                            <span className="text-4xl font-black uppercase text-center text-white drop-shadow-md mb-2">
-                                Volunteer Found!
-                            </span>
-                            <span className="text-white/80 text-xl font-medium animate-pulse">
-                                Tap screen to start talking
-                            </span>
-                        </button>
-                    )}
-
-                    {/* CONNECTED STATE */}
-                    {status === 'connected' && (
-                        <div className="w-full h-full relative bg-zinc-900">
-                            <video ref={myVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-                            <audio ref={remoteVideoRef} autoPlay />
-
-                            {/* Overlay Gradient for contrast */}
-                            <div className="absolute inset-x-0 bottom-0 h-48 bg-linear-to-t from-black/90 to-transparent pointer-events-none"></div>
-
-                            {/* Controls */}
-                            <div className="absolute bottom-10 inset-x-0 flex items-center justify-center gap-8 z-20">
-                                {/* Mute Button */}
-                                <button
-                                    onClick={toggleMute}
-                                    className={`flex items-center justify-center w-16 h-16 rounded-full shadow-xl border-2 border-white/20 transition-all active:scale-95 ${isMuted ? 'bg-white text-zinc-900' : 'bg-zinc-800/60 backdrop-blur-md text-white'}`}
-                                    aria-label={isMuted ? "Unmute Microphone" : "Mute Microphone"}
-                                >
-                                    {isMuted ? (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <line x1="1" y1="1" x2="23" y2="23"></line>
-                                            <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                                            <path d="M17 16.95A7 7 0 0 1 5 12v-2"></path>
-                                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                                        </svg>
-                                    ) : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                            <line x1="12" y1="19" x2="12" y2="23"></line>
-                                            <line x1="8" y1="23" x2="16" y2="23"></line>
-                                        </svg>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={endCall}
-                                    className="group flex items-center justify-center w-24 h-24 bg-red-600 active:bg-red-700 rounded-full shadow-2xl border-4 border-white/10 transition-transform active:scale-95"
-                                    aria-label="End Call"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                                        <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><path d="M22 2l-7 7" /><path d="M15 2l7 7" />
-                                    </svg>
-                                </button>
-                            </div>
-
-                            {/* Live Indicator */}
-                            <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur text-white px-4 py-1 rounded-full text-xs font-bold tracking-wider flex items-center gap-2 shadow-lg">
-                                <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                                LIVE
-                            </div>
-                        </div>
-                    )}
-                </>
-            )
+                        )}
+                    </>
+                )
             }
         </div >
     );

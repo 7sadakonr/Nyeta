@@ -1,476 +1,281 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-// import io from 'socket.io-client'; // Removed
-import { createPusherClient } from '@/lib/pusher';
-import Peer from 'peerjs';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import HapticFeedback from '@/components/HapticFeedback';
+import { useVolunteerHelp } from '@/hooks/useVolunteerHelp';
 import { useWakeLock } from '@/hooks/useWakeLock';
+import { useDataChannel } from '@/hooks/useDataChannel';
+import ChatPanel from '@/components/ChatPanel';
+import ImageViewer from '@/components/ImageViewer';
+import CaptureControls from '@/components/CaptureControls';
 
 export default function VolunteerPage() {
-    const { isSupported: wakeLockSupported, request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
-    const [isOnline, setIsOnline] = useState(false);
-    const [status, setStatus] = useState('offline'); // offline, online, ringing, connected
-    const [blindUserId, setBlindUserId] = useState(null);
-    const [remoteStream, setRemoteStream] = useState(null);
+    const {
+        status,
+        online,
+        volunteerCount,
+        incomingCall,
+        error,
+        remoteVideoRef,
+        goOnline,
+        goOffline,
+        acceptCall,
+        endCall,
+        pcRef,
+    } = useVolunteerHelp();
 
-    const pusherRef = useRef(null);
-    const peerRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const localStreamRef = useRef(null);
-    const hapticRef = useRef(null); // Reference to HapticFeedback component
-    const dataConnRef = useRef(null); // Data connection for controls
-
-    const [isFlashOn, setIsFlashOn] = useState(false);
-
-    const [logs, setLogs] = useState([]);
-    const addLog = (msg) => {
-        console.log(msg);
-        setLogs(prev => [...prev.slice(-5), msg]);
-    };
-
-    // Socket Ref was removed, we use PusherRef now
-    const socketRef = useRef(null); // Keep for compatibility if I missed any references, but ideally remove.
-
-    const endCall = async (notifyRemote = true) => {
-        // notifyRemote defaults to true (e.g. invalid 'close' event or manual hangup)
-        // If notifyRemote is true, we try to tell the blind user.
-        // We use blindUserId from state. CAUTION: If this function is called from a stale closure where blindUserId is null, it won't trigger.
-        // However, for Manual 'End Call' button, it's fresh.
-        // For 'close' event, it's captured when answerCall executed.
-
-        if (notifyRemote && blindUserId && pusherRef.current) {
-            try {
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: `private-user-${blindUserId}`,
-                        event: 'end-call',
-                        data: { by: 'volunteer' },
-                        socketId: pusherRef.current?.connection.socket_id
-                    })
-                });
-            } catch (err) {
-                console.error('End call notify error:', err);
-            }
-        }
-
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(t => t.stop());
-            localStreamRef.current = null;
-        }
-        setStatus('online');
-        setBlindUserId(null);
-        setRemoteStream(null);
-        addLog('Call ended');
-    };
+    const dataChannel = useDataChannel(pcRef, 'volunteer');
+    const [messages, setMessages] = useState([]);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [capturedImage, setCapturedImage] = useState(null);
+    const [captureState, setCaptureState] = useState('idle');
 
     useEffect(() => {
-        return () => {
-            if (pusherRef.current) pusherRef.current.disconnect();
-            if (peerRef.current) peerRef.current.destroy();
-            if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+        if (!dataChannel) return;
+
+        const handleMessage = (message) => {
+            if (message.type === 'chat') {
+                setMessages(prev => [...prev, { ...message.payload, timestamp: Date.now() }]);
+                if (!isChatOpen) setUnreadCount(c => c + 1);
+            } else if (message.type === 'capture-response') {
+                setCapturedImage(message.payload.image);
+                setCaptureState('idle');
+            } else if (message.type === 'capture-status') {
+                setCaptureState(message.payload.status);
+            }
         };
-    }, []);
 
-    const setupPusher = (myId) => {
-        if (pusherRef.current) return;
+        dataChannel.onMessage(handleMessage);
+        return () => dataChannel.offMessage(handleMessage);
+    }, [dataChannel, isChatOpen]);
 
-        const pusher = createPusherClient(myId, 'volunteer');
-        pusherRef.current = pusher;
-
-        // Private channel for receiving direct calls (random selection)
-        const privateChannel = pusher.subscribe(`private-user-${myId}`);
-        privateChannel.bind('incoming-request', ({ blindPeerId }) => {
-            setBlindUserId(blindPeerId);
-            setStatus('ringing');
-            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        });
-
-        // Listen for end-call
-        privateChannel.bind('end-call', () => {
-            addLog('Blind ended call');
-            endCall(false);
-        });
-    };
-
-    const toggleOnline = async () => {
-        if (isOnline) {
-            // GO OFFLINE
-            if (pusherRef.current) {
-                pusherRef.current.unsubscribe('presence-volunteers');
-            }
-            setIsOnline(false);
-            setStatus('offline');
-            addLog('Offline');
-        } else {
-            // GO ONLINE
-            if (!peerRef.current || peerRef.current.destroyed) {
-                const peer = new Peer(undefined, {
-                    config: {
-                        iceServers: [
-                            { urls: 'stun:stun.l.google.com:19302' },
-                            { urls: 'stun:stun.relay.metered.ca:80' },
-                            { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' },
-                            { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' }
-                        ]
-                    }
-                });
-                peerRef.current = peer;
-
-                peer.on('open', (id) => {
-                    setupPusher(id);
-
-                    // Subscribe to presence channel to be visible as online
-                    const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
-
-                    // Also listen on presence channel for fallback (broadcast) calls
-                    presenceChannel.bind('incoming-request', ({ blindPeerId, socketId }) => {
-                        // socketId check to avoid huge self-echo if we were the sender (not relevant here but good practice)
-                        setBlindUserId(blindPeerId);
-                        setStatus('ringing');
-                        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                    });
-
-                    setIsOnline(true);
-                    setStatus('online');
-                });
-
-                peer.on('error', (e) => console.error('Peer error:', e));
-
-                // If accepting call logic needs Peer, we should reuse this instance.
-            } else {
-                // Reuse existing peer
-                if (!pusherRef.current) {
-                    setupPusher(peerRef.current.id);
-                }
-                const presenceChannel = pusherRef.current.subscribe('presence-volunteers');
-                presenceChannel.bind('incoming-request', ({ blindPeerId }) => {
-                    setBlindUserId(blindPeerId);
-                    setStatus('ringing');
-                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                });
-
-                setIsOnline(true);
-                setStatus('online');
-            }
+    const handleSendMessage = useCallback((text) => {
+        if (dataChannel) {
+            dataChannel.sendChat(text);
+            setMessages(prev => [...prev, { text, from: 'volunteer', timestamp: Date.now() }]);
         }
-    };
+    }, [dataChannel]);
 
-    const answerCall = async () => {
-        hapticRef.current?.trigger(3, 80);
-        setStatus('connecting');
-        addLog('Getting microphone...');
-
-        let myStream = null;
-        try {
-            myStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            localStreamRef.current = myStream;
-        } catch (err) {
-            addLog('No mic: ' + err.name);
-            // ... fallback to silent stream
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const oscillator = audioContext.createOscillator();
-            const destination = audioContext.createMediaStreamDestination();
-            oscillator.connect(destination);
-            oscillator.start();
-            oscillator.frequency.value = 0;
-            myStream = destination.stream;
+    const handleCaptureRequest = useCallback((options) => {
+        if (dataChannel) {
+            setCaptureState('requesting');
+            dataChannel.sendCaptureRequest(options);
         }
+    }, [dataChannel]);
 
-        // We already have Peer initialized from toggleOnline
-        const peer = peerRef.current;
-        if (!peer) {
-            addLog('Error: Peer missing');
+    const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
+    const ringIntervalRef = useRef(null);
+
+    // Simple ringtone while a call is incoming.
+    useEffect(() => {
+        if (!incomingCall) {
+            if (ringIntervalRef.current) {
+                clearInterval(ringIntervalRef.current);
+                ringIntervalRef.current = null;
+            }
             return;
         }
 
-        // Notify blind user we are ready via Pusher Trigger
-        addLog('Accepting call...');
-        try {
-            await fetch('/api/pusher/trigger', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    channel: `private-user-${blindUserId}`,
-                    event: 'volunteer-ready',
-                    data: { volunteerId: peer.id }
-                })
-            });
-        } catch (e) {
-            addLog('Accept Err: ' + e.message);
-        }
-
-        // Wait for incoming call (or we call them? original logic: they call us)
-        // Original logic: socket.emit('volunteer-ready') -> server tells blind -> blind calls us.
-        // So we just wait for 'call' event on peer.
-
-        peer.on('call', (call) => {
-            addLog('Blind calling us!');
-            call.answer(myStream);
-            setStatus('connected');
-
-            call.on('stream', (stream) => {
-                setRemoteStream(stream);
-            });
-
-            call.on('close', () => endCall());
-
-            // ... (keep data conn logic)
-            const conn = peer.connect(call.peer);
-            conn.on('open', () => { dataConnRef.current = conn; });
-        });
-    };
-
-
-
-    const rejectCall = async () => {
-        if (blindUserId && pusherRef.current) {
+        const beep = () => {
             try {
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: `private-user-${blindUserId}`,
-                        event: 'call-rejected',
-                        data: { by: pusherRef.current.connection.socket_id },
-                        socketId: pusherRef.current?.connection.socket_id
-                    })
-                });
-            } catch (err) {
-                console.error('Reject notify error:', err);
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                const now = ctx.currentTime;
+                osc.frequency.value = 980;
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            } catch {
+                /* noop */
             }
-        }
-        setBlindUserId(null);
-        setStatus('online');
-        addLog('Rejected');
-    };
+            if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
+        };
 
-    const [isMuted, setIsMuted] = useState(false);
-
-    const toggleMute = () => {
-        if (localStreamRef.current) {
-            const audioTrack = localStreamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled;
-                setIsMuted(!audioTrack.enabled);
-                addLog(audioTrack.enabled ? 'Unmuted' : 'Muted');
-                hapticRef.current?.trigger(1);
+        beep();
+        ringIntervalRef.current = setInterval(beep, 1500);
+        return () => {
+            if (ringIntervalRef.current) {
+                clearInterval(ringIntervalRef.current);
+                ringIntervalRef.current = null;
             }
-        }
-    };
+        };
+    }, [incomingCall]);
 
-    const toggleFlash = () => {
-        if (dataConnRef.current) {
-            const newState = !isFlashOn;
-            dataConnRef.current.send({ type: 'TOGGLE_FLASH', value: newState });
-            setIsFlashOn(newState);
-            addLog('Flash: ' + newState);
-            hapticRef.current?.trigger(1);
-        } else {
-            addLog('No data conn');
-        }
-    };
+    const inCall = status === 'connecting' || status === 'connected';
 
-    // Attach remote stream when connected and element is ready
+    // Keep the screen awake during a call so it isn't backgrounded mid-call.
     useEffect(() => {
-        if (status === 'connected' && remoteVideoRef.current && remoteStream) {
-            addLog('Attaching stream to video');
-            remoteVideoRef.current.srcObject = remoteStream;
-            remoteVideoRef.current.onloadedmetadata = () => {
-                if (remoteVideoRef.current) {
-                    remoteVideoRef.current.play().catch(e => addLog('Play err: ' + e.message));
-                }
-            };
-        }
-    }, [status, remoteStream]);
+        if (inCall) requestWakeLock();
+        else releaseWakeLock();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [inCall]);
 
     return (
-        <div className="flex flex-col h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
-            {/* Hidden Haptic Feedback Component */}
-            <HapticFeedback ref={hapticRef} />
-
-            {/* Top Navigation Bar */}
-            <div className="absolute top-0 left-0 right-0 p-4 z-40 bg-white/80 backdrop-blur-md flex justify-between items-center shadow-sm">
-                <Link href="/" className="px-4 py-2 bg-slate-100 rounded-full font-bold text-slate-600 hover:bg-slate-200 transition-colors">
-                    ← Home
+        <div className="flex flex-col min-h-screen bg-slate-950 text-white font-sans">
+            {/* Header */}
+            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+                <Link href="/" className="flex items-center gap-2 text-slate-300 hover:text-white" aria-label="กลับหน้าหลัก">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                    <span className="font-semibold">อาสาสมัคร</span>
                 </Link>
-                <h1 className="text-lg font-bold text-slate-800">Volunteer Dashboard</h1>
-                <div className={`w-3 h-3 rounded-full ${isOnline ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-slate-300'}`}></div>
-            </div>
+                <span
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold ${
+                        online ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    }`}
+                >
+                    <span className={`w-2 h-2 rounded-full ${online ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                    {online ? 'ออนไลน์' : 'ออฟไลน์'}
+                </span>
+            </header>
 
+            <main className="flex-1 flex flex-col p-5 gap-5">
+                {error && (
+                    <div className="bg-red-900/50 border border-red-700/50 text-red-100 rounded-xl px-4 py-3" role="alert">
+                        {error}
+                    </div>
+                )}
 
+                {/* Video area (active call) */}
+                {inCall && (
+                    <section className="relative rounded-2xl overflow-hidden bg-black flex-1 border border-slate-800 flex flex-col min-h-[400px]">
+                        <video
+                            ref={remoteVideoRef}
+                            autoPlay
+                            playsInline
+                            className="absolute inset-0 w-full h-full object-contain bg-black"
+                        />
+                        <div className="absolute top-3 left-3 bg-black/60 backdrop-blur px-3 py-1.5 rounded-full text-sm font-semibold">
+                            {status === 'connecting' ? 'กำลังเชื่อมต่อ...' : 'กำลังคุยอยู่'}
+                        </div>
 
-            {(status === 'offline' || status === 'online') && (
-                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center relative">
+                        {/* Action Buttons Overlay */}
+                        <div className="absolute top-3 right-3 flex flex-col gap-3 z-10">
+                            <button 
+                                onClick={() => {
+                                    setIsChatOpen(true);
+                                    setUnreadCount(0);
+                                }}
+                                className="relative p-3 bg-black/60 hover:bg-black/80 backdrop-blur rounded-full transition-colors"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                </svg>
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex items-center justify-center w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-slate-900">
+                                        {unreadCount}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
 
-                    {/* Status Display */}
-                    <div className="mb-12 relative">
-                        {isOnline ? (
-                            // Online State - Scanner Animation
-                            <div className="relative w-64 h-64 flex items-center justify-center">
-                                {/* Sonar Rings */}
-                                <div className="absolute inset-0 bg-green-500/20 rounded-full animate-ping" style={{ animationDuration: '3s' }}></div>
-                                <div className="absolute inset-4 bg-green-500/20 rounded-full animate-ping" style={{ animationDuration: '3s', animationDelay: '1s' }}></div>
-
-                                <div className="z-10 w-48 h-48 bg-white rounded-full shadow-2xl flex items-center justify-center border-4 border-green-100">
-                                    <div className="text-center">
-                                        {/* Emoji removed */}
-                                        <div className="text-sm font-bold text-green-600 uppercase tracking-widest">Scanning</div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            // Offline State
-                            <div className="w-64 h-64 bg-slate-200 rounded-full flex items-center justify-center shadow-inner">
-                                <span className="text-6xl text-slate-400">Offline</span>
+                        {/* Capture Controls Overlay */}
+                        {status === 'connected' && (
+                            <div className="absolute bottom-6 left-0 right-0 flex justify-center z-10">
+                                <CaptureControls onCapture={handleCaptureRequest} captureState={captureState} />
                             </div>
                         )}
-                    </div>
+                    </section>
+                )}
 
-                    {/* Main Toggle Button */}
-                    <div className="flex flex-col items-center gap-4">
-                        <button
-                            onClick={toggleOnline}
-                            className={`
-                                relative px-8 py-4 rounded-full text-xl font-bold transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-xl
-                                ${isOnline
-                                    ? 'bg-red-50 text-red-600 border-2 border-red-100 hover:bg-red-100'
-                                    : 'bg-slate-900 text-white hover:bg-slate-800'
-                                }
-                            `}
-                        >
-                            {isOnline ? (
-                                <div className="flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" /></svg>
-                                    <span>Stop Volunteering</span>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h10" /><path d="M9 4v16" /><path d="m3 9 3 3-3 3" /><path d="M14 8V7c0-2.94 2.16-5.4 5-5.92V2.5a2.5 2.5 0 0 1 5 0v19a2.5 2.5 0 0 1-5 0v-.6c-2.83-.5-5-3-5-5.9v-1" /></svg>
-                                    <span>Start Volunteering</span>
-                                </div>
-                            )}
-                        </button>
-                        <p className="text-slate-500 font-medium">
-                            {isOnline ? 'Waiting for a blind person to call...' : 'You are currently offline.'}
-                        </p>
-                    </div>
-                </div>
-            )}
-
-            {status === 'ringing' && (
-                <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center">
-                    <div className="w-full max-w-sm bg-white/10 p-8 rounded-3xl backdrop-blur-md border border-white/20 text-center">
-                        <div className="w-24 h-24 bg-linear-to-tr from-yellow-400 to-orange-500 rounded-full mx-auto mb-6 flex items-center justify-center shadow-lg animate-bounce">
-                            {/* Emoji removed */}
+                {/* Idle / online dashboard */}
+                {!inCall && (
+                    <section className="flex-1 flex flex-col items-center justify-center text-center gap-6 py-10">
+                        <div className={`w-28 h-28 rounded-full flex items-center justify-center border-4 ${online ? 'bg-emerald-500/15 border-emerald-400' : 'bg-slate-800 border-slate-700'}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
                         </div>
-                        <h2 className="text-3xl font-bold text-white mb-2">Incoming Call</h2>
-                        <p className="text-white/60 mb-12">Blind person needs assistance</p>
-
-                        <div className="flex justify-between gap-6">
-                            <button
-                                onClick={rejectCall}
-                                className="flex-1 flex flex-col items-center gap-2 group"
-                            >
-                                <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center border-2 border-red-500 group-active:bg-red-500 group-active:text-white transition-colors">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                                </div>
-                                <span className="text-white/80 text-sm font-medium">Decline</span>
-                            </button>
-
-                            <button
-                                onClick={answerCall}
-                                className="flex-1 flex flex-col items-center gap-2 group"
-                            >
-                                <div className="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,197,94,0.6)] animate-pulse group-active:scale-95 transition-transform">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
-                                </div>
-                                <span className="text-white text-sm font-bold">Accept</span>
-                            </button>
+                        <div>
+                            <h1 className="text-2xl font-black mb-2">
+                                {online ? 'พร้อมรับสายช่วยเหลือ' : 'เริ่มเป็นอาสาสมัคร'}
+                            </h1>
+                            <p className="text-slate-400">
+                                {online
+                                    ? `มีอาสาสมัครออนไลน์ ${volunteerCount} คน`
+                                    : 'เปิดสถานะออนไลน์เพื่อรอรับสายจากผู้พิการทางสายตา'}
+                            </p>
                         </div>
+                    </section>
+                )}
+            </main>
+
+            {/* Incoming call overlay */}
+            {incomingCall && !inCall && (
+                <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur flex flex-col items-center justify-center p-8 text-center" role="dialog" aria-label="สายเรียกเข้า">
+                    <div className="w-32 h-32 rounded-full bg-sky-500/20 border-4 border-sky-400 flex items-center justify-center mb-8 animate-pulse">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-sky-300">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+                        </svg>
                     </div>
-                </div>
-            )}
-
-            {status === 'connecting' && (
-                <div className="absolute inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center text-white">
-                    <div className="w-16 h-16 border-4 border-white/20 border-t-white rounded-full animate-spin mb-8"></div>
-                    <div className="text-2xl font-bold">Connecting...</div>
-                    <div className="text-white/40 mt-2">Establishing secure connection</div>
-                </div>
-            )}
-
-            {status === 'connected' && (
-                <div className="absolute inset-0 bg-black flex flex-col">
-                    {/* Blind user's camera - FULL SCREEN */}
-                    <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-                        <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" />
-
-                        {/* Overlay Controls */}
-                        <div className="absolute top-0 left-0 right-0 p-6 bg-linear-to-b from-black/80 to-transparent pointer-events-none">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <div className="text-white font-bold text-lg text-shadow-sm">Blind User</div>
-                                    <div className="text-green-400 text-sm flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                                        Live Video
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Bottom Floating Controls */}
-                    <div className="absolute bottom-8 left-0 right-0 flex justify-center items-center gap-6 px-4 pointer-events-auto">
+                    <h2 className="text-3xl font-black mb-2">สายเรียกเข้า</h2>
+                    <p className="text-slate-400 mb-10">ผู้พิการทางสายตาต้องการความช่วยเหลือ</p>
+                    <div className="flex items-center gap-6">
                         <button
-                            onClick={toggleMute}
-                            className={`flex items-center justify-center w-16 h-16 rounded-full shadow-xl border-2 border-white/20 transition-all active:scale-95 ${isMuted ? 'bg-white text-zinc-900' : 'bg-zinc-800/60 backdrop-blur-md text-white'}`}
-                            aria-label={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+                            type="button"
+                            onClick={() => endCall()}
+                            className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 active:scale-90 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-red-300"
+                            aria-label="ปฏิเสธสาย"
                         >
-                            {isMuted ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                                    <path d="M17 16.95A7 7 0 0 1 5 12v-2"></path>
-                                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                                    <line x1="8" y1="23" x2="16" y2="23"></line>
-                                </svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                    <line x1="12" y1="19" x2="12" y2="23"></line>
-                                    <line x1="8" y1="23" x2="16" y2="23"></line>
-                                </svg>
-                            )}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rotate-[135deg]"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
                         </button>
-
                         <button
-                            onClick={endCall}
-                            className="bg-red-600 hover:bg-red-700 text-white px-10 py-4 rounded-full font-bold shadow-xl transform active:scale-95 transition-all flex items-center gap-2"
+                            type="button"
+                            onClick={() => acceptCall()}
+                            className="w-24 h-24 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-90 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-emerald-300 shadow-[0_0_30px_rgba(16,185,129,0.5)]"
+                            aria-label="รับสาย"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><path d="M22 2l-7 7" /><path d="M15 2l7 7" /></svg>
-                            <span>End Call</span>
-                        </button>
-
-                        <button
-                            onClick={toggleFlash}
-                            className={`w-14 h-14 rounded-full flex items-center justify-center text-white transition-all active:scale-95 border border-white/20 shadow-lg ${isFlashOn ? 'bg-yellow-400 text-black' : 'bg-zinc-800/60 backdrop-blur-md'}`}
-                            aria-label={isFlashOn ? "Turn Flashlight Off" : "Turn Flashlight On"}
-                        >
-                            {isFlashOn ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /><line x1="4" y1="21" x2="20" y2="5" /></svg>
-                            )}
+                            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
                         </button>
                     </div>
                 </div>
             )}
+
+            {/* Bottom control bar */}
+            <div className="px-5 pb-8 pt-3 border-t border-slate-800">
+                {inCall ? (
+                    <button
+                        type="button"
+                        onClick={() => endCall()}
+                        className="w-full py-5 rounded-2xl text-xl font-black bg-red-600 hover:bg-red-500 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-red-300"
+                    >
+                        วางสาย
+                    </button>
+                ) : online ? (
+                    <button
+                        type="button"
+                        onClick={goOffline}
+                        className="w-full py-5 rounded-2xl text-xl font-bold bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 focus:outline-none focus:ring-4 focus:ring-slate-500"
+                    >
+                        ออฟไลน์
+                    </button>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={goOnline}
+                        className="w-full py-5 rounded-2xl text-xl font-black bg-emerald-500 hover:bg-emerald-400 active:scale-95 transition-all focus:outline-none focus:ring-4 focus:ring-emerald-300"
+                    >
+                        เปิดรับสาย (ออนไลน์)
+                    </button>
+                )}
+            </div>
+            {/* Full-screen overlays */}
+            <ChatPanel 
+                isOpen={isChatOpen} 
+                onClose={() => setIsChatOpen(false)} 
+                messages={messages} 
+                onSendMessage={handleSendMessage} 
+            />
+            
+            <ImageViewer 
+                imageBase64={capturedImage} 
+                onClose={() => setCapturedImage(null)} 
+            />
         </div>
     );
-
 }

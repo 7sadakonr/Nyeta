@@ -1,17 +1,19 @@
-import { pusherServer } from '@/lib/pusher';
-import { NextResponse } from 'next/server';
+import { pusherServer } from '@/lib/pusher-server';
 
-export async function POST(req) {
+// Relays a signaling event to a channel. Used for broadcasting incoming calls
+// and relaying the WebRTC handshake (offer/answer/ICE) between the two peers.
+export async function POST(request) {
     try {
-        const { event, channel, data, socketId } = await req.json();
+        const { channel, event, data } = await request.json();
 
-        // Trigger the event
-        // socketId is optional: used to exclude the sender from receiving the event
-        await pusherServer.trigger(channel, event, data, { socket_id: socketId });
+        if (!channel || !event) {
+            return new Response('Bad Request', { status: 400 });
+        }
 
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        console.error('Pusher trigger error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        await pusherServer.trigger(channel, event, data ?? {});
+        return Response.json({ ok: true });
+    } catch (err) {
+        console.error('pusher trigger error', err);
+        return new Response('Server Error', { status: 500 });
     }
 }

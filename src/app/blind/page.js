@@ -1,21 +1,46 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-// import io from 'socket.io-client'; // Removed
-import { createPusherClient } from '@/lib/pusher';
-import Peer from 'peerjs';
 import Link from 'next/link';
 import HapticFeedback from '@/components/HapticFeedback';
+import DetectionOverlay from '@/components/DetectionOverlay';
 import { useWakeLock } from '@/hooks/useWakeLock';
+import { OCR_PROMPT } from '@/lib/visionPrompts';
+import { callGroqVision, captureFrameFromVideo, GROQ_MODEL } from '@/lib/groqVision';
+import { formatCurrencySpeech, formatCurrencyDisplay } from '@/lib/currencyUtils';
+import { detectCurrencyWithGroq } from '@/lib/currencyGroq';
+import { analyzePageAlignment, preloadPageScanner } from '@/lib/pageEdgeDetection';
+import { speakText, stopSpeaking } from '@/lib/speechChunks';
 // useObjectDetector is dynamically imported to avoid SSR issues with TensorFlow.js
 
+const MODE_LABELS = {
+    assistant: 'โหมดผู้ช่วย AI',
+    currency: 'โหมดดูสกุลเงิน',
+    reader: 'โหมดอ่านเอกสาร',
+};
+
+const MODE_STORAGE_KEY = 'nyeta-blind-mode';
+const VALID_MODES = ['assistant', 'currency', 'reader'];
+
+function readStoredMode() {
+    if (typeof window === 'undefined') return 'assistant';
+    try {
+        const stored = localStorage.getItem(MODE_STORAGE_KEY);
+        if (VALID_MODES.includes(stored)) return stored;
+    } catch {
+        // ignore storage errors (private browsing, etc.)
+    }
+    return 'assistant';
+}
+
 export default function BlindPage() {
-    const [status, setStatus] = useState('idle'); // idle, calling, connected, failed
     const { isSupported: wakeLockSupported, request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
-    const [isMuted, setIsMuted] = useState(false);
+
+    // App mode: assistant | currency | reader
+    const [mode, setMode] = useState('assistant');
+    const [modeAnnouncement, setModeAnnouncement] = useState('');
 
     // AI Assistant State (Simple "Be My AI" Style)
-    const [mode, setMode] = useState('ai'); // 'volunteer' | 'ai'
     const [aiStatus, setAiStatus] = useState('idle'); // 'idle', 'capturing', 'thinking'
     const [aiReady, setAiReady] = useState(false); // true when camera is ready
     const [aiMessages, setAiMessages] = useState([]); // Chat history: [{role: 'user'|'ai', content: '', image?: ''}]
@@ -25,116 +50,133 @@ export default function BlindPage() {
     const [objectDetectorEnabled, setObjectDetectorEnabled] = useState(false);
     const [detectedObjects, setDetectedObjects] = useState(''); // Text for VoiceOver
     const [guidanceText, setGuidanceText] = useState(''); // Direction guidance text
+    const [cocoBoxes, setCocoBoxes] = useState([]);
+    const [pageBounds, setPageBounds] = useState(null);
+    const [pageCorners, setPageCorners] = useState(null);
+    const [readerGuidance, setReaderGuidance] = useState('');
+    const [readerAligned, setReaderAligned] = useState(false);
+    const [currencyBounds, setCurrencyBounds] = useState(null);
     const detectorModelRef = useRef(null);
     const detectionIntervalRef = useRef(null);
 
+    // Currency mode state
+    const [currencyResult, setCurrencyResult] = useState(null);
+    const [currencyScanning, setCurrencyScanning] = useState(false);
+    const [currencyMonitoring, setCurrencyMonitoring] = useState(false);
+    const [currencyHint, setCurrencyHint] = useState('');
+    const currencyBusyRef = useRef(false);
+    const lastSpokenMoneyRef = useRef('');
+    const currencyIntervalRef = useRef(null);
+    const stableDetectionRef = useRef({ key: '', count: 0 });
+    const notFoundCountRef = useRef(0);
+    const currencyErrorCountRef = useRef(0);
+    const currencySkipUntilRef = useRef(0);
+    const modeRef = useRef(mode);
+
+    // Reader mode state
+    const [docText, setDocText] = useState('');
+    const [isReading, setIsReading] = useState(false);
+    const lastSpokenPageRef = useRef('');
+    const alignedCountRef = useRef(0);
+    const pageSeenCountRef = useRef(0);
+    const pageOverlayActiveRef = useRef(false);
+    const scanBusyRef = useRef(false);
+    const autoCaptureFiredRef = useRef(false);
+    const readDocumentRef = useRef(null);
+    const aiStatusRef = useRef('idle');
+    const isReadingRef = useRef(false);
 
     const myVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const peerRef = useRef(null);
-    const pusherRef = useRef(null); // Added for Pusher
-    const socketRef = useRef(null);
-    const streamRef = useRef(null);
-    const incomingStreamRef = useRef(null);
+    const cameraContainerRef = useRef(null);
     const hapticRef = useRef(null);
-    const audioContextRef = useRef(null);
-    const beepIntervalRef = useRef(null);
-    const fallbackTimeoutRef = useRef(null); // Timeout for retry broadcast
-    const volunteersRef = useRef([]);
-    const triedVolunteersRef = useRef([]); // Track attempted volunteers
-    const waitingForVolunteersRef = useRef(false); // Wait for presence before calling
-    const loopCountRef = useRef(0); // Track retry loops for Exit Strategy
-    const volunteerMetaRef = useRef({}); // Store volunteer metadata { id: { joinedAt } }
+    const lastSpokenRef = useRef('');
+    const recognitionRef = useRef(null);
+    const captureAndAskRef = useRef(null);
+    const askTextOnlyRef = useRef(null);
+    const earconCtxRef = useRef(null);
+    const tabVisibleRef = useRef(true);
 
-    const currentVolunteerIdRef = useRef(null); // Track connected volunteer
-
-    // Moved endCall up to be accessible by setupPusher
-    const endCall = useCallback(async (notifyRemote = true) => {
-        if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current); // Clear any pending retry
-        if (notifyRemote && currentVolunteerIdRef.current && pusherRef.current) {
-            try {
-                await fetch('/api/pusher/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        channel: `private-user-${currentVolunteerIdRef.current}`,
-                        event: 'end-call',
-                        data: { by: 'blind' },
-                        socketId: pusherRef.current?.connection.socket_id
-                    })
-                });
-            } catch (err) {
-                console.error('End call notify error:', err);
-            }
-        }
-        currentVolunteerIdRef.current = null;
-
-        // Don't destroy peerRef here, to keep ID alive for next call!
-        // if (peerRef.current) peerRef.current.destroy(); 
-
-        // Only close active calls/connections
-        // We might need to iterate peerRef.current.connections if we want to be thorough,
-        // but typically just stopping tracks and resetting state is enough for the logic.
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-            // streamRef.current = null; // We can re-get user media next time or keep it? 
-            // Better to stop it to release camera/mic privacy indicator.
-        }
-
-        setStatus('idle');
-    }, []);
-
-    // Cleanup Peer on unmount ONLY
-    // Auto-initialize AI Mode on mount
     useEffect(() => {
         initAiMode();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        return () => {
-            if (peerRef.current) {
-                console.log('Component unmounting, destroying peer');
-                peerRef.current.destroy();
-                peerRef.current = null;
-            }
-        };
+        const stored = readStoredMode();
+        if (stored !== 'assistant') {
+            setMode(stored);
+        }
     }, []);
 
-    // Load TensorFlow.js model and run detection loop
+    useEffect(() => {
+        modeRef.current = mode;
+    }, [mode]);
+
+    useEffect(() => {
+        aiStatusRef.current = aiStatus;
+    }, [aiStatus]);
+
+    useEffect(() => {
+        isReadingRef.current = isReading;
+    }, [isReading]);
+
+    // Load TensorFlow.js model and run detection loop (all modes)
+    // Model is loaded once and reused across mode switches to prevent memory leaks
+    // that caused the mobile tab to crash and reset back to the assistant view.
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        if (!objectDetectorEnabled || mode !== 'ai' || !aiReady) return;
+        if (!objectDetectorEnabled || !aiReady) return;
         if (!myVideoRef.current) return;
 
         let isMounted = true;
+        tabVisibleRef.current = document.visibilityState === 'visible';
+
+        const handleVisibilityChange = () => {
+            tabVisibleRef.current = document.visibilityState === 'visible';
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         const startDetection = async () => {
             try {
-                setGuidanceText('กำลังโหลดโมเดล AI...');
+                if (!detectorModelRef.current) {
+                    if (modeRef.current === 'assistant') {
+                        setGuidanceText('กำลังโหลดโมเดล AI...');
+                    }
 
-                // Dynamic import TensorFlow.js
-                const tf = await import('@tensorflow/tfjs');
-                const cocoSsd = await import('@tensorflow-models/coco-ssd');
+                    const tf = await import('@tensorflow/tfjs');
+                    const cocoSsd = await import('@tensorflow-models/coco-ssd');
 
-                console.log('Loading COCO-SSD model...');
-                const model = await cocoSsd.load();
-                detectorModelRef.current = model;
-                console.log('COCO-SSD model loaded!');
+                    const model = await cocoSsd.load();
+                    detectorModelRef.current = model;
+                }
 
                 if (!isMounted) return;
-                setGuidanceText('โมเดลพร้อมแล้ว กำลังสแกน...');
+                if (modeRef.current === 'assistant') {
+                    setGuidanceText('โมเดลพร้อมแล้ว กำลังสแกน...');
+                }
 
-                // Start detection interval (every 1 second for stability)
                 detectionIntervalRef.current = setInterval(async () => {
                     if (!isMounted || !myVideoRef.current || !detectorModelRef.current) return;
+
+                    // Pause detection when tab is hidden or not in assistant mode.
+                    if (!tabVisibleRef.current || modeRef.current !== 'assistant') return;
 
                     const video = myVideoRef.current;
                     if (video.readyState < 2) return;
 
                     try {
                         const predictions = await detectorModelRef.current.detect(video);
+
+                        if (!isMounted || !tabVisibleRef.current || modeRef.current !== 'assistant') return;
+
+                        const boxes = predictions
+                            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+                            .map((p) => ({
+                                class: p.class,
+                                bbox: p.bbox,
+                                score: p.score,
+                            }));
+                        setCocoBoxes(boxes);
 
                         if (predictions.length > 0) {
                             // Build object list text
@@ -187,11 +229,13 @@ export default function BlindPage() {
                     } catch (err) {
                         console.error('Detection error:', err);
                     }
-                }, 1000); // Every 1 second
+                }, 1000);
 
             } catch (error) {
                 console.error('Failed to load COCO-SSD:', error);
-                setGuidanceText('ไม่สามารถโหลดโมเดลได้');
+                if (modeRef.current === 'assistant') {
+                    setGuidanceText('ไม่สามารถโหลดโมเดลได้');
+                }
             }
         };
 
@@ -199,196 +243,35 @@ export default function BlindPage() {
 
         return () => {
             isMounted = false;
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
             if (detectionIntervalRef.current) {
                 clearInterval(detectionIntervalRef.current);
             }
+            setCocoBoxes([]);
         };
-    }, [objectDetectorEnabled, mode, aiReady]);
-
-    // Helper function to play beep sound - works on iOS
-    const playBeepSound = useCallback((volume = 0.3, silent = false) => {
-        try {
-            if (!audioContextRef.current) {
-                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            const ctx = audioContextRef.current;
-
-            // Resume if suspended
-            if (ctx.state === 'suspended') {
-                ctx.resume();
-            }
-
-            // Create beep
-            const oscillator = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-
-            oscillator.connect(gainNode);
-            gainNode.connect(ctx.destination);
-
-            oscillator.frequency.value = 880; // A5 note
-            oscillator.type = 'sine';
-
-            // Use very low volume for silent unlock, or normal volume for alert
-            const actualVolume = silent ? 0.001 : volume;
-            gainNode.gain.setValueAtTime(actualVolume, ctx.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-
-            oscillator.start(ctx.currentTime);
-            oscillator.stop(ctx.currentTime + 0.15);
-
-            if (!silent) {
-                console.log('Beep played!');
-            }
-        } catch (err) {
-            console.error('Beep error:', err);
-        }
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [objectDetectorEnabled, aiReady]);
 
     const [logs, setLogs] = useState([]);
-    const addLog = (msg) => {
+    const addLog = useCallback((msg) => {
         console.log(msg);
         // setLogs(prev => [...prev.slice(-8), msg]); // Disabled for production
-    };
-
-    const callVolunteerRef = useRef((volunteerId, hapticRefParam) => {
-        addLog('callVolunteer: ' + volunteerId.substring(0, 8));
-        currentVolunteerIdRef.current = volunteerId; // Store ID
-
-        if (!peerRef.current || !streamRef.current) {
-            addLog('Error: No peer or stream');
-            return;
-        }
-
-        // Disable tracks until confirmed
-        streamRef.current.getTracks().forEach(t => t.enabled = false);
-
-        const call = peerRef.current.call(volunteerId, streamRef.current);
-
-        if (!call) {
-            addLog('Call failed!');
-            return;
-        }
-
-        setStatus('confirming');
-        // hapticRefParam.current?.trigger(2, 50); // Double tap hint - REMOVED: Managed by useEffect loop now
-
-        call.on('stream', (remoteStream) => {
-            addLog('Got volunteer audio!');
-            incomingStreamRef.current = remoteStream;
-
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-                remoteVideoRef.current.onloadedmetadata = () => {
-                    remoteVideoRef.current.play().catch(e => console.error('Remote play error:', e));
-                };
-            }
-        });
-
-        call.on('close', () => {
-            endCall(false); // Already closed, no need to notify
-        });
-
-        call.on('error', (e) => addLog('Call err: ' + e.message));
-    });
-
-
-
-    // Moved RequestHelp UP to be accessible by setupPusher
-    const requestHelp = async (myPeerId) => {
-        try {
-            // 1. Filter available volunteers (excluding self and already tried)
-            // 1. Filter available volunteers (excluding self and already tried)
-            let availableVolunteers = volunteersRef.current.filter(id => id !== myPeerId && !triedVolunteersRef.current.includes(id));
-
-            console.log(`RequestHelp: Total=${volunteersRef.current.length}, Tried=${triedVolunteersRef.current.length}, Available=${availableVolunteers.length}`);
-
-            // 2. If we exhausted the list, check Exit Strategy
-            const totalVolunteers = volunteersRef.current.filter(id => id !== myPeerId).length;
-            if (availableVolunteers.length === 0 && totalVolunteers > 0) {
-                loopCountRef.current++;
-                console.log(`Tried all volunteers, loop count: ${loopCountRef.current}`);
-
-                // EXIT STRATEGY: หยุดวนลูปหลัง 2 รอบ
-                if (loopCountRef.current >= 2) {
-                    console.log('Exit Strategy: Max loops reached, stopping...');
-                    setStatus('exhausted');
-                    hapticRef.current?.trigger(2, 150);
-                    playBeepSound(0.3);
-                    return;
-                }
-
-                // Reset และลองรอบใหม่
-                triedVolunteersRef.current = [];
-                availableVolunteers = volunteersRef.current.filter(id => id !== myPeerId);
-            }
-
-            // 3. If truly no one is online - NOTIFY USER
-            if (availableVolunteers.length === 0) {
-                console.log('No volunteers online, waiting/retrying...');
-
-                // Update status to show "no volunteers" state
-                setStatus('no-volunteers');
-
-                // Haptic feedback (3 short pulses = "waiting" pattern)
-                hapticRef.current?.trigger(3, 100);
-
-                // Audio cue (low tone = "waiting")
-                playBeepSound(0.2);
-
-                // Retry in 5 seconds
-                if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
-                fallbackTimeoutRef.current = setTimeout(() => {
-                    console.log('Retrying requestHelp...');
-                    setStatus('waiting'); // Reset back to waiting before retry
-                    requestHelp(myPeerId);
-                }, 5000);
-                return;
-            }
-
-            // 4. FAIRNESS QUEUE: เลือกคนที่ว่างนานที่สุดก่อน
-            const sortedVolunteers = availableVolunteers
-                .map(id => ({
-                    id,
-                    joinedAt: volunteerMetaRef.current[id]?.joinedAt || Date.now()
-                }))
-                .sort((a, b) => a.joinedAt - b.joinedAt); // คนเข้ามานานสุดอยู่หน้า
-
-            const selectedVolunteer = sortedVolunteers[0].id;
-            console.log('Selected volunteer (fairness):', selectedVolunteer);
-
-            // 5. Mark as tried
-            triedVolunteersRef.current.push(selectedVolunteer);
-
-            // 6. Send request
-            await fetch('/api/pusher/trigger', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    channel: `private-user-${selectedVolunteer}`,
-                    event: 'incoming-request',
-                    data: { blindPeerId: myPeerId },
-                    socketId: pusherRef.current?.connection.socket_id
-                })
-            });
-
-            // 7. Set 15s Timeout to try next person (ลดจาก 30s)
-            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
-            fallbackTimeoutRef.current = setTimeout(() => {
-                console.log('No answer in 15s, trying next volunteer...');
-                requestHelp(myPeerId); // Recursive call
-            }, 15000);
-
-        } catch (e) {
-            console.error('Request error:', e);
-        }
-    };
+    }, []);
 
     // ================== AI ASSISTANT LOGIC (Simple "Be My AI" Style) ==================
 
     // Play Earcon (Short sound effect for status feedback)
     const playEarcon = useCallback((type) => {
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            if (!earconCtxRef.current) {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                earconCtxRef.current = new AudioCtx();
+            }
+            const ctx = earconCtxRef.current;
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(console.error);
+            }
+
             const oscillator = ctx.createOscillator();
             const gainNode = ctx.createGain();
 
@@ -462,9 +345,58 @@ export default function BlindPage() {
     // State for Voice Input
     const [isListening, setIsListening] = useState(false);
     const [voiceTranscript, setVoiceTranscript] = useState(''); // To show on UI
-    const recognitionRef = useRef(null);
-    const captureAndAskRef = useRef(null); // Ref to hold stable function reference
-    const askTextOnlyRef = useRef(null); // Ref for text-only chat function
+
+    const switchMode = useCallback((newMode) => {
+        if (newMode === mode) return;
+
+        stopSpeaking();
+        if (currencyIntervalRef.current) {
+            clearInterval(currencyIntervalRef.current);
+            currencyIntervalRef.current = null;
+        }
+        currencyBusyRef.current = false;
+        setCurrencyScanning(false);
+        setCurrencyMonitoring(false);
+
+        if (recognitionRef.current) {
+            try {
+                recognitionRef.current.stop();
+            } catch {
+                // ignore
+            }
+        }
+
+        hapticRef.current?.trigger(1);
+        setMode(newMode);
+        try {
+            localStorage.setItem(MODE_STORAGE_KEY, newMode);
+        } catch {
+            // ignore storage errors
+        }
+        setModeAnnouncement(MODE_LABELS[newMode]);
+        setGuidanceText('');
+        setDetectedObjects('');
+        setCocoBoxes([]);
+        setPageBounds(null);
+        setPageCorners(null);
+        setReaderGuidance('');
+        setReaderAligned(false);
+        setCurrencyBounds(null);
+        setCurrencyHint('');
+        setDocText('');
+        lastSpokenPageRef.current = '';
+        alignedCountRef.current = 0;
+        pageSeenCountRef.current = 0;
+        pageOverlayActiveRef.current = false;
+        autoCaptureFiredRef.current = false;
+        lastSpokenRef.current = '';
+        stableDetectionRef.current = { key: '', count: 0 };
+        notFoundCountRef.current = 0;
+        currencyErrorCountRef.current = 0;
+        currencySkipUntilRef.current = 0;
+        setVoiceTranscript('');
+        setIsReading(false);
+    }, [mode]);
 
     // Initialize Speech Recognition
     useEffect(() => {
@@ -541,7 +473,8 @@ export default function BlindPage() {
 
     // Hold-to-Talk Handlers
     const startListening = useCallback((e) => {
-        e?.preventDefault(); // Prevent ghost clicks
+        e?.preventDefault();
+        if (mode !== 'assistant') return;
         if (!recognitionRef.current) {
             alert("Voice not supported on this browser.");
             return;
@@ -553,7 +486,7 @@ export default function BlindPage() {
         } catch (error) {
             console.error("Mic start error:", error);
         }
-    }, [isListening]);
+    }, [isListening, mode]);
 
     const stopListening = useCallback((e) => {
         e?.preventDefault();
@@ -568,11 +501,11 @@ export default function BlindPage() {
         } catch (error) {
             console.error("Mic stop error:", error);
         }
-    }, [isListening]);
+    }, [isListening, mode]);
 
-    // Auto-speak Object Detection Guidance (using Web Speech API)
-    const lastSpokenRef = useRef('');
+    // Auto-speak Object Detection Guidance (using Web Speech API) - assistant mode only
     useEffect(() => {
+        if (mode !== 'assistant') return;
         if (!objectDetectorEnabled || !guidanceText || isListening || aiStatus === 'thinking') return;
         if (guidanceText === lastSpokenRef.current) return; // Don't repeat same message
 
@@ -584,9 +517,148 @@ export default function BlindPage() {
             speechSynthesis.speak(utterance);
             lastSpokenRef.current = guidanceText;
         }
-    }, [guidanceText, objectDetectorEnabled, isListening, aiStatus]);
+    }, [guidanceText, objectDetectorEnabled, isListening, aiStatus, mode]);
 
-    // Capture single image and send to Groq API (Llama 3.2 Vision)
+    // Currency mode: Groq vision scan
+    useEffect(() => {
+        if (mode !== 'currency' || !aiReady) {
+            if (currencyIntervalRef.current) {
+                clearInterval(currencyIntervalRef.current);
+                currencyIntervalRef.current = null;
+            }
+            currencyBusyRef.current = false;
+            setCurrencyScanning(false);
+            setCurrencyMonitoring(false);
+            stableDetectionRef.current = { key: '', count: 0 };
+            return;
+        }
+
+        setCurrencyMonitoring(true);
+        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+
+        const scanCurrency = async () => {
+            if (currencyBusyRef.current || modeRef.current !== 'currency') return;
+            if (Date.now() < currencySkipUntilRef.current) return;
+            if (!myVideoRef.current || myVideoRef.current.readyState < 2) return;
+
+            if (!apiKey) {
+                setCurrencyHint('ไม่พบ NEXT_PUBLIC_GROQ_API_KEY ใน .env.local');
+                return;
+            }
+
+            currencyBusyRef.current = true;
+            setCurrencyScanning(true);
+
+            try {
+                const { parsed } = await detectCurrencyWithGroq(myVideoRef.current, apiKey);
+                const speechKey = parsed ? `${parsed.type}-${parsed.value}` : 'none';
+                currencyErrorCountRef.current = 0;
+
+                if (parsed) {
+                    notFoundCountRef.current = 0;
+
+                    if (speechKey === stableDetectionRef.current.key) {
+                        stableDetectionRef.current.count += 1;
+                    } else {
+                        stableDetectionRef.current = { key: speechKey, count: 1 };
+                    }
+
+                    const isStable = stableDetectionRef.current.count >= 2;
+
+                    if (isStable) {
+                        setCurrencyBounds(null);
+                        setCurrencyResult({ ...parsed, source: 'groq' });
+                        setCurrencyHint('');
+
+                        if (speechKey !== lastSpokenMoneyRef.current) {
+                            const speechText = formatCurrencySpeech(parsed);
+                            lastSpokenMoneyRef.current = speechKey;
+                            playEarcon('success');
+                            hapticRef.current?.trigger(2);
+                            speakText(speechText, { rate: 1.1 });
+                            setModeAnnouncement(speechText);
+                        }
+                    } else {
+                        setCurrencyHint('กำลังยืนยัน...');
+                    }
+                } else {
+                    stableDetectionRef.current = { key: '', count: 0 };
+                    notFoundCountRef.current += 1;
+
+                    if (notFoundCountRef.current >= 2) {
+                        setCurrencyResult(null);
+                        lastSpokenMoneyRef.current = '';
+                    }
+
+                    setCurrencyHint('ยังไม่เจอเงิน — ขยับกล้องให้ใกล้และอยู่กลางจอ');
+                }
+            } catch (error) {
+                console.error('Currency scan error:', error);
+                addLog(`Currency scan error: ${error.message}`);
+                stableDetectionRef.current = { key: '', count: 0 };
+                currencyErrorCountRef.current += 1;
+
+                const isRateLimit = error.status === 429 || /rate limit/i.test(error.message);
+                const isNetwork = /failed to fetch|network/i.test(error.message);
+                const backoffMs = isRateLimit
+                    ? 12000
+                    : Math.min(6000 * currencyErrorCountRef.current, 18000);
+                currencySkipUntilRef.current = Date.now() + backoffMs;
+
+                if (currencyErrorCountRef.current >= 3) {
+                    setCurrencyHint('ไม่สามารถเชื่อมต่อ AI ได้ ตรวจสอบเน็ตหรือ API key');
+                } else if (isRateLimit) {
+                    setCurrencyHint('AI ทำงานหนัก รอสักครู่...');
+                } else if (isNetwork) {
+                    setCurrencyHint('ไม่มีการเชื่อมต่อเน็ต ตรวจสอบ Wi‑Fi');
+                } else {
+                    setCurrencyHint('สแกนไม่สำเร็จ ลองใหม่อีกครั้ง');
+                }
+            } finally {
+                currencyBusyRef.current = false;
+                setCurrencyScanning(false);
+            }
+        };
+
+        setCurrencyResult(null);
+        setCurrencyBounds(null);
+        setCurrencyHint('');
+        lastSpokenMoneyRef.current = '';
+        stableDetectionRef.current = { key: '', count: 0 };
+        notFoundCountRef.current = 0;
+        currencyErrorCountRef.current = 0;
+        currencySkipUntilRef.current = 0;
+
+        // Defer first scan so the video frame is ready (fixes mobile readyState < 2 on mount).
+        const startTimeout = setTimeout(() => scanCurrency(), 300);
+
+        currencyIntervalRef.current = setInterval(scanCurrency, 4000);
+
+        return () => {
+            clearTimeout(startTimeout);
+            if (currencyIntervalRef.current) {
+                clearInterval(currencyIntervalRef.current);
+                currencyIntervalRef.current = null;
+            }
+            currencyBusyRef.current = false;
+            setCurrencyScanning(false);
+            setCurrencyMonitoring(false);
+            stableDetectionRef.current = { key: '', count: 0 };
+            notFoundCountRef.current = 0;
+            currencyErrorCountRef.current = 0;
+            currencySkipUntilRef.current = 0;
+        };
+    }, [mode, aiReady]);
+
+    const replayCurrency = useCallback(() => {
+        if (!currencyResult) return;
+        stopSpeaking();
+        const speechText = formatCurrencySpeech(currencyResult);
+        speakText(speechText, { rate: 1.1 });
+        hapticRef.current?.trigger(1);
+    }, [currencyResult]);
+
+    // Capture single image and send to Groq API (Llama 4 Scout Vision)
     // Now accepts optional 'customPrompt' from voice input
     // Helper to format messages for Groq API
     const formatMessagesForApi = (history, currentMessage) => {
@@ -646,7 +718,7 @@ export default function BlindPage() {
         return [systemPrompt, ...formattedHistory, currentMessage];
     };
 
-    // Capture single image and send to Groq API (Llama 3.2 Vision)
+    // Capture single image and send to Groq API (Llama 4 Scout Vision)
     // Now accepts optional 'customPrompt' from voice input
     const captureAndAsk = useCallback(async (customPrompt = null) => {
         if (!aiReady || aiStatus === 'thinking') return;
@@ -696,7 +768,7 @@ export default function BlindPage() {
             (async () => {
                 try {
                     setAiStatus('thinking');
-                    addLog('Sending to Groq (Llama 3.2)...');
+                    addLog('Sending to Groq (Llama 4 Scout)...');
 
                     // Use updated history
                     const historyForApi = [...aiMessages, newUserMessage];
@@ -718,7 +790,7 @@ export default function BlindPage() {
                                 'Content-Type': 'application/json'
                             },
                             body: JSON.stringify({
-                                model: "meta-llama/llama-4-maverick-17b-128e-instruct", // User specific request
+                                model: GROQ_MODEL,
                                 messages: apiMessages,
                                 max_tokens: 500,
                                 temperature: 0.5
@@ -795,7 +867,7 @@ export default function BlindPage() {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            model: "meta-llama/llama-4-maverick-17b-128e-instruct", // User specific request
+                            model: GROQ_MODEL,
                             messages: apiMessages,
                             max_tokens: 500,
                             temperature: 0.7
@@ -830,211 +902,214 @@ export default function BlindPage() {
     // Keep askTextOnly ref updated for voice callback
     askTextOnlyRef.current = askTextOnly;
 
-    const setupPusher = useCallback((myPeerId) => {
-        if (pusherRef.current) return;
+    const readDocument = useCallback(async () => {
+        if (!aiReady || aiStatus === 'thinking' || mode !== 'reader') return;
 
-        const pusher = createPusherClient(myPeerId, 'blind');
-        pusherRef.current = pusher;
+        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+        if (!apiKey) {
+            alert('API Key Missing!');
+            return;
+        }
 
-        // Subscribe to my private channel
-        const myChannel = pusher.subscribe(`private-user-${myPeerId}`);
-        myChannel.bind('volunteer-ready', ({ volunteerId }) => {
-            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current); // Clear fallback
-            callVolunteerRef.current(volunteerId, hapticRef);
-        });
-
-        // Listen for end-call event
-        myChannel.bind('end-call', () => {
-            console.log('Received end-call from volunteer');
-            endCall(false); // Don't notify back to avoid loop
-        });
-
-        // Listen for rejection (Busy/Declined)
-        myChannel.bind('call-rejected', () => {
-            console.log('Volunteer rejected/busy, trying next in 1s...');
-            if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
-            // Wait 1s before retrying to ensure state is clean
-            setTimeout(() => {
-                requestHelp(myPeerId);
-            }, 1000);
-        });
-
-        const presenceChannel = pusher.subscribe('presence-volunteers');
-        presenceChannel.bind('pusher:subscription_succeeded', (members) => {
-            volunteersRef.current = [];
-            volunteerMetaRef.current = {}; // Reset metadata
-            members.each((member) => {
-                volunteersRef.current.push(member.id);
-                // เก็บ joinedAt metadata สำหรับ Fairness Queue
-                volunteerMetaRef.current[member.id] = {
-                    joinedAt: member.info?.joinedAt || Date.now()
-                };
-            });
-            console.log('Volunteers online:', volunteersRef.current.length);
-
-            // Check if we were waiting to call
-            if (waitingForVolunteersRef.current) {
-                console.log('Presence ready, starting pending call...');
-                waitingForVolunteersRef.current = false;
-                requestHelp(myPeerId);
-            }
-        });
-        presenceChannel.bind('pusher:member_added', (member) => {
-            if (!volunteersRef.current.includes(member.id)) {
-                volunteersRef.current.push(member.id);
-                // เก็บ metadata สำหรับ Fairness Queue
-                volunteerMetaRef.current[member.id] = {
-                    joinedAt: member.info?.joinedAt || Date.now()
-                };
-            }
-        });
-        presenceChannel.bind('pusher:member_removed', (member) => {
-            volunteersRef.current = volunteersRef.current.filter(id => id !== member.id);
-            // ลบ metadata
-            delete volunteerMetaRef.current[member.id];
-        });
-    }, [endCall]); // Removed requestHelp from dep array (cyclic), relying on ref closure or hoisting if possible. 
-    // In React Component, all consts in body are visible if defined before. We moved requestHelp UP.
-
-    const startCall = async () => {
-        setStatus('initializing');
-        triedVolunteersRef.current = []; // Reset tried list for new call session
-        loopCountRef.current = 0; // Reset loop count for Exit Strategy
-        waitingForVolunteersRef.current = true; // Wait for presence
-        hapticRef.current?.trigger(1, 40);
-        playBeepSound(0.001, true);
+        if (!myVideoRef.current) return;
 
         try {
-            // 1. Get User Media FIRST
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-                audio: true
-            });
-            streamRef.current = stream;
+            autoCaptureFiredRef.current = true;
+            stopSpeaking();
+            setIsReading(false);
+            setAiStatus('capturing');
+            playEarcon('capture');
+            hapticRef.current?.trigger(2);
+            addLog('Capturing document...');
 
-            if (myVideoRef.current) {
-                myVideoRef.current.srcObject = stream;
-                myVideoRef.current.onloadedmetadata = () => myVideoRef.current.play().catch(console.error);
-            }
+            const imageDataUrl = captureFrameFromVideo(myVideoRef.current);
 
-            // 2. Reuse Peer Connection if valid
-            if (peerRef.current && !peerRef.current.destroyed && peerRef.current.id) {
-                console.log('Reusing existing Peer connection:', peerRef.current.id);
-                // We assume Pusher is already set up if Peer is alive
-                setStatus('waiting');
-                waitingForVolunteersRef.current = false; // Don't wait, assume ready
-                requestHelp(peerRef.current.id);
-                return;
-            }
+            setAiStatus('thinking');
+            setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
-            console.log('Creating NEW Peer connection...');
-            const peer = new Peer(undefined, {
-                config: {
-                    iceServers: [
-                        { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun.relay.metered.ca:80' },
-                        { urls: 'turn:a.relay.metered.ca:80', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' },
-                        { urls: 'turn:a.relay.metered.ca:443', username: 'e8dd65f92ae8d30fe9bb0665', credential: 'kPOL/5Bj2rDLMxeu' }
-                    ]
-                }
-            });
-            peerRef.current = peer;
-
-            peer.on('open', (id) => {
-                setStatus('waiting');
-                setupPusher(id);
-                // requestHelp(id) removed here. Triggered by subscription_succeeded
+            const text = await callGroqVision({
+                apiKey,
+                imageDataUrl,
+                systemPrompt: OCR_PROMPT,
+                userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
+                maxTokens: 1500,
+                temperature: 0,
             });
 
-            peer.on('connection', (conn) => {
-                conn.on('data', async (data) => {
-                    if (data.type === 'TOGGLE_FLASH') {
-                        if (streamRef.current) {
-                            const track = streamRef.current.getVideoTracks()[0];
-                            try {
-                                await track.applyConstraints({ advanced: [{ torch: data.value }] });
-                            } catch (err) {
-                                console.error('Torch error:', err);
-                            }
-                        }
-                    }
-                });
+            setDocText(text);
+            playEarcon('success');
+            hapticRef.current?.trigger(1);
+            setModeAnnouncement(`อ่านเอกสาร: ${text.slice(0, 120)}${text.length > 120 ? '...' : ''}`);
+
+            setIsReading(true);
+            speakText(text, {
+                rate: 1.0,
+                onEnd: () => setIsReading(false),
             });
-
-            peer.on('error', (e) => {
-                console.error('Peer error:', e);
-                // If ID is taken or fatal error, maybe reset status
-                if (e.type === 'peer-unavailable' || e.type === 'network' || e.type === 'server-error') {
-                    // Optional: handle specific fatal errors
-                }
-
-                // Don't necessarily go to 'idle' on every error, but for critical ones yes.
-                // setStatus('idle'); 
-            });
-
-        } catch (err) {
-            console.error('Camera Error:', err);
-            setStatus('idle');
-            alert('Camera Error: ' + err.message);
+        } catch (error) {
+            console.error('Read document error:', error);
+            setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
+            addLog(`Read document error: ${error.message}`);
+        } finally {
+            setAiStatus('idle');
         }
-    };
+    }, [aiReady, aiStatus, mode, addLog, playEarcon]);
 
+    readDocumentRef.current = readDocument;
 
-
-    const confirmConnection = () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.enabled = true);
-        }
-        hapticRef.current?.trigger(5, 80); // Strong vibration
-        setStatus('connected');
-    };
-
-    // Attach remote audio when connected
+    // Page alignment analysis for reader mode (corners + guidance + auto-capture)
     useEffect(() => {
-        if (status === 'connected' && incomingStreamRef.current && remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = incomingStreamRef.current;
-            remoteVideoRef.current.onloadedmetadata = () => {
-                remoteVideoRef.current.play().catch(console.error);
-            };
-        }
-    }, [status]);
-
-    const toggleMute = () => {
-        if (streamRef.current) {
-            const audioTrack = streamRef.current.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled; // Toggle actual track
-                setIsMuted(!audioTrack.enabled); // Update UI state (enabled=false means muted=true)
-                hapticRef.current?.trigger(1);
-            }
-        }
-    };
-
-    // Audio alert when volunteer is found (Loop until confirmed or cancelled)
-    useEffect(() => {
-        if (status === 'confirming') {
-            console.log('STATUS IS CONFIRMING - Starting beep loop');
-
-            // Play beep immediately and loop
-            playBeepSound(0.3);
-            beepIntervalRef.current = setInterval(() => playBeepSound(0.3), 800);
-
-        } else {
-            // Stop beep loop
-            if (beepIntervalRef.current) {
-                console.log('Stopping beep loop');
-                clearInterval(beepIntervalRef.current);
-                beepIntervalRef.current = null;
-            }
+        if (mode !== 'reader' || !aiReady) {
+            setPageBounds(null);
+            setPageCorners(null);
+            setReaderGuidance('');
+            setReaderAligned(false);
+            alignedCountRef.current = 0;
+            pageSeenCountRef.current = 0;
+            pageOverlayActiveRef.current = false;
+            scanBusyRef.current = false;
+            return undefined;
         }
 
-        return () => {
-            if (beepIntervalRef.current) {
-                clearInterval(beepIntervalRef.current);
-                beepIntervalRef.current = null;
+        preloadPageScanner().catch(() => {
+            // Scanic unavailable — reader stays silent with no overlay
+        });
+
+        const speakPageGuidance = (text) => {
+            if (!text || text === lastSpokenPageRef.current) return;
+            if (aiStatusRef.current !== 'idle' || isReadingRef.current) return;
+
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'th-TH';
+                utterance.rate = 1.1;
+                speechSynthesis.speak(utterance);
+                lastSpokenPageRef.current = text;
             }
         };
-    }, [status, playBeepSound]);
+
+        const clearPageOverlay = () => {
+            if (!pageOverlayActiveRef.current) return;
+            pageOverlayActiveRef.current = false;
+            setPageBounds(null);
+            setPageCorners(null);
+            setReaderGuidance('');
+            setReaderAligned(false);
+        };
+
+        const applyPageOverlay = (result) => {
+            pageOverlayActiveRef.current = true;
+            setPageBounds(result.bounds);
+            setPageCorners(result.corners);
+            setReaderGuidance(result.guidance);
+            setReaderAligned(result.aligned);
+        };
+
+        const analyze = async () => {
+            if (scanBusyRef.current) return;
+            if (!myVideoRef.current || myVideoRef.current.readyState < 2) return;
+            if (aiStatusRef.current === 'thinking' || isReadingRef.current) return;
+
+            scanBusyRef.current = true;
+            try {
+                const result = await analyzePageAlignment(myVideoRef.current);
+
+                if (!result.detected) {
+                    pageSeenCountRef.current = 0;
+                    alignedCountRef.current = 0;
+                    clearPageOverlay();
+                    return;
+                }
+
+                pageSeenCountRef.current += 1;
+                if (pageSeenCountRef.current < 2) {
+                    alignedCountRef.current = 0;
+                    clearPageOverlay();
+                    return;
+                }
+
+                applyPageOverlay(result);
+
+                speakPageGuidance(result.guidance);
+
+                const canAutoCapture = !autoCaptureFiredRef.current && !docText;
+
+                if (result.aligned && canAutoCapture && aiStatusRef.current === 'idle') {
+                    alignedCountRef.current += 1;
+
+                    if (alignedCountRef.current >= 3) {
+                        autoCaptureFiredRef.current = true;
+                        alignedCountRef.current = 0;
+                        playEarcon('success');
+                        hapticRef.current?.trigger(2);
+                        setModeAnnouncement('ตรงแล้ว กำลังถ่ายเอกสาร');
+                        readDocumentRef.current?.();
+                    }
+                } else if (!result.aligned) {
+                    alignedCountRef.current = 0;
+                }
+            } finally {
+                scanBusyRef.current = false;
+            }
+        };
+
+        analyze();
+        const interval = setInterval(analyze, 500);
+
+        return () => {
+            clearInterval(interval);
+            pageOverlayActiveRef.current = false;
+            scanBusyRef.current = false;
+            setPageBounds(null);
+            setPageCorners(null);
+            setReaderGuidance('');
+            setReaderAligned(false);
+            alignedCountRef.current = 0;
+            pageSeenCountRef.current = 0;
+        };
+    }, [mode, aiReady, docText, playEarcon]);
+
+    const replayDocument = useCallback(() => {
+        if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
+        stopSpeaking();
+        setIsReading(true);
+        speakText(docText, {
+            rate: 1.0,
+            onEnd: () => setIsReading(false),
+        });
+        hapticRef.current?.trigger(1);
+    }, [docText]);
+
+    const stopReading = useCallback(() => {
+        stopSpeaking();
+        setIsReading(false);
+        hapticRef.current?.trigger(1);
+    }, []);
+
+    const statusLabel = !aiReady
+        ? 'กำลังเริ่ม...'
+        : mode === 'currency'
+            ? currencyScanning
+                ? 'กำลังสแกนเงิน...'
+                : currencyMonitoring
+                    ? 'กำลังสแกนเงิน...'
+                    : 'พร้อมสแกน'
+            : mode === 'reader' && aiStatus === 'thinking'
+                ? 'กำลังอ่านเอกสาร...'
+                : mode === 'reader' && readerAligned
+                    ? 'ตรงแล้ว พร้อมถ่าย'
+                    : mode === 'reader' && readerGuidance
+                        ? 'จัดกล้อง...'
+                        : aiStatus === 'thinking'
+                            ? 'กำลังคิด...'
+                            : 'AI พร้อม';
+
+    const showCapturedText =
+        (mode === 'reader' && !!docText) ||
+        (mode === 'assistant' && aiMessages.length > 0);
+
+    const cameraHeightClass = showCapturedText ? 'h-[38%]' : 'flex-1 min-h-0';
 
     return (
         <div className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans">
@@ -1047,39 +1122,28 @@ export default function BlindPage() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
                 </Link>
 
-                {/* AI Status Indicator */}
+                {/* Status Indicator */}
                 <div className="pointer-events-none" aria-hidden="true">
                     <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold backdrop-blur-md shadow-lg border transition-colors ${!aiReady ? 'bg-zinc-800/80 text-zinc-400 border-zinc-700' :
-                        aiStatus === 'thinking' ? 'bg-amber-500/90 text-black border-amber-400 animate-pulse' :
+                        aiStatus === 'thinking' || (mode === 'currency' && (currencyScanning || currencyMonitoring)) ? 'bg-amber-500/90 text-black border-amber-400 animate-pulse' :
                             'bg-emerald-500/90 text-black border-emerald-400'
                         }`}>
                         <span className={`w-2 h-2 rounded-full ${!aiReady ? 'bg-zinc-500' :
-                            aiStatus === 'thinking' ? 'bg-black animate-ping' :
+                            aiStatus === 'thinking' || (mode === 'currency' && (currencyScanning || currencyMonitoring)) ? 'bg-black animate-ping' :
                                 'bg-black'
                             }`}></span>
-                        {!aiReady ? 'กำลังเริ่ม...' :
-                            aiStatus === 'thinking' ? 'กำลังคิด...' :
-                                'AI พร้อม'}
+                        {statusLabel}
                     </span>
                 </div>
             </div>
 
-            {/* ==================== AI MODE UI (ACCESSIBLE - AI FIRST) ==================== */}
-            {mode === 'ai' && (
-                <main
+            {/* ==================== MAIN UI ==================== */}
+            <main
                     className="w-full h-full flex flex-col relative"
                     aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา"
                 >
-                    {/* Live Status Announcer (Hidden visually, read by VoiceOver) */}
-                    <div className="sr-only" aria-live="assertive" aria-atomic="true">
-                        {!aiReady ? "กำลังขออนุญาตใช้กล้อง" :
-                            aiStatus === 'capturing' ? "กำลังถ่ายภาพ" :
-                                aiStatus === 'thinking' ? "AI กำลังวิเคราะห์ รอสักครู่" :
-                                    aiMessages.length > 0 && aiMessages[aiMessages.length - 1].role === 'ai' ? `AI ตอบกลับว่า: ${aiMessages[aiMessages.length - 1].content}` : ""}
-                    </div>
-
-                    {/* Camera View (Expanded - 40% height for better framing) */}
-                    <div className="relative h-[40%] bg-black flex-shrink-0" aria-hidden="true">
+                    {/* Camera View */}
+                    <div ref={cameraContainerRef} className={`relative bg-black flex-shrink-0 transition-all duration-300 ${cameraHeightClass}`} aria-hidden="true">
                         <video
                             ref={myVideoRef}
                             autoPlay
@@ -1087,12 +1151,26 @@ export default function BlindPage() {
                             playsInline
                             className="absolute inset-0 w-full h-full object-cover"
                         />
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/30"></div>
+                        <DetectionOverlay
+                            videoRef={myVideoRef}
+                            containerRef={cameraContainerRef}
+                            cocoBoxes={cocoBoxes}
+                            pageBounds={pageBounds}
+                            pageCorners={pageCorners}
+                            pageAligned={readerAligned}
+                            currencyBounds={currencyBounds}
+                            mode={mode}
+                            showCoco={mode === 'assistant' && objectDetectorEnabled && aiReady}
+                            showPage={mode === 'reader'}
+                            showCurrency={mode === 'currency'}
+                            currencyDetected={!!currencyResult}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/30 pointer-events-none z-[5]"></div>
 
-                        {/* Object Detection Guidance Overlay */}
-                        {objectDetectorEnabled && guidanceText && !voiceTranscript && (
+                        {/* Guidance overlay: assistant uses COCO, reader uses page alignment */}
+                        {mode === 'assistant' && objectDetectorEnabled && guidanceText && !voiceTranscript && (
                             <div
-                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 ${guidanceText.includes('✅')
+                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 z-20 ${guidanceText.includes('✅')
                                     ? 'bg-green-500/80 border-green-300 animate-pulse'
                                     : guidanceText.includes('ไม่เจอ')
                                         ? 'bg-zinc-800/80 border-zinc-600'
@@ -1111,9 +1189,60 @@ export default function BlindPage() {
                             </div>
                         )}
 
+                        {mode === 'reader' && readerGuidance && !voiceTranscript && aiStatus !== 'thinking' && (
+                            <div
+                                className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 z-20 ${readerAligned
+                                    ? 'bg-green-500/80 border-green-300 animate-pulse'
+                                    : readerGuidance.includes('ยังไม่เจอ')
+                                        ? 'bg-zinc-800/80 border-zinc-600'
+                                        : 'bg-violet-500/80 border-violet-300'}`}
+                                role="status"
+                                aria-live="assertive"
+                            >
+                                <p className="text-xl font-bold text-white drop-shadow-lg">
+                                    {readerGuidance}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Currency Result Overlay */}
+                        {mode === 'currency' && (
+                            <div
+                                className={`absolute inset-0 flex flex-col items-center justify-center p-6 z-20 pointer-events-none ${currencyResult ? 'bg-amber-500/10' : ''}`}
+                                role="status"
+                                aria-live="assertive"
+                            >
+                                <p className={`font-black text-center drop-shadow-lg px-4 ${currencyResult
+                                    ? 'text-6xl text-amber-300'
+                                    : currencyScanning
+                                        ? 'text-2xl text-amber-200 animate-pulse'
+                                        : currencyHint
+                                            ? 'text-xl text-amber-200'
+                                            : 'text-2xl text-zinc-400'
+                                    }`}>
+                                    {currencyResult
+                                        ? formatCurrencyDisplay(currencyResult)
+                                        : currencyScanning
+                                            ? 'กำลังถาม AI...'
+                                            : currencyHint || 'ชี้กล้องไปที่ธนบัตรหรือเหรียญ'}
+                                </p>
+                                {currencyResult && (
+                                    <p className="text-lg text-amber-100/80 mt-3">
+                                        {formatCurrencySpeech(currencyResult)}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        {mode === 'assistant' && !showCapturedText && objectDetectorEnabled && !guidanceText && !voiceTranscript && (
+                            <div className="absolute bottom-24 left-4 right-4 p-3 rounded-xl text-center bg-black/50 backdrop-blur-sm border border-white/10 z-20 pointer-events-none">
+                                <p className="text-sm text-zinc-300">กดปุ่มถ่ายภาพหรือกดค้างไมค์เพื่อถาม</p>
+                            </div>
+                        )}
+
                         {/* Voice Transcript Overlay */}
                         {voiceTranscript && (
-                            <div className="absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-md p-4 rounded-2xl text-center border-2 border-white/20">
+                            <div className="absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-md p-4 rounded-2xl text-center border-2 border-white/20 z-20">
                                 <p className={`text-xl font-bold ${isListening ? 'text-red-400 animate-pulse' : 'text-white'}`}>
                                     {voiceTranscript}
                                 </p>
@@ -1121,9 +1250,57 @@ export default function BlindPage() {
                         )}
                     </div>
 
-                    {/* Chat Messages Area */}
+                    {/* Live Status Announcer (Hidden visually, read by VoiceOver) */}
+                    <div className="sr-only" aria-live="assertive" aria-atomic="true">
+                        {modeAnnouncement ||
+                            (!aiReady ? "กำลังขออนุญาตใช้กล้อง" :
+                                aiStatus === 'capturing' ? "กำลังถ่ายภาพ" :
+                                    aiStatus === 'thinking' ? "AI กำลังวิเคราะห์ รอสักครู่" :
+                                        mode === 'reader' && readerGuidance ? readerGuidance :
+                                            mode === 'currency' && currencyResult ? formatCurrencySpeech(currencyResult) :
+                                                mode === 'reader' && isReading ? "กำลังอ่านเอกสารออกเสียง" :
+                                                    mode === 'assistant' && aiMessages.length > 0 && aiMessages[aiMessages.length - 1].role === 'ai'
+                                                        ? `AI ตอบกลับว่า: ${aiMessages[aiMessages.length - 1].content}`
+                                                        : "")}
+                    </div>
+
+                    {/* Mode Switcher — below camera so aiming the lens does not hit tabs */}
+                    <div
+                        className="flex-shrink-0 px-3 py-2 bg-black border-b border-zinc-800 flex gap-2"
+                        role="tablist"
+                        aria-label="เลือกโหมดการใช้งาน"
+                    >
+                        {[
+                            { id: 'assistant', label: 'ผู้ช่วย AI' },
+                            { id: 'currency', label: 'ดูสกุลเงิน' },
+                            { id: 'reader', label: 'อ่านเอกสาร' },
+                        ].map((item) => (
+                            <button
+                                key={item.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={mode === item.id}
+                                aria-pressed={mode === item.id}
+                                onClick={() => switchMode(item.id)}
+                                className={`flex-1 py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus:ring-2 focus:ring-white ${mode === item.id
+                                    ? item.id === 'currency'
+                                        ? 'bg-amber-500 text-black border-amber-300'
+                                        : item.id === 'reader'
+                                            ? 'bg-violet-500 text-white border-violet-300'
+                                            : 'bg-sky-500 text-black border-sky-300'
+                                    : 'bg-zinc-900 text-zinc-400 border-zinc-700 active:bg-zinc-800'
+                                    }`}
+                                aria-label={`โหมด${item.label}`}
+                            >
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Content Area — แสดงหลังถ่ายแล้วเท่านั้น */}
+                    {mode === 'assistant' && showCapturedText && (
                     <section
-                        className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950"
+                        className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950 min-h-0"
                         aria-label="ประวัติการสนทนา"
                         tabIndex={0}
                         ref={(el) => {
@@ -1132,20 +1309,6 @@ export default function BlindPage() {
                             }
                         }}
                     >
-                        {aiMessages.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-full text-center px-8">
-                                {/* Large accessible icon */}
-                                <div className="w-24 h-24 rounded-full bg-sky-500/20 border-2 border-sky-500/40 flex items-center justify-center mb-6">
-                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                                </div>
-                                <h2 className="text-2xl font-black text-white mb-3">ผู้ช่วย AI พร้อมแล้ว</h2>
-                                <p className="text-lg text-zinc-400 leading-relaxed">
-                                    กดปุ่ม <span className="text-sky-400 font-bold">ถ่ายภาพ</span> เพื่อให้ AI บรรยาย
-                                    <br />หรือ <span className="text-red-400 font-bold">กดค้างปุ่มไมค์</span> เพื่อพูดถาม
-                                </p>
-                            </div>
-                        )}
-
                         <ul className="space-y-4">
                             {aiMessages.map((msg, i) => (
                                 <li key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -1184,9 +1347,22 @@ export default function BlindPage() {
                             ))}
                         </ul>
                     </section>
+                    )}
+
+                    {mode === 'reader' && showCapturedText && (
+                        <section className="flex-1 overflow-y-auto p-4 bg-zinc-950 min-h-0" aria-label="เนื้อหาเอกสาร" tabIndex={0}>
+                            <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-700">
+                                <p className="text-lg leading-relaxed whitespace-pre-wrap text-white">{docText}</p>
+                                {isReading && (
+                                    <p className="text-violet-400 text-sm mt-4 animate-pulse" aria-live="polite">กำลังอ่านออกเสียง...</p>
+                                )}
+                            </div>
+                        </section>
+                    )}
 
                     {/* Bottom Control Bar (Accessible - Large Touch Targets) */}
                     <div className="bg-black border-t-2 border-zinc-800 px-6 py-5 pb-10" role="group" aria-label="ปุ่มควบคุม">
+                        {mode === 'assistant' && (
                         <div className="flex items-center justify-center gap-6">
                             {/* Clear Chat Button (Left - Small) */}
                             <button
@@ -1246,302 +1422,93 @@ export default function BlindPage() {
                                 )}
                             </button>
                         </div>
+                        )}
+
+                        {mode === 'currency' && (
+                            <div className="flex items-center justify-center gap-6">
+                                <div className="flex-1 text-center" aria-live="polite">
+                                    <p className="text-amber-400 font-bold text-lg">
+                                        {currencyScanning || currencyMonitoring ? 'กำลังสแกนอัตโนมัติ...' : 'พร้อมสแกน'}
+                                    </p>
+                                    <p className="text-zinc-500 text-sm mt-1">
+                                        Groq AI บอกมูลค่าแบงค์และเหรียญ (ต้องมีเน็ต)
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={!currencyResult}
+                                    onClick={replayCurrency}
+                                    className={`w-16 h-16 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none transition-all ${currencyResult
+                                        ? 'bg-amber-500 text-black border-amber-300 active:scale-95'
+                                        : 'bg-zinc-900 text-zinc-600 border-zinc-800 cursor-not-allowed'
+                                        }`}
+                                    aria-label="พูดซ้ำมูลค่าล่าสุด"
+                                >
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+                                </button>
+                            </div>
+                        )}
+
+                        {mode === 'reader' && (
+                            <div className="flex items-center justify-center gap-4">
+                                <button
+                                    type="button"
+                                    disabled={!docText || isReading}
+                                    onClick={replayDocument}
+                                    className={`w-14 h-14 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none ${docText && !isReading
+                                        ? 'bg-zinc-900 text-violet-400 border-violet-700 active:bg-zinc-700'
+                                        : 'bg-zinc-900 text-zinc-600 border-zinc-800 cursor-not-allowed'
+                                        }`}
+                                    aria-label="อ่านซ้ำเอกสาร"
+                                >
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    disabled={!aiReady || aiStatus === 'thinking'}
+                                    onClick={readDocument}
+                                    className={`
+                                        relative w-[88px] h-[88px] rounded-full flex items-center justify-center transition-all duration-200
+                                        shadow-[0_0_25px_rgba(139,92,246,0.3)] border-4
+                                        focus:ring-4 focus:ring-violet-300 focus:outline-none
+                                        ${(!aiReady || aiStatus === 'thinking')
+                                            ? 'bg-zinc-800 opacity-50 cursor-not-allowed border-zinc-700'
+                                            : 'bg-violet-500 hover:bg-violet-400 active:scale-90 active:bg-violet-600 border-violet-300'}
+                                    `}
+                                    aria-label={
+                                        aiStatus === 'thinking'
+                                            ? 'กำลังอ่านเอกสาร รอสักครู่'
+                                            : readerAligned
+                                                ? 'ตรงแล้ว พร้อมถ่ายหรือกดเพื่อถ่ายใหม่'
+                                                : 'ถ่ายหน้าเอกสารเพื่ออ่านออกเสียง'
+                                    }
+                                    aria-busy={aiStatus === 'thinking'}
+                                >
+                                    {aiStatus === 'thinking' ? (
+                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-white animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                                    ) : (
+                                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" /></svg>
+                                    )}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    disabled={!isReading}
+                                    onClick={stopReading}
+                                    className={`w-14 h-14 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none ${isReading
+                                        ? 'bg-red-600 text-white border-red-400 active:scale-95'
+                                        : 'bg-zinc-900 text-zinc-600 border-zinc-800 cursor-not-allowed'
+                                        }`}
+                                    aria-label="หยุดอ่านออกเสียง"
+                                >
+                                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                                </button>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Floating "Call Volunteer" Button (Bottom-Right Corner) */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            // Cleanup AI resources
-                            if (aiStreamRef.current) {
-                                aiStreamRef.current.getTracks().forEach(t => t.stop());
-                                aiStreamRef.current = null;
-                            }
-                            setAiReady(false);
-                            setObjectDetectorEnabled(false);
-                            // Switch to volunteer mode
-                            setMode('volunteer');
-                            hapticRef.current?.trigger(2);
-                        }}
-                        className="absolute top-20 right-4 z-40 flex items-center gap-2 bg-amber-500/90 hover:bg-amber-400 active:bg-amber-600 active:scale-95 text-black px-4 py-2.5 rounded-full backdrop-blur-md shadow-lg border border-amber-300/50 transition-all"
-                        aria-label="เปลี่ยนเป็นโหมดโทรหาอาสาสมัคร"
-                    >
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" strokeWidth="0"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                        <span className="font-bold text-sm">โทรหาอาสา</span>
-                    </button>
-
-                    {/* Debug Log */}
-                    {logs.length > 0 && (
-                        <div className="absolute bottom-36 left-4 right-4 bg-black/90 p-3 rounded-lg border border-white/10 max-h-24 overflow-y-auto pointer-events-none" aria-hidden="true">
-                            <div className="font-mono text-[10px] space-y-1">
-                                {logs.slice(-3).map((log, i) => (
-                                    <p key={i} className="text-zinc-400 truncate">{log}</p>
-                                ))}
-                            </div>
-                        </div>
-                    )}
                 </main>
-            )
-            }
-
-            {/* ==================== VOLUNTEER MODE UI ==================== */}
-            {
-                mode === 'volunteer' && (
-                    <>
-
-
-
-
-                        {/* IDLE STATE */}
-                        {status === 'idle' && (
-                            <button
-                                type="button"
-                                onClick={startCall}
-                                className="w-full h-full flex flex-col items-center justify-center relative group"
-                            >
-                                <div className="absolute inset-0 bg-linear-to-br from-amber-400 to-orange-600 transition-all duration-500 group-active:scale-[0.98]"></div>
-
-                                {/* Ripple Effect */}
-                                <div className="absolute w-[500px] h-[500px] bg-white/10 rounded-full animate-ping opacity-20"></div>
-
-                                <div className="z-10 flex flex-col items-center">
-                                    <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-sm shadow-2xl">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white drop-shadow-md">
-                                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
-                                        </svg>
-                                    </div>
-                                    <span className="text-6xl font-black uppercase tracking-tighter text-white drop-shadow-lg text-center leading-none">
-                                        Call<br />Help
-                                    </span>
-                                    <span className="mt-4 text-xl font-medium text-white/90 bg-black/10 px-4 py-1 rounded-full">
-                                        Tap anywhere to start
-                                    </span>
-                                </div>
-                            </button>
-                        )}
-
-                        {/* INITIALIZING STATE */}
-                        {status === 'initializing' && (
-                            <div className="w-full h-full flex items-center justify-center bg-zinc-900">
-                                <div className="flex flex-col items-center animate-pulse">
-                                    <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-                                    <div className="text-2xl font-bold text-amber-500 tracking-widest">STARTING CAMERA...</div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* WAITING STATE */}
-                        {status === 'waiting' && (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-40 grayscale" />
-
-                                {/* Radar Animation Overlay */}
-                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,#000_100%)]"></div>
-
-                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                    <div className="relative mb-12">
-                                        <div className="absolute inset-0 bg-sky-500/30 rounded-full animate-ping"></div>
-                                        <div className="relative bg-sky-500/20 p-6 rounded-full border border-sky-500/50 backdrop-blur-md">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
-                                                <circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <div className="text-3xl font-bold text-center mb-2">Searching...</div>
-                                    <div className="text-gray-400 text-center mb-12">Finding an available volunteer</div>
-
-                                    <button
-                                        type="button"
-                                        onClick={endCall}
-                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M18 6 6 18" />
-                                            <path d="m6 6 12 12" />
-                                        </svg>
-                                        Cancel Request
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* NO VOLUNTEERS STATE */}
-                        {status === 'no-volunteers' && (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" />
-
-                                {/* Dark Overlay */}
-                                <div className="absolute inset-0 bg-gradient-to-b from-red-900/30 to-black"></div>
-
-                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                    {/* Warning Icon */}
-                                    <div className="relative mb-8">
-                                        <div className="absolute inset-0 bg-amber-500/20 rounded-full animate-pulse"></div>
-                                        <div className="relative bg-amber-500/10 p-6 rounded-full border border-amber-500/50 backdrop-blur-md">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400">
-                                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                                <line x1="12" y1="9" x2="12" y2="13"></line>
-                                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <div className="text-3xl font-bold text-center mb-2 text-amber-400">ไม่มีอาสาออนไลน์</div>
-                                    <div className="text-gray-400 text-center mb-4">ขณะนี้ยังไม่มีอาสาสมัครพร้อมให้บริการ</div>
-
-                                    {/* Retry Indicator */}
-                                    <div className="flex items-center gap-2 text-sky-400 mb-8">
-                                        <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin"></div>
-                                        <span className="text-sm">กำลังค้นหาใหม่อัตโนมัติ...</span>
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={endCall}
-                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-6 rounded-2xl text-xl font-bold transition-all border border-zinc-700 shadow-lg flex items-center justify-center gap-3"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M18 6 6 18" />
-                                            <path d="m6 6 12 12" />
-                                        </svg>
-                                        ยกเลิก
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* EXHAUSTED STATE - หมดอาสาแล้ว */}
-                        {status === 'exhausted' && (
-                            <div className="w-full h-full flex flex-col items-center justify-center bg-black relative">
-                                <video ref={myVideoRef} autoPlay muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-10 grayscale" />
-
-                                {/* Dark Overlay */}
-                                <div className="absolute inset-0 bg-linear-to-b from-red-900/40 to-black"></div>
-
-                                <div className="z-10 flex flex-col items-center w-full max-w-md px-6">
-                                    {/* Stop Icon */}
-                                    <div className="relative mb-8">
-                                        <div className="relative bg-red-500/20 p-6 rounded-full border border-red-500/50 backdrop-blur-md">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-400">
-                                                <circle cx="12" cy="12" r="10"></circle>
-                                                <line x1="15" y1="9" x2="9" y2="15"></line>
-                                                <line x1="9" y1="9" x2="15" y2="15"></line>
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <div className="text-3xl font-bold text-center mb-2 text-red-400">ไม่มีอาสาว่าง</div>
-                                    <div className="text-gray-400 text-center mb-8">ขณะนี้อาสาสมัครทุกคนไม่ว่าง<br />กรุณาลองใหม่ภายหลัง</div>
-
-                                    {/* Retry Button */}
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setStatus('idle');
-                                            setTimeout(() => startCall(), 100);
-                                        }}
-                                        className="w-full bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-black py-6 rounded-2xl text-xl font-bold transition-all shadow-lg flex items-center justify-center gap-3 mb-4"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                                            <path d="M3 3v5h5" />
-                                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                                            <path d="M16 21h5v-5" />
-                                        </svg>
-                                        ลองอีกครั้ง
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={endCall}
-                                        className="w-full bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-white py-4 rounded-2xl text-lg font-medium transition-all border border-zinc-700"
-                                    >
-                                        ยกเลิก
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* CONFIRMING STATE */}
-                        {status === 'confirming' && (
-                            <button
-                                type="button"
-                                onClick={confirmConnection}
-                                className="w-full h-full flex flex-col items-center justify-center bg-linear-to-b from-emerald-500 to-teal-700 animate-in fade-in duration-300"
-                            >
-                                <div className="bg-white/20 p-8 rounded-full mb-8 backdrop-blur-md animate-bounce">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="currentColor" className="text-white">
-                                        <path d="M9 11l3 3L22 4"></path>
-                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                                    </svg>
-                                </div>
-                                <span className="text-4xl font-black uppercase text-center text-white drop-shadow-md mb-2">
-                                    Volunteer Found!
-                                </span>
-                                <span className="text-white/80 text-xl font-medium animate-pulse">
-                                    Tap screen to start talking
-                                </span>
-                            </button>
-                        )}
-
-                        {/* CONNECTED STATE */}
-                        {status === 'connected' && (
-                            <div className="w-full h-full relative bg-zinc-900">
-                                <video ref={myVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-                                <audio ref={remoteVideoRef} autoPlay />
-
-                                {/* Overlay Gradient for contrast */}
-                                <div className="absolute inset-x-0 bottom-0 h-48 bg-linear-to-t from-black/90 to-transparent pointer-events-none"></div>
-
-                                {/* Controls */}
-                                <div className="absolute bottom-10 inset-x-0 flex items-center justify-center gap-8 z-20">
-                                    {/* Mute Button */}
-                                    <button
-                                        type="button"
-                                        onClick={toggleMute}
-                                        className={`flex items-center justify-center w-16 h-16 rounded-full shadow-xl border-2 border-white/20 transition-all active:scale-95 ${isMuted ? 'bg-white text-zinc-900' : 'bg-zinc-800/60 backdrop-blur-md text-white'}`}
-                                        aria-label={isMuted ? "Unmute Microphone" : "Mute Microphone"}
-                                    >
-                                        {isMuted ? (
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <line x1="1" y1="1" x2="23" y2="23"></line>
-                                                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                                                <path d="M17 16.95A7 7 0 0 1 5 12v-2"></path>
-                                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                                                <line x1="8" y1="23" x2="16" y2="23"></line>
-                                            </svg>
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                                                <line x1="12" y1="19" x2="12" y2="23"></line>
-                                                <line x1="8" y1="23" x2="16" y2="23"></line>
-                                            </svg>
-                                        )}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={endCall}
-                                        className="group flex items-center justify-center w-24 h-24 bg-red-600 active:bg-red-700 rounded-full shadow-2xl border-4 border-white/10 transition-transform active:scale-95"
-                                        aria-label="End Call"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white">
-                                            <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" /><path d="M22 2l-7 7" /><path d="M15 2l7 7" />
-                                        </svg>
-                                    </button>
-                                </div>
-
-                                {/* Live Indicator */}
-                                <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-red-600/90 backdrop-blur text-white px-4 py-1 rounded-full text-xs font-bold tracking-wider flex items-center gap-2 shadow-lg">
-                                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                                    LIVE
-                                </div>
-                            </div>
-                        )}
-                    </>
-                )
-            }
         </div >
     );
 }

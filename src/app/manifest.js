@@ -2,7 +2,7 @@ export default function manifest() {
     return {
         name: 'Nyeta - AI Visual Assistant',
         short_name: 'Nyeta',
-        description: 'Visual assistance for blind users with AI and Volunteers',
+        description: 'AI visual assistant for blind users',
         start_url: '/',
         display: 'standalone',
         background_color: '#000000',

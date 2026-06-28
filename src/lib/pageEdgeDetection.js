@@ -172,7 +172,7 @@ function buildGuidance(metrics) {
 
 
 
-    if (coverage < 0.18) {
+    if (coverage < 0.15) {
 
         return { aligned: false, guidance: 'ขยับเข้าใกล้เอกสารอีกหน่อย' };
 
@@ -180,7 +180,7 @@ function buildGuidance(metrics) {
 
 
 
-    if (coverage > 0.82) {
+    if (coverage > 0.90) {
 
         return { aligned: false, guidance: 'ถอยกล้องออกนิดนึง' };
 
@@ -188,9 +188,9 @@ function buildGuidance(metrics) {
 
 
 
-    const cxTol = metrics.vw * 0.06;
+    const cxTol = metrics.vw * 0.12;
 
-    const cyTol = metrics.vh * 0.06;
+    const cyTol = metrics.vh * 0.12;
 
 
 
@@ -212,7 +212,7 @@ function buildGuidance(metrics) {
 
 
 
-    if (Math.abs(rotation) > 6) {
+    if (Math.abs(rotation) > 12) {
 
         const rotDir = rotation > 0 ? 'ขวา' : 'ซ้าย';
 
@@ -302,13 +302,13 @@ function computeAlignmentFromCorners(corners, vw, vh) {
 
     const perspective = { tilt: null, roll: null };
 
-    if (widthRatio > 0.18) {
+    if (widthRatio > 0.25) {
 
         if (topW < bottomW) perspective.tilt = 'เงยกล้องขึ้นให้ขนานกับกระดาษ';
 
         else perspective.tilt = 'ก้มกล้องลงให้ขนานกับกระดาษ';
 
-    } else if (heightRatio > 0.18) {
+    } else if (heightRatio > 0.25) {
 
         if (leftH < rightH) perspective.roll = 'เอียงกล้องไปทางซ้ายให้ขนานกับกระดาษ';
 

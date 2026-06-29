@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --experimental-https",
+    "dev:http": "next dev",
+    "tunnel": "cloudflared tunnel --url https://localhost:3000 --no-tls-verify || .\\cloudflared.exe tunnel --url https://localhost:3000 --no-tls-verify",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -12,11 +14,11 @@
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
     "next": "16.1.1",
-    "peerjs": "^1.5.2",
-    "pusher": "^5.2.0",
-    "pusher-js": "^8.4.0",
+    "pusher": "^5.3.4",
+    "pusher-js": "^8.5.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "scanic": "^1.0.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

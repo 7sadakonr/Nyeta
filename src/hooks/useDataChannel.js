@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 const CHUNK_SIZE = 16384; // 16KB limit for DataChannel
 
-export function useDataChannel(pcRef, role) {
+export function useDataChannel(channel, role) {
     const [channelState, setChannelState] = useState(null); // null | 'connecting' | 'open' | 'closed'
     const channelRef = useRef(null);
     const listenersRef = useRef(new Set());
@@ -56,31 +56,14 @@ export function useDataChannel(pcRef, role) {
     }, []);
 
     useEffect(() => {
-        const pc = pcRef.current;
-        if (!pc) return;
-
-        if (role === 'blind') {
-            // Caller creates the data channel
-            if (!channelRef.current) {
-                try {
-                    const channel = pc.createDataChannel('nyeta-data', { ordered: true });
-                    handleChannel(channel);
-                } catch (e) {
-                    console.error("Error creating data channel", e);
-                }
-            }
-        } else if (role === 'volunteer') {
-            // Answerer receives the data channel
-            const onDataChannel = (event) => {
-                handleChannel(event.channel);
-            };
-            pc.addEventListener('datachannel', onDataChannel);
-            
-            return () => {
-                pc.removeEventListener('datachannel', onDataChannel);
-            };
+        if (!channel) {
+            channelRef.current = null;
+            setChannelState(null);
+            return;
         }
-    }, [pcRef, role, handleChannel]);
+
+        handleChannel(channel);
+    }, [channel, handleChannel]);
 
     // Send a generic message
     const sendMessage = useCallback((type, payload) => {
@@ -101,6 +84,11 @@ export function useDataChannel(pcRef, role) {
     // Send capture request (Volunteer -> Blind)
     const sendCaptureRequest = useCallback((options = { flash: false }) => {
         sendMessage('capture-request', options);
+    }, [sendMessage]);
+
+    // Send toggle flash request (Volunteer -> Blind)
+    const sendToggleFlash = useCallback((flash) => {
+        sendMessage('toggle-flash', { flash });
     }, [sendMessage]);
 
     // Send capture status
@@ -141,6 +129,7 @@ export function useDataChannel(pcRef, role) {
         channelState,
         sendChat,
         sendCaptureRequest,
+        sendToggleFlash,
         sendCaptureResponse,
         sendCaptureStatus,
         onMessage,

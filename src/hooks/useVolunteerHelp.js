@@ -4,6 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RTC_CONFIG, EVENTS, VOLUNTEERS_CHANNEL, callChannel } from '@/lib/call/constants';
 import { sendEvent, subscribe, unsubscribe } from '@/lib/call/signaling';
 
+const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
 /**
  * Volunteer-side logic. The volunteer is the WebRTC *answerer*: receives the
  * blind user's camera video + audio and sends only their own microphone back.
@@ -16,6 +23,7 @@ export function useVolunteerHelp() {
     const [volunteerCount, setVolunteerCount] = useState(0);
     const [incomingCall, setIncomingCall] = useState(null); // { callId }
     const [error, setError] = useState(null);
+    const [dataChannel, setDataChannel] = useState(null);
 
     const remoteVideoRef = useRef(null);
 
@@ -30,7 +38,7 @@ export function useVolunteerHelp() {
     const onlineRef = useRef(false);
 
     if (!volunteerIdRef.current && typeof window !== 'undefined') {
-        volunteerIdRef.current = crypto.randomUUID();
+        volunteerIdRef.current = generateId();
     }
 
     const setStatusSafe = useCallback((next) => {
@@ -58,6 +66,7 @@ export function useVolunteerHelp() {
         callChannelRef.current = null;
         activeCallIdRef.current = null;
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+        setDataChannel(null);
         if (nextStatus) setStatusSafe(nextStatus);
     }, [setStatusSafe]);
 
@@ -98,6 +107,11 @@ export function useVolunteerHelp() {
         const pc = new RTCPeerConnection(RTC_CONFIG);
         pcRef.current = pc;
         activeCallIdRef.current = callId;
+        
+        pc.ondatachannel = (event) => {
+            setDataChannel(event.channel);
+        };
+        
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
         pc.onicecandidate = (e) => {
@@ -263,5 +277,6 @@ export function useVolunteerHelp() {
         acceptCall,
         endCall,
         pcRef,
+        dataChannel,
     };
 }

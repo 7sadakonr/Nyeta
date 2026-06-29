@@ -19,12 +19,12 @@ const STATUS_SPEECH = {
 };
 
 export default function BlindHelpCall() {
-    const { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, pcRef, localStreamRef } = useBlindHelp();
+    const { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, localStreamRef, dataChannel: rawDataChannel } = useBlindHelp();
     const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
     const hapticRef = useRef(null);
     const lastSpokenRef = useRef('');
 
-    const dataChannel = useDataChannel(pcRef, 'blind');
+    const dataChannel = useDataChannel(rawDataChannel, 'blind');
     const { captureState } = useCaptureHandler({
         localStreamRef,
         localVideoRef,
@@ -53,11 +53,11 @@ export default function BlindHelpCall() {
         if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
         if (!text || text === lastSpokenRef.current) return;
         lastSpokenRef.current = text;
-        speechSynthesis.cancel();
+        window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'th-TH';
         u.rate = 1.1;
-        speechSynthesis.speak(u);
+        window.speechSynthesis.speak(u);
     }, []);
 
     const playEarcon = useCallback((type) => {

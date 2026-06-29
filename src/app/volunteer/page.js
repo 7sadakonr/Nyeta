@@ -21,10 +21,10 @@ export default function VolunteerPage() {
         goOffline,
         acceptCall,
         endCall,
-        pcRef,
+        dataChannel: rawDataChannel,
     } = useVolunteerHelp();
 
-    const dataChannel = useDataChannel(pcRef, 'volunteer');
+    const dataChannel = useDataChannel(rawDataChannel, 'volunteer');
     const [messages, setMessages] = useState([]);
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -61,6 +61,12 @@ export default function VolunteerPage() {
         if (dataChannel) {
             setCaptureState('requesting');
             dataChannel.sendCaptureRequest(options);
+        }
+    }, [dataChannel]);
+
+    const handleToggleFlash = useCallback((flash) => {
+        if (dataChannel) {
+            dataChannel.sendToggleFlash(flash);
         }
     }, [dataChannel]);
 
@@ -176,7 +182,7 @@ export default function VolunteerPage() {
                         {/* Capture Controls Overlay */}
                         {status === 'connected' && (
                             <div className="absolute bottom-6 left-0 right-0 flex justify-center z-10">
-                                <CaptureControls onCapture={handleCaptureRequest} captureState={captureState} />
+                                <CaptureControls onCapture={handleCaptureRequest} onToggleFlash={handleToggleFlash} captureState={captureState} />
                             </div>
                         )}
                     </section>

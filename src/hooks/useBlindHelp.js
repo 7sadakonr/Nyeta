@@ -4,6 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { RTC_CONFIG, EVENTS, VOLUNTEERS_CHANNEL, callChannel } from '@/lib/call/constants';
 import { sendEvent, subscribe, unsubscribe } from '@/lib/call/signaling';
 
+const generateId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+};
+
 // How long to ring before giving up if no volunteer answers (ms).
 const RING_TIMEOUT_MS = 40000;
 
@@ -17,6 +24,7 @@ const RING_TIMEOUT_MS = 40000;
 export function useBlindHelp() {
     const [status, setStatus] = useState('idle');
     const [error, setError] = useState(null);
+    const [dataChannel, setDataChannel] = useState(null);
 
     const localVideoRef = useRef(null);
     const remoteAudioRef = useRef(null);
@@ -54,6 +62,7 @@ export function useBlindHelp() {
         acceptedVolunteerRef.current = null;
         if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
+        setDataChannel(null);
         if (nextStatus) setStatusSafe(nextStatus);
     }, [setStatusSafe]);
 
@@ -150,12 +159,17 @@ export function useBlindHelp() {
         }
 
         // 2. Set up peer connection.
-        const callId = crypto.randomUUID();
+        const callId = generateId();
         callIdRef.current = callId;
         acceptedVolunteerRef.current = null;
 
         const pc = new RTCPeerConnection(RTC_CONFIG);
         pcRef.current = pc;
+        
+        // Create DataChannel immediately!
+        const channel = pc.createDataChannel('nyeta-data', { ordered: true });
+        setDataChannel(channel);
+        
         stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
         pc.onicecandidate = (e) => {
@@ -187,13 +201,13 @@ export function useBlindHelp() {
         };
 
         // 3. Subscribe to the private call channel and bind handlers.
-        const channel = subscribe(callChannel(callId));
-        channelRef.current = channel;
-        if (channel) {
-            channel.bind(EVENTS.CALL_ACCEPTED, handleAccepted);
-            channel.bind(EVENTS.ANSWER, handleAnswer);
-            channel.bind(EVENTS.ICE_CANDIDATE, handleIce);
-            channel.bind(EVENTS.CALL_ENDED, () => {
+        const pusherChannel = subscribe(callChannel(callId));
+        channelRef.current = pusherChannel;
+        if (pusherChannel) {
+            pusherChannel.bind(EVENTS.CALL_ACCEPTED, handleAccepted);
+            pusherChannel.bind(EVENTS.ANSWER, handleAnswer);
+            pusherChannel.bind(EVENTS.ICE_CANDIDATE, handleIce);
+            pusherChannel.bind(EVENTS.CALL_ENDED, () => {
                 if (callIdRef.current) cleanup('ended');
             });
         }
@@ -231,5 +245,5 @@ export function useBlindHelp() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    return { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, pcRef, localStreamRef };
+    return { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, pcRef, localStreamRef, dataChannel };
 }

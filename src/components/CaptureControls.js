@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 
-export default function CaptureControls({ onCapture, captureState }) {
+export default function CaptureControls({ onCapture, onToggleFlash, captureState }) {
     const [useFlash, setUseFlash] = useState(false);
     const [cooldown, setCooldown] = useState(false);
 
@@ -67,7 +67,10 @@ export default function CaptureControls({ onCapture, captureState }) {
                         type="checkbox" 
                         className="sr-only" 
                         checked={useFlash}
-                        onChange={(e) => setUseFlash(e.target.checked)}
+                        onChange={(e) => {
+                            setUseFlash(e.target.checked);
+                            if (onToggleFlash) onToggleFlash(e.target.checked);
+                        }}
                         disabled={isBusy}
                     />
                     <div className={`block w-10 h-6 rounded-full transition-colors ${useFlash ? 'bg-yellow-500' : 'bg-gray-600'}`}></div>

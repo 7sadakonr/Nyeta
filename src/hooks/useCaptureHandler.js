@@ -9,6 +9,7 @@ export function useCaptureHandler({
 }) {
     const [captureState, setCaptureState] = useState('idle'); // 'idle' | 'flash-on' | 'capturing' | 'sending'
     const audioContextRef = useRef(null);
+    const manualTorchRef = useRef(false);
 
     // Play shutter sound effect
     const playShutterSound = useCallback(() => {
@@ -50,18 +51,29 @@ export function useCaptureHandler({
 
         const videoTrack = localStreamRef.current.getVideoTracks()[0];
         let originalTorch = false;
+        let turnedOnForCapture = false;
         
         try {
-            // Apply torch if requested and supported
-            if (options?.flash && videoTrack && typeof videoTrack.getCapabilities === 'function') {
-                const capabilities = videoTrack.getCapabilities();
-                if (capabilities.torch) {
-                    const settings = videoTrack.getSettings();
-                    originalTorch = settings.torch || false;
-                    await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-                    // Wait for the camera to adjust to the light
-                    await new Promise(resolve => setTimeout(resolve, 500));
+            // Apply torch if requested and not already manually on
+            if (options?.flash && !manualTorchRef.current) {
+                if (videoTrack && typeof videoTrack.applyConstraints === 'function') {
+                    try {
+                        const settings = videoTrack.getSettings();
+                        originalTorch = settings.torch || false;
+                        await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+                        turnedOnForCapture = true;
+                    } catch (e) {
+                        // Try fallback syntax for some Safari versions
+                        try {
+                            await videoTrack.applyConstraints({ torch: true });
+                            turnedOnForCapture = true;
+                        } catch (err2) {
+                            console.warn("Torch not supported or failed to apply", err2);
+                        }
+                    }
                 }
+                // ALWAYS wait 500ms for the flash (physical or soft-screen flash) to illuminate the scene
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
             
             setCaptureState('capturing');
@@ -107,12 +119,16 @@ export function useCaptureHandler({
             setCaptureState('idle');
             dataChannel.sendCaptureStatus('idle');
         } finally {
-            // Turn off torch if we turned it on
-            if (options?.flash && videoTrack) {
+            // Turn off torch if we turned it on for this capture
+            if (turnedOnForCapture && videoTrack) {
                 try {
                     await videoTrack.applyConstraints({ advanced: [{ torch: originalTorch }] });
                 } catch (e) {
-                    console.error("Error turning off torch", e);
+                    try {
+                        await videoTrack.applyConstraints({ torch: originalTorch });
+                    } catch (err3) {
+                        console.error("Error turning off torch", err3);
+                    }
                 }
             }
         }
@@ -121,9 +137,24 @@ export function useCaptureHandler({
     useEffect(() => {
         if (!dataChannel) return;
 
-        const handleMessage = (message) => {
+        const handleMessage = async (message) => {
             if (message.type === 'capture-request') {
                 captureImage(message.payload);
+            } else if (message.type === 'toggle-flash') {
+                const shouldFlash = message.payload.flash;
+                manualTorchRef.current = shouldFlash;
+                const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+                if (videoTrack && typeof videoTrack.applyConstraints === 'function') {
+                    try {
+                        await videoTrack.applyConstraints({ advanced: [{ torch: shouldFlash }] });
+                    } catch (e) {
+                        try {
+                            await videoTrack.applyConstraints({ torch: shouldFlash });
+                        } catch (err2) {
+                            console.warn("Torch not supported or failed to apply manually", err2);
+                        }
+                    }
+                }
             }
         };
 

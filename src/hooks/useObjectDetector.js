@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { speakThai } from '@/lib/tts';
 
 /**
  * useObjectDetector Hook
@@ -124,7 +125,10 @@ export function useObjectDetector(videoRef, enabled = false) {
             }
 
             try {
-                const predictions = await modelRef.current.detect(video);
+                const rawPredictions = await modelRef.current.detect(video);
+                // Filter out 'book' to avoid confusion with the Document Reader mode
+                const predictions = rawPredictions.filter(p => p.class !== 'book');
+                
                 setDetections(predictions);
 
                 // Find object closest to center
@@ -182,17 +186,8 @@ export function useObjectDetector(videoRef, enabled = false) {
         const now = Date.now();
         if (now - lastSpeakTimeRef.current < 2000) return; // Throttle to 2s
 
-        if ('speechSynthesis' in window) {
-            // Cancel any ongoing speech
-            speechSynthesis.cancel();
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'th-TH';
-            utterance.rate = 1.2;
-            utterance.pitch = 1.0;
-            speechSynthesis.speak(utterance);
-            lastSpeakTimeRef.current = now;
-        }
+        speakThai(text, { rate: 1.2 });
+        lastSpeakTimeRef.current = now;
     }, []);
 
     return {

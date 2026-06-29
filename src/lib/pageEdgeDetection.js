@@ -419,25 +419,18 @@ function mapScanicCorners(scanCorners) {
 
 
 function drawVideoFrame(video, vw, vh) {
-
     if (!_frameCanvas) {
-
         _frameCanvas = document.createElement('canvas');
-
+        _frameCanvas.width = vw;
+        _frameCanvas.height = vh;
         _frameCtx = _frameCanvas.getContext('2d', { willReadFrequently: true });
-
+    } else if (_frameCanvas.width !== vw || _frameCanvas.height !== vh) {
+        _frameCanvas.width = vw;
+        _frameCanvas.height = vh;
     }
 
-
-
-    _frameCanvas.width = vw;
-
-    _frameCanvas.height = vh;
-
     _frameCtx.drawImage(video, 0, 0, vw, vh);
-
     return _frameCanvas;
-
 }
 
 

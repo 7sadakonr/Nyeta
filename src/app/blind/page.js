@@ -11,6 +11,7 @@ import { useObjectDetector } from '@/hooks/useObjectDetector';
 import { useAiAssistant } from '@/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/hooks/useDocumentReader';
+import { stopSpeaking } from '@/lib/tts';
 
 // UI Components
 import TopNavBar from '@/components/blind/TopNavBar';
@@ -125,6 +126,7 @@ export default function BlindAssistPage() {
     const switchMode = useCallback((newMode) => {
         if (newMode === mode) return;
 
+        stopSpeaking();
         hapticRef.current?.trigger(1);
         setMode(newMode);
         if (typeof window !== 'undefined') {
@@ -174,7 +176,7 @@ export default function BlindAssistPage() {
                 statusLabel={statusLabel}
             />
 
-            <main className="w-full h-full flex flex-col relative" aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา">
+            <main className="w-full h-full flex flex-col relative min-h-0 overflow-hidden" aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา">
                 
                 <CameraView
                     videoRef={videoRef}

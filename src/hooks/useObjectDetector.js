@@ -16,6 +16,7 @@ export function useObjectDetector(videoRef, enabled = false) {
 
     const modelRef = useRef(null);
     const animationFrameRef = useRef(null);
+    const timeoutRef = useRef(null);
     const lastSpeakTimeRef = useRef(0);
 
     // Load model only when enabled (client-side only)
@@ -167,7 +168,7 @@ export function useObjectDetector(videoRef, enabled = false) {
             }
 
             // Run at ~10 FPS for performance
-            setTimeout(() => {
+            timeoutRef.current = setTimeout(() => {
                 animationFrameRef.current = requestAnimationFrame(detect);
             }, 100);
         };
@@ -175,6 +176,9 @@ export function useObjectDetector(videoRef, enabled = false) {
         detect();
 
         return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
             }

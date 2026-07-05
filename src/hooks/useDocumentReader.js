@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/lib/pageEdgeDetection';
 import { callGroqVision, captureFrameFromVideo } from '@/lib/groqVision';
 import { OCR_PROMPT } from '@/lib/visionPrompts';
-import { speakText, stopSpeaking } from '@/lib/tts';
+import { speakText, stopSpeaking, speakThai } from '@/lib/tts';
 
 export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback, addLog, setModeAnnouncement) {
     const [docText, setDocText] = useState('');
@@ -11,6 +11,9 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
     const [readerAligned, setReaderAligned] = useState(false);
     const [pageBounds, setPageBounds] = useState(null);
     const [pageCorners, setPageCorners] = useState(null);
+
+    const docTextRef = useRef(docText);
+    useEffect(() => { docTextRef.current = docText; }, [docText]);
 
     const lastSpokenPageRef = useRef('');
     const alignedCountRef = useRef(0);
@@ -105,11 +108,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             }
 
             if ('speechSynthesis' in window) {
-                speechSynthesis.cancel();
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'th-TH';
-                utterance.rate = 1.1;
-                speechSynthesis.speak(utterance);
+                speakThai(text, { rate: 1.1 });
                 lastSpokenPageRef.current = text;
             }
         };
@@ -159,7 +158,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
                 applyPageOverlay(result);
                 speakPageGuidance(result.guidance);
 
-                const canAutoCapture = !autoCaptureFiredRef.current && !docText;
+                const canAutoCapture = !autoCaptureFiredRef.current && !docTextRef.current;
                 if (result.aligned && canAutoCapture && aiStatusRef.current === 'idle') {
                     alignedCountRef.current += 1;
                     if (alignedCountRef.current >= 3) {
@@ -193,7 +192,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             alignedCountRef.current = 0;
             pageSeenCountRef.current = 0;
         };
-    }, [enabled, isReady, docText, videoRef, feedback, setModeAnnouncement]);
+    }, [enabled, isReady, videoRef, feedback, setModeAnnouncement]);
 
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;

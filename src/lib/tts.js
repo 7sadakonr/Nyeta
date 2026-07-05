@@ -1,3 +1,5 @@
+let _ttsSession = { cancelled: false, timeoutId: null };
+
 export function speakThai(text, { rate = 1.1, onEnd } = {}) {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
         onEnd?.();
@@ -25,6 +27,11 @@ export function speakText(text, { lang = 'th-TH', rate = 1.0, onEnd } = {}) {
     }
 
     speechSynthesis.cancel();
+    _ttsSession.cancelled = false;
+    if (_ttsSession.timeoutId) {
+        clearTimeout(_ttsSession.timeoutId);
+        _ttsSession.timeoutId = null;
+    }
 
     // Fix for iOS Safari crash: split long Thai text into small chunks (< 150 chars)
     const words = text.split(/[\n\s]+/).filter(Boolean);
@@ -55,7 +62,7 @@ export function speakText(text, { lang = 'th-TH', rate = 1.0, onEnd } = {}) {
     let index = 0;
 
     const speakNext = () => {
-        if (index >= chunks.length) {
+        if (_ttsSession.cancelled || index >= chunks.length) {
             onEnd?.();
             return;
         }
@@ -69,11 +76,15 @@ export function speakText(text, { lang = 'th-TH', rate = 1.0, onEnd } = {}) {
         window.__tts_utterances.push(utterance);
 
         const handleNext = () => {
+            if (_ttsSession.cancelled) {
+                onEnd?.();
+                return;
+            }
             // Remove from global array to allow GC after completion
             window.__tts_utterances = window.__tts_utterances.filter(u => u !== utterance);
             index += 1;
             // Add a small delay between chunks to prevent overwhelming the TTS daemon
-            setTimeout(speakNext, 250);
+            _ttsSession.timeoutId = setTimeout(speakNext, 250);
         };
 
         utterance.onend = handleNext;
@@ -86,7 +97,15 @@ export function speakText(text, { lang = 'th-TH', rate = 1.0, onEnd } = {}) {
 }
 
 export function stopSpeaking() {
-    if ('speechSynthesis' in window) {
-        speechSynthesis.cancel();
+    _ttsSession.cancelled = true;
+    if (_ttsSession.timeoutId) {
+        clearTimeout(_ttsSession.timeoutId);
+        _ttsSession.timeoutId = null;
+    }
+    if (typeof window !== 'undefined') {
+        window.__tts_utterances = []; // cleanup utterances
+        if ('speechSynthesis' in window) {
+            speechSynthesis.cancel();
+        }
     }
 }

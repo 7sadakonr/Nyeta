@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { GROQ_MODEL } from '@/lib/groqVision';
+import { speakThai } from '@/lib/tts';
 
 const ASSISTANT_PROMPT = `
 คุณคือ "วิสัยทัศน์อัจฉริยะ" ผู้ช่วยส่วนตัวของผู้พิการทางสายตา หน้าที่ของคุณคือการเป็นดวงตาที่ละเอียด รอบคอบ และพึ่งพาได้
@@ -33,8 +34,23 @@ const ASSISTANT_PROMPT = `
 export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     const [status, setStatus] = useState('idle');
     const [messages, setMessages] = useState([]);
+    
+    const messagesRef = useRef(messages);
+    const statusRef = useRef(status);
+    const abortControllerRef = useRef(null);
 
-    const formatMessagesForApi = (history, currentMessage) => {
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+    useEffect(() => { statusRef.current = status; }, [status]);
+
+    useEffect(() => {
+        return () => {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+            }
+        };
+    }, []);
+
+    const formatMessagesForApi = (history) => {
         const formattedHistory = history.slice(-6).map(msg => {
             const role = msg.role === 'ai' ? 'assistant' : 'user';
             if (msg.image) {
@@ -55,17 +71,24 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             content: ASSISTANT_PROMPT
         };
 
-        return [systemPrompt, ...formattedHistory, currentMessage];
+        return [systemPrompt, ...formattedHistory];
     };
 
     const captureAndAsk = useCallback(async (customPrompt = null) => {
-        if (!isReady || status === 'thinking') return;
+        if (!isReady || statusRef.current === 'thinking') return;
         const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
         if (!apiKey) {
             addLog?.('Error: API Key missing!');
-            alert('API Key Missing!');
+            speakThai('ไม่พบ API Key');
+            feedback?.('error');
             return;
         }
+
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
 
         try {
             setStatus('capturing');
@@ -97,13 +120,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             setStatus('thinking');
             addLog?.('Sending to Groq...');
 
-            const apiMessages = formatMessagesForApi([...messages, newUserMessage], {
-                role: "user",
-                content: [
-                    { type: "text", text: userQuestion },
-                    { type: "image_url", image_url: { url: imageDataUrl } }
-                ]
-            });
+            const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
 
             const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
@@ -111,6 +128,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
+                signal,
                 body: JSON.stringify({
                     model: GROQ_MODEL,
                     messages: apiMessages,
@@ -118,6 +136,10 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                     temperature: 0.5
                 })
             });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
 
             const data = await response.json();
             if (data.error) {
@@ -131,19 +153,26 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                 feedback?.('error');
             }
         } catch (error) {
+            if (error.name === 'AbortError') return;
             console.error('Capture Error:', error);
             setMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
             feedback?.('error');
         } finally {
             setStatus('idle');
         }
-    }, [isReady, status, videoRef, messages, feedback, addLog]);
+    }, [isReady, feedback, addLog]);
 
     const askTextOnly = useCallback(async (userText) => {
-        if (!isReady || status === 'thinking') return;
+        if (!isReady || statusRef.current === 'thinking') return;
         if (!userText || userText.trim().length === 0) return;
         
         const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
         const newUserMessage = { role: 'user', content: `🎤 ${userText}` };
         
         setMessages(prev => [...prev, newUserMessage]);
@@ -153,10 +182,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             feedback?.('capture');
             addLog?.(`Text Chat: "${userText}"`);
             
-            const apiMessages = formatMessagesForApi([...messages, newUserMessage], {
-                role: "user",
-                content: userText
-            });
+            const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
             
             const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
@@ -164,6 +190,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
+                signal,
                 body: JSON.stringify({
                     model: GROQ_MODEL,
                     messages: apiMessages,
@@ -172,6 +199,10 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                 })
             });
             
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
             if (data.error) {
                 setMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ: ${data.error.message}` }]);
@@ -184,15 +215,16 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                 feedback?.('error');
             }
         } catch (error) {
+            if (error.name === 'AbortError') return;
             console.error('Text Chat Error:', error);
             setMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
             feedback?.('error');
         } finally {
             setStatus('idle');
         }
-    }, [isReady, status, messages, feedback, addLog]);
+    }, [isReady, feedback, addLog]);
 
-    const clearMessages = () => setMessages([]);
+    const clearMessages = useCallback(() => setMessages([]), []);
 
     return { status, messages, captureAndAsk, askTextOnly, clearMessages };
 }

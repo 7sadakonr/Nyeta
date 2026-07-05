@@ -1,14 +1,30 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+
 export default function ChatHistory({ aiMessages }) {
+    const scrollRef = useRef(null);
+    const prevMessagesLengthRef = useRef(0);
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+
+        if (aiMessages.length > prevMessagesLengthRef.current) {
+            const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+            if (isNearBottom || prevMessagesLengthRef.current === 0) {
+                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            }
+        }
+        prevMessagesLengthRef.current = aiMessages.length;
+    }, [aiMessages]);
+
     return (
         <section
+            ref={scrollRef}
             className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950 min-h-0"
             aria-label="ประวัติการสนทนา"
             tabIndex={0}
-            ref={(el) => {
-                if (el && aiMessages.length > 0) {
-                    el.scrollTop = el.scrollHeight;
-                }
-            }}
         >
             <ul className="space-y-4">
                 {aiMessages.map((msg, i) => (

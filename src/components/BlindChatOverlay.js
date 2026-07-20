@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export default function BlindChatOverlay({ latestMessage, onSendMessage }) {
     const [isListening, setIsListening] = useState(false);
@@ -35,17 +36,11 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }) {
             }
 
             // Speak the text
-            if ('speechSynthesis' in window) {
-                // Cancel any ongoing speech
-                window.speechSynthesis.cancel();
-                
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'th-TH';
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
-                
-                window.speechSynthesis.speak(utterance);
-            }
+            speechManager?.speak(text, {
+                priority: Priority.HIGH,
+                owner: 'volunteer-message',
+                rate: 1.0,
+            });
         }
     }, [latestMessage]);
 

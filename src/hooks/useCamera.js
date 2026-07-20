@@ -17,13 +17,13 @@ export function useCamera() {
                 });
             }
         } catch (err) {
-            console.error('Wake Lock Error:', err);
+            console.warn('Wake Lock Error:', err);
         }
     };
 
     const releaseWakeLock = () => {
         if (wakeLockRef.current) {
-            wakeLockRef.current.release().catch(console.error);
+            wakeLockRef.current.release().catch(() => {});
             wakeLockRef.current = null;
         }
     };
@@ -39,12 +39,12 @@ export function useCamera() {
             if (videoRef.current) {
                 videoRef.current.srcObject = mediaStream;
                 videoRef.current.muted = true;
-                videoRef.current.onloadedmetadata = () => videoRef.current.play().catch(console.error);
+                videoRef.current.onloadedmetadata = () => videoRef.current.play().catch(() => {});
             }
             setIsReady(true);
             requestWakeLock();
         } catch (err) {
-            console.error('Camera Init Error:', err);
+            console.warn('Camera Init Error:', err);
             setError(err);
         }
     }, []);

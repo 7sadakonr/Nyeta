@@ -1,34 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { GROQ_MODEL } from '@/lib/groqVision';
-import { speakThai } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 const ASSISTANT_PROMPT = `
-คุณคือ "วิสัยทัศน์อัจฉริยะ" ผู้ช่วยส่วนตัวของผู้พิการทางสายตา หน้าที่ของคุณคือการเป็นดวงตาที่ละเอียด รอบคอบ และพึ่งพาได้
+บรรยายภาพนี้เพื่อช่วยเหลือผู้พิการทางสายตาอย่างละเอียดและรอบคอบ
 
-ลำดับความสำคัญในการทำงาน (Priority Framework):
+ลำดับความสำคัญในการทำงาน:
+1. แจ้งเตือนอุปสรรค: ถ้านิ้วบังเลนส์ หรือภาพมืด/เบลอ ให้บอกวิธีแก้ทันที
+2. การอ่านข้อความ: อ่านข้อความที่เห็นให้ถูกต้องครบถ้วน ถ้าเป็นฉลากยา/สินค้าให้อ่านชื่อและวิธีใช้
+3. สภาพแวดล้อม: แจ้งเตือนสิ่งกีดขวางหรืออันตราย บอกตำแหน่งและระยะห่างของสิ่งของให้ชัดเจน
 
-1. ตรวจสอบอุปสรรคทางกายภาพ (Physical Check):
-   - หากเห็นนิ้วบังเลนส์ หรือภาพมืด/เบลอจนวิเคราะห์ไม่ได้ ให้รีบแจ้งและแนะนำวิธีแก้ทันที (เช่น "มีนิ้วบังมุมขวาบนครับ", "รบกวนเปิดไฟหรือเปิดม่านเพิ่มครับ")
-   - หากวัตถุสำคัญ (เช่น ข้อความ, ใบหน้าคน, สิ่งของ) อยู่ไม่กลางเฟรม ให้บอกทิศทางปรับกล้อง (เช่น "เลื่อนกล้องไปทางขวาช้าๆ", "ถอยกล้องออกมาอีกประมาณหนึ่งช่วงแขน")
-
-2. การอ่านข้อความและเอกสาร (Detailed OCR):
-   - หากมีตัวอักษร ให้อ่านเนื้อหาทั้งหมดอย่างถูกต้อง
-   - กรณีเป็นฉลากสินค้า/ยา: ต้องระบุ "ชื่อผลิตภัณฑ์", "สรรพคุณ/วิธีใช้", และ "วันหมดอายุ" ให้ชัดเจน
-   - หากเป็นเอกสาร: บอกประเภทของเอกสารและหัวข้อสำคัญ
-   - หากตัวหนังสือขาดหาย ให้บอกผู้ใช้ว่าส่วนไหนที่หายไป (เช่น "บรรทัดล่างสุดขาดไป รบกวนกดกล้องลงนิดครับ")
-
-3. การวิเคราะห์สภาพแวดล้อมและความปลอดภัย (Spatial Awareness & Safety):
-   - แจ้งเตือนสิ่งกีดขวางหรืออันตรายในระยะประชิดทันที (เช่น บันได, พื้นต่างระดับ, สายไฟ, วัตถุที่แหลมคม)
-   - บอกตำแหน่งวัตถุโดยใช้ระบบ "หน้าปัดนาฬิกา" หรือ "ซ้าย/ขวา/ตรงหน้า" พร้อมระยะห่างโดยประมาณ
-   - ระบุสี สภาพแสง และลักษณะพื้นผิว (เช่น "เสื้อสีน้ำเงินเข้ม ลายทางขาว", "พื้นถนนขรุขระ")
-
-4. การจดจำบริบท (Contextual Memory):
-   - เชื่อมโยงข้อมูลจากภาพก่อนหน้าเสมอ หากผู้ใช้ถามถึงสิ่งที่เคยส่องไปแล้ว
-
-โทนเสียงและกฎการตอบ:
-- ภาษาไทยเท่านั้น เป็นกันเองแต่สุภาพ (ใช้คำว่า "ครับ/ค่ะ" ตามความเหมาะสม)
-- กระชับ ไม่เวิ่นเว้อ แต่ต้อง "ละเอียดในจุดที่จำเป็น"
-- หากภาพชัดเจนดีแล้ว ให้เริ่มการบรรยายทันทีโดยไม่ประเมินภาพซ้ำซาก
+กฎการตอบ (สำคัญมาก):
+- ห้ามใช้สัญลักษณ์พิเศษทุกชนิด เช่น ดอกจัน (*), ชาร์ป (#), ขีด (-), หรือสัญลักษณ์ Markdown อื่นๆ เด็ดขาด เพราะระบบอ่านออกเสียง (Web Speech/VoiceOver) จะอ่านสัญลักษณ์เหล่านั้นทำให้ผู้ใช้สับสน
+- ห้ามใช้อักษรย่อ ให้เขียนคำเต็มเสมอ
+- ให้เขียนเป็นข้อความร้อยแก้วธรรมดาที่อ่านออกเสียงได้ไหลลื่น เป็นธรรมชาติ
+- ตอบเป็นภาษาไทยด้วยน้ำเสียงสุภาพและเป็นกันเอง
 `.trim();
 
 export function useAiAssistant(videoRef, isReady, feedback, addLog) {
@@ -51,35 +36,33 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     }, []);
 
     const formatMessagesForApi = (history) => {
-        const formattedHistory = history.slice(-6).map(msg => {
-            const role = msg.role === 'ai' ? 'assistant' : 'user';
+        return history.slice(-6).map(msg => {
+            const role = msg.role === 'ai' ? 'model' : 'user';
             if (msg.image) {
+                const base64Data = msg.image.split(',')[1];
+                const mimeType = msg.image.split(';')[0].split(':')[1] || 'image/jpeg';
                 return {
                     role: role,
-                    content: [
-                        { type: "text", text: msg.content || "" },
-                        { type: "image_url", image_url: { url: msg.image } }
+                    parts: [
+                        { text: msg.content || "" },
+                        { inlineData: { mimeType: mimeType, data: base64Data } }
                     ]
                 };
             } else {
-                return { role: role, content: msg.content };
+                return { role: role, parts: [{ text: msg.content }] };
             }
         });
-
-        const systemPrompt = {
-            role: "system",
-            content: ASSISTANT_PROMPT
-        };
-
-        return [systemPrompt, ...formattedHistory];
     };
 
     const captureAndAsk = useCallback(async (customPrompt = null) => {
         if (!isReady || statusRef.current === 'thinking') return;
-        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
         if (!apiKey) {
             addLog?.('Error: API Key missing!');
-            speakThai('ไม่พบ API Key');
+            speechManager?.speak('ไม่พบ API Key', {
+                priority: Priority.CRITICAL,
+                owner: 'ai-assistant',
+            });
             feedback?.('error');
             return;
         }
@@ -118,26 +101,28 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             setMessages(prev => [...prev, newUserMessage]);
 
             setStatus('thinking');
-            addLog?.('Sending to Groq...');
+            addLog?.('Sending to Gemini...');
 
             const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
 
-            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    model: GROQ_MODEL,
-                    messages: apiMessages,
-                    max_tokens: 500,
-                    temperature: 0.5
+                    systemInstruction: { parts: [{ text: ASSISTANT_PROMPT }] },
+                    contents: apiMessages,
+                    generationConfig: { maxOutputTokens: 500, temperature: 0.5 }
                 })
             });
 
             if (!response.ok) {
+                if (response.status === 429) {
+                    setMessages(current => [...current, { role: 'ai', content: 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี (15 ครั้ง/นาที) รบกวนรอสักครู่นะครับ' }]);
+                    feedback?.('error');
+                    setStatus('idle');
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
@@ -145,8 +130,8 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             if (data.error) {
                 setMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}` }]);
                 feedback?.('error');
-            } else if (data.choices && data.choices[0]?.message?.content) {
-                setMessages(current => [...current, { role: 'ai', content: data.choices[0].message.content }]);
+            } else if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                setMessages(current => [...current, { role: 'ai', content: data.candidates[0].content.parts[0].text }]);
                 feedback?.('success');
             } else {
                 setMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ' }]);
@@ -166,7 +151,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
         if (!isReady || statusRef.current === 'thinking') return;
         if (!userText || userText.trim().length === 0) return;
         
-        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -184,22 +169,24 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             
             const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
             
-            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    model: GROQ_MODEL,
-                    messages: apiMessages,
-                    max_tokens: 500,
-                    temperature: 0.7
+                    systemInstruction: { parts: [{ text: ASSISTANT_PROMPT }] },
+                    contents: apiMessages,
+                    generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
                 })
             });
             
             if (!response.ok) {
+                if (response.status === 429) {
+                    setMessages(current => [...current, { role: 'ai', content: 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี (15 ครั้ง/นาที) รบกวนรอสักครู่นะครับ' }]);
+                    feedback?.('error');
+                    setStatus('idle');
+                    return;
+                }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
@@ -207,8 +194,8 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             if (data.error) {
                 setMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ: ${data.error.message}` }]);
                 feedback?.('error');
-            } else if (data.choices && data.choices[0]?.message?.content) {
-                setMessages(current => [...current, { role: 'ai', content: data.choices[0].message.content }]);
+            } else if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                setMessages(current => [...current, { role: 'ai', content: data.candidates[0].content.parts[0].text }]);
                 feedback?.('success');
             } else {
                 setMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ ไม่ได้รับคำตอบ' }]);

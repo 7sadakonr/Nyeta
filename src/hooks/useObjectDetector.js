@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { speakThai } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 /**
  * useObjectDetector Hook
@@ -190,7 +190,11 @@ export function useObjectDetector(videoRef, enabled = false) {
         const now = Date.now();
         if (now - lastSpeakTimeRef.current < 2000) return; // Throttle to 2s
 
-        speakThai(text, { rate: 1.2 });
+        speechManager?.speak(text, {
+            priority: Priority.LOW,
+            owner: 'object-detector',
+            rate: 1.2,
+        });
         lastSpeakTimeRef.current = now;
     }, []);
 

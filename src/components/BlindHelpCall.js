@@ -8,6 +8,7 @@ import { useWakeLock } from '@/hooks/useWakeLock';
 import { useDataChannel } from '@/hooks/useDataChannel';
 import { useCaptureHandler } from '@/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/components/BlindChatOverlay';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 const STATUS_SPEECH = {
     calling: 'กำลังเรียกอาสาสมัคร กรุณารอสักครู่',
@@ -50,14 +51,13 @@ export default function BlindHelpCall() {
     }, [dataChannel]);
 
     const speak = useCallback((text) => {
-        if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
         if (!text || text === lastSpokenRef.current) return;
         lastSpokenRef.current = text;
-        window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'th-TH';
-        u.rate = 1.1;
-        window.speechSynthesis.speak(u);
+        speechManager?.speak(text, {
+            priority: Priority.HIGH,
+            owner: 'call-status',
+            rate: 1.1,
+        });
     }, []);
 
     const playEarcon = useCallback((type) => {

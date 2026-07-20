@@ -11,7 +11,7 @@ import { useObjectDetector } from '@/hooks/useObjectDetector';
 import { useAiAssistant } from '@/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/hooks/useDocumentReader';
-import { stopSpeaking } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 // UI Components
 import TopNavBar from '@/components/blind/TopNavBar';
@@ -126,7 +126,7 @@ export default function BlindAssistPage() {
     const switchMode = useCallback((newMode) => {
         if (newMode === mode) return;
 
-        stopSpeaking();
+        speechManager?.stopAll();
         hapticRef.current?.trigger(1);
         setMode(newMode);
         if (typeof window !== 'undefined') {
@@ -138,6 +138,26 @@ export default function BlindAssistPage() {
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
     }, [mode, resetDocument, setVoiceTranscript]);
+
+    // NEW: Auto-speak AI responses for blind users
+    const prevMessagesLenRef = useRef(0);
+    useEffect(() => {
+        if (mode !== 'assistant') return;
+        if (aiMessages.length <= prevMessagesLenRef.current) {
+            prevMessagesLenRef.current = aiMessages.length;
+            return;
+        }
+        prevMessagesLenRef.current = aiMessages.length;
+        const lastMsg = aiMessages[aiMessages.length - 1];
+        if (lastMsg?.role === 'ai' && lastMsg.content) {
+            speechManager?.speak(lastMsg.content, {
+                priority: Priority.HIGH,
+                owner: 'ai-assistant',
+                rate: 1.0,
+                chunk: true,
+            });
+        }
+    }, [aiMessages, mode]);
 
     // Derived State
     const statusLabel = !aiReady

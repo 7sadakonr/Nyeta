@@ -1,6 +1,6 @@
-export const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+export const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
-export async function callGroqVision({
+export async function callGeminiVision({
     apiKey,
     imageDataUrl,
     systemPrompt,
@@ -8,45 +8,48 @@ export async function callGroqVision({
     maxTokens = 500,
     temperature = 0,
 }) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: GROQ_MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: userPrompt },
-                        { type: 'image_url', image_url: { url: imageDataUrl } },
-                    ],
+    const base64Data = imageDataUrl.split(',')[1];
+    const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+
+    const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
                 },
-            ],
-            max_tokens: maxTokens,
-            temperature,
-        }),
-    });
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            { text: userPrompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Data
+                                }
+                            }
+                        ]
+                    }
+                ],
+                generationConfig: {
+                    maxOutputTokens: maxTokens,
+                    temperature: temperature,
+                }
+            })
+        }
+    );
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        const message = data.error?.message || `Groq HTTP ${response.status}`;
-        const err = new Error(message);
-        err.status = response.status;
-        throw err;
+        const message = data.error?.message || `Gemini HTTP ${response.status}`;
+        throw new Error(message);
     }
 
-    if (data.error) {
-        const err = new Error(data.error.message || 'Groq API error');
-        err.status = data.error.code;
-        throw err;
-    }
-
-    return data.choices?.[0]?.message?.content?.trim() || '';
+    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 }
 
 /**

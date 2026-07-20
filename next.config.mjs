@@ -9,6 +9,8 @@ const nextConfig = {
     // LAN testing from phones (adjust IP if yours differs)
     '192.168.1.6:3000',
     '192.168.1.6:3001',
+    '192.168.1.13:3000',
+    '192.168.1.13',
   ],
   async headers() {
     return [

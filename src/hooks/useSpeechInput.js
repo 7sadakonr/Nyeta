@@ -58,7 +58,7 @@ export function useSpeechInput(onResult, onFeedback) {
                     setTranscript('(ไม่ได้ยินเสียง)');
                     return;
                 }
-                console.error("Speech error:", event.error);
+                console.warn("Speech error:", event.error);
                 setIsListening(false);
                 setTranscript(`⚠️ Error: ${event.error}`);
             };
@@ -72,7 +72,7 @@ export function useSpeechInput(onResult, onFeedback) {
         try {
             recognitionRef.current.start();
         } catch (error) {
-            console.error("Mic start error:", error);
+            console.warn("Mic start error:", error);
         }
     }, [isListening]);
 
@@ -85,7 +85,7 @@ export function useSpeechInput(onResult, onFeedback) {
                 setTranscript('');
             }, 2000);
         } catch (error) {
-            console.error("Mic stop error:", error);
+            console.warn("Mic stop error:", error);
         }
     }, [isListening]);
 

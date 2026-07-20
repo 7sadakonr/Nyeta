@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { detectCurrencyWithGroq } from '@/lib/currencyGroq';
+import { detectCurrencyWithGemini } from '@/lib/currencyGemini';
 import { formatCurrencySpeech } from '@/lib/currencyUtils';
-import { speakText, stopSpeaking } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog, setModeAnnouncement) {
     const [currencyResult, setCurrencyResult] = useState(null);
@@ -32,7 +32,7 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog,
         }
 
         setCurrencyMonitoring(true);
-        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
         const scanCurrency = async () => {
             if (currencyBusyRef.current) return;
@@ -48,7 +48,7 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog,
             setCurrencyScanning(true);
 
             try {
-                const { parsed } = await detectCurrencyWithGroq(videoRef.current, apiKey);
+                const { parsed } = await detectCurrencyWithGemini(videoRef.current, apiKey);
                 const speechKey = parsed ? `${parsed.type}-${parsed.value}` : 'none';
                 currencyErrorCountRef.current = 0;
 
@@ -72,7 +72,11 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog,
                             const speechText = formatCurrencySpeech(parsed);
                             lastSpokenMoneyRef.current = speechKey;
                             feedback?.('success');
-                            speakText(speechText, { rate: 1.1 });
+                            speechManager?.speak(speechText, {
+                                priority: Priority.HIGH,
+                                owner: 'currency',
+                                rate: 1.1,
+                            });
                             setModeAnnouncement?.(speechText);
                         }
                     } else {
@@ -142,9 +146,13 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog,
 
     const replayCurrency = useCallback(() => {
         if (!currencyResult) return;
-        stopSpeaking();
+        speechManager?.stopAll();
         const speechText = formatCurrencySpeech(currencyResult);
-        speakText(speechText, { rate: 1.1 });
+        speechManager?.speak(speechText, {
+            priority: Priority.HIGH,
+            owner: 'currency',
+            rate: 1.1,
+        });
         feedback?.('success');
     }, [currencyResult, feedback]);
 

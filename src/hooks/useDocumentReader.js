@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/lib/pageEdgeDetection';
-import { callGroqVision, captureFrameFromVideo } from '@/lib/groqVision';
+import { callGeminiVision, captureFrameFromVideo } from '@/lib/geminiVision';
 import { OCR_PROMPT } from '@/lib/visionPrompts';
-import { speakText, stopSpeaking, speakThai } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback, addLog, setModeAnnouncement) {
     const [docText, setDocText] = useState('');
@@ -34,12 +34,12 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
     const readDocument = useCallback(async () => {
         if (!isReady || aiStatus === 'thinking' || !enabled) return;
 
-        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
+        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
         if (!apiKey || !videoRef.current) return;
 
         try {
             autoCaptureFiredRef.current = true;
-            stopSpeaking();
+            speechManager?.stopAll();
             setIsReading(false);
             feedback?.('capture');
             addLog?.('Capturing document...');
@@ -47,7 +47,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             const imageDataUrl = captureFrameFromVideo(videoRef.current);
             setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
-            const text = await callGroqVision({
+            const text = await callGeminiVision({
                 apiKey,
                 imageDataUrl,
                 systemPrompt: OCR_PROMPT,
@@ -61,8 +61,11 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             setModeAnnouncement?.(`อ่านเอกสาร: ${text.slice(0, 120)}${text.length > 120 ? '...' : ''}`);
 
             setIsReading(true);
-            speakText(text, {
+            speechManager?.speak(text, {
+                priority: Priority.NORMAL,
+                owner: 'document-reader',
                 rate: 1.0,
+                chunk: true,
                 onEnd: () => setIsReading(false),
             });
         } catch (error) {
@@ -107,10 +110,12 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
                 return;
             }
 
-            if ('speechSynthesis' in window) {
-                speakThai(text, { rate: 1.1 });
-                lastSpokenPageRef.current = text;
-            }
+            speechManager?.speak(text, {
+                priority: Priority.LOW,
+                owner: 'page-guidance',
+                rate: 1.1,
+            });
+            lastSpokenPageRef.current = text;
         };
 
         const clearPageOverlay = () => {
@@ -196,10 +201,13 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
 
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
-        stopSpeaking();
+        speechManager?.stopAll();
         setIsReading(true);
-        speakText(docText, {
+        speechManager?.speak(docText, {
+            priority: Priority.HIGH,
+            owner: 'document-reader',
             rate: 1.0,
+            chunk: true,
             onEnd: () => setIsReading(false),
         });
         feedback?.('success');
@@ -209,11 +217,13 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
         setDocText('');
         setIsReading(false);
         autoCaptureFiredRef.current = false;
-        stopSpeaking();
+        speechManager?.stopByOwner('document-reader');
+        speechManager?.stopByOwner('page-guidance');
     }, []);
 
     const stopReading = useCallback(() => {
-        stopSpeaking();
+        speechManager?.stopByOwner('document-reader');
+        speechManager?.stopByOwner('page-guidance');
         setIsReading(false);
         feedback?.('success');
     }, [feedback]);

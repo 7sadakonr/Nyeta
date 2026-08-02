@@ -1,20 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import speechManager, { Priority } from '@/lib/speechManager';
-
-const ASSISTANT_PROMPT = `
-บรรยายภาพนี้เพื่อช่วยเหลือผู้พิการทางสายตาอย่างละเอียดและรอบคอบ
-
-ลำดับความสำคัญในการทำงาน:
-1. แจ้งเตือนอุปสรรค: ถ้านิ้วบังเลนส์ หรือภาพมืด/เบลอ ให้บอกวิธีแก้ทันที
-2. การอ่านข้อความ: อ่านข้อความที่เห็นให้ถูกต้องครบถ้วน ถ้าเป็นฉลากยา/สินค้าให้อ่านชื่อและวิธีใช้
-3. สภาพแวดล้อม: แจ้งเตือนสิ่งกีดขวางหรืออันตราย บอกตำแหน่งและระยะห่างของสิ่งของให้ชัดเจน
-
-กฎการตอบ (สำคัญมาก):
-- ห้ามใช้สัญลักษณ์พิเศษทุกชนิด เช่น ดอกจัน (*), ชาร์ป (#), ขีด (-), หรือสัญลักษณ์ Markdown อื่นๆ เด็ดขาด เพราะระบบอ่านออกเสียง (Web Speech/VoiceOver) จะอ่านสัญลักษณ์เหล่านั้นทำให้ผู้ใช้สับสน
-- ห้ามใช้อักษรย่อ ให้เขียนคำเต็มเสมอ
-- ให้เขียนเป็นข้อความร้อยแก้วธรรมดาที่อ่านออกเสียงได้ไหลลื่น เป็นธรรมชาติ
-- ตอบเป็นภาษาไทยด้วยน้ำเสียงสุภาพและเป็นกันเอง
-`.trim();
+import { GEMINI_MODEL, captureFrameFromVideo, extractGeminiText } from '@/lib/geminiVision';
+import { ASSISTANT_PROMPT } from '@/lib/visionPrompts';
 
 export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     const [status, setStatus] = useState('idle');
@@ -55,13 +42,12 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     };
 
     const captureAndAsk = useCallback(async (customPrompt = null) => {
-        if (!isReady || statusRef.current === 'thinking') return;
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-        if (!apiKey) {
-            addLog?.('Error: API Key missing!');
-            speechManager?.speak('ไม่พบ API Key', {
-                priority: Priority.CRITICAL,
-                owner: 'ai-assistant',
+        if (statusRef.current === 'thinking') return;
+        if (!isReady) {
+            addLog?.('Warning: Camera not ready yet');
+            speechManager?.speak('กล้องกำลังเริ่มทำงาน กรุณารอสักครู่แล้วกดใหม่ครับ', {
+                priority: Priority.HIGH,
+                owner: 'ai-system',
             });
             feedback?.('error');
             return;
@@ -70,8 +56,15 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
-        abortControllerRef.current = new AbortController();
-        const signal = abortControllerRef.current.signal;
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const signal = controller.signal;
+
+        let timedOut = false;
+        const timeoutId = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+        }, 35000);
 
         try {
             setStatus('capturing');
@@ -81,21 +74,32 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             if (!videoRef.current) {
                 addLog?.('Error: No video stream');
                 setStatus('idle');
+                feedback?.('error');
                 return;
             }
 
-            const canvas = document.createElement('canvas');
-            const video = videoRef.current;
-            canvas.width = video.videoWidth || 1280;
-            canvas.height = video.videoHeight || 720;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const imageBase64 = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-            const imageDataUrl = `data:image/jpeg;base64,${imageBase64}`;
+            const imageDataUrl = captureFrameFromVideo(videoRef.current, {
+                maxDimension: 800,
+                quality: 0.70
+            });
+
+            if (!imageDataUrl) {
+                addLog?.('Error: Camera frame not ready');
+                setStatus('idle');
+                feedback?.('error');
+                speechManager?.speak('กล้องยังไม่พร้อม กรุณาลองใหม่อีกครั้ง', {
+                    priority: Priority.HIGH,
+                    owner: 'ai-system',
+                });
+                return;
+            }
+
+            const base64Data = imageDataUrl.split(',')[1];
+            const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
 
             const userQuestion = customPrompt && typeof customPrompt === 'string'
                 ? `(พูด): "${customPrompt}"`
-                : 'ช่วยบรรยายภาพนี้ให้หน่อย';
+                : 'ช่วยบรรยายภาพนี้อย่างละเอียดให้เห็นภาพชัดเจน ทั้งภาพรวม รายละเอียดสิ่งของ ตำแหน่งทิศทาง สีสัน และสิ่งรอบข้าง';
 
             const newUserMessage = { role: 'user', content: userQuestion, image: imageDataUrl };
             setMessages(prev => [...prev, newUserMessage]);
@@ -103,22 +107,32 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             setStatus('thinking');
             addLog?.('Sending to Gemini...');
 
-            const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
+            const contents = [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: userQuestion },
+                        { inlineData: { mimeType, data: base64Data } }
+                    ]
+                }
+            ];
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
+            const response = await fetch('/api/gemini', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    systemInstruction: { parts: [{ text: ASSISTANT_PROMPT }] },
-                    contents: apiMessages,
-                    generationConfig: { maxOutputTokens: 500, temperature: 0.5 }
+                    systemPrompt: ASSISTANT_PROMPT,
+                    contents,
+                    maxTokens: 800,
+                    temperature: 0.4
                 })
             });
 
             if (!response.ok) {
                 if (response.status === 429) {
-                    setMessages(current => [...current, { role: 'ai', content: 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี (15 ครั้ง/นาที) รบกวนรอสักครู่นะครับ' }]);
+                    const msg = 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี กรุณารอสักครู่นะครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
                     feedback?.('error');
                     setStatus('idle');
                     return;
@@ -128,24 +142,38 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
 
             const data = await response.json();
             if (data.error) {
-                setMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}` }]);
+                const msg = `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}`;
+                setMessages(current => [...current, { role: 'ai', content: msg }]);
                 feedback?.('error');
-            } else if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-                setMessages(current => [...current, { role: 'ai', content: data.candidates[0].content.parts[0].text }]);
-                feedback?.('success');
             } else {
-                setMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ' }]);
-                feedback?.('error');
+                const replyText = extractGeminiText(data);
+                if (replyText) {
+                    setMessages(current => [...current, { role: 'ai', content: replyText }]);
+                    feedback?.('success');
+                } else {
+                    const msg = 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    feedback?.('error');
+                }
             }
         } catch (error) {
-            if (error.name === 'AbortError') return;
+            if (error.name === 'AbortError') {
+                if (timedOut) {
+                    const msg = 'การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    feedback?.('error');
+                }
+                return;
+            }
             console.error('Capture Error:', error);
-            setMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
+            const msg = 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ';
+            setMessages(current => [...current, { role: 'ai', content: msg }]);
             feedback?.('error');
         } finally {
+            clearTimeout(timeoutId);
             setStatus('idle');
         }
-    }, [isReady, feedback, addLog]);
+    }, [videoRef, isReady, feedback, addLog]);
 
     const askTextOnly = useCallback(async (userText) => {
         if (!isReady || statusRef.current === 'thinking') return;
@@ -156,11 +184,18 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
-        abortControllerRef.current = new AbortController();
-        const signal = abortControllerRef.current.signal;
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        const signal = controller.signal;
         const newUserMessage = { role: 'user', content: `🎤 ${userText}` };
         
         setMessages(prev => [...prev, newUserMessage]);
+
+        let timedOut = false;
+        const timeoutId = setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+        }, 35000);
         
         try {
             setStatus('thinking');
@@ -169,20 +204,22 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             
             const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
             
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`, {
+            const response = await fetch('/api/gemini', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    systemInstruction: { parts: [{ text: ASSISTANT_PROMPT }] },
+                    systemPrompt: ASSISTANT_PROMPT,
                     contents: apiMessages,
-                    generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
+                    maxTokens: 800,
+                    temperature: 0.5
                 })
             });
             
             if (!response.ok) {
                 if (response.status === 429) {
-                    setMessages(current => [...current, { role: 'ai', content: 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี (15 ครั้ง/นาที) รบกวนรอสักครู่นะครับ' }]);
+                    const msg = 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี กรุณารอสักครู่นะครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
                     feedback?.('error');
                     setStatus('idle');
                     return;
@@ -192,26 +229,49 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
 
             const data = await response.json();
             if (data.error) {
-                setMessages(current => [...current, { role: 'ai', content: `ขอโทษครับ: ${data.error.message}` }]);
+                const msg = `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}`;
+                setMessages(current => [...current, { role: 'ai', content: msg }]);
                 feedback?.('error');
-            } else if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-                setMessages(current => [...current, { role: 'ai', content: data.candidates[0].content.parts[0].text }]);
-                feedback?.('success');
             } else {
-                setMessages(current => [...current, { role: 'ai', content: 'ขอโทษครับ ไม่ได้รับคำตอบ' }]);
-                feedback?.('error');
+                const replyText = extractGeminiText(data);
+                if (replyText) {
+                    setMessages(current => [...current, { role: 'ai', content: replyText }]);
+                    feedback?.('success');
+                } else {
+                    const msg = 'ขอโทษครับ ไม่ได้รับคำตอบ ลองใหม่อีกทีนะครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    feedback?.('error');
+                }
             }
         } catch (error) {
-            if (error.name === 'AbortError') return;
+            if (error.name === 'AbortError') {
+                if (timedOut) {
+                    const msg = 'การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ';
+                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    feedback?.('error');
+                }
+                return;
+            }
             console.error('Text Chat Error:', error);
-            setMessages(current => [...current, { role: 'ai', content: 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ' }]);
+            const msg = 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ';
+            setMessages(current => [...current, { role: 'ai', content: msg }]);
             feedback?.('error');
         } finally {
+            clearTimeout(timeoutId);
             setStatus('idle');
         }
     }, [isReady, feedback, addLog]);
 
-    const clearMessages = useCallback(() => setMessages([]), []);
+    const clearMessages = useCallback(() => {
+        setMessages([]);
+        speechManager?.stopAll();
+        feedback?.('button');
+    }, [feedback]);
 
-    return { status, messages, captureAndAsk, askTextOnly, clearMessages };
+    const stopSpeaking = useCallback(() => {
+        speechManager?.stopAll();
+        feedback?.('button');
+    }, [feedback]);
+
+    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking };
 }

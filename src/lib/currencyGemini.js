@@ -1,13 +1,77 @@
-import { callGeminiVision, captureFrameFromVideo } from '@/lib/geminiVision';
+import { callGeminiVision } from '@/lib/geminiVision';
 import { parseCurrencyResult } from '@/lib/currencyUtils';
 import { getCurrencyScanRegion } from '@/lib/videoCoords';
 import { CURRENCY_PROMPT } from '@/lib/visionPrompts';
 
 /**
- * Identify Thai banknote or coin via Gemini vision.
+ * Capture frame from video and check if it's pitch black / blocked.
+ */
+function captureFrameWithOcclusionCheck(video, options = {}) {
+    if (!video || video.readyState < 2) return null;
+    const { cropRegion, maxDimension = 768, quality = 0.72 } = options;
+
+    const srcW = video.videoWidth || 1280;
+    const srcH = video.videoHeight || 720;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = srcW;
+    let sh = srcH;
+
+    if (cropRegion) {
+        sx = Math.max(0, Math.round(cropRegion.x));
+        sy = Math.max(0, Math.round(cropRegion.y));
+        sw = Math.min(srcW - sx, Math.round(cropRegion.width));
+        sh = Math.min(srcH - sy, Math.round(cropRegion.height));
+    }
+
+    let dw = sw;
+    let dh = sh;
+    const longest = Math.max(dw, dh);
+    if (longest > maxDimension) {
+        const scale = maxDimension / longest;
+        dw = Math.round(dw * scale);
+        dh = Math.round(dh * scale);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dw, dh);
+
+    let isBlocked = false;
+    try {
+        const imgData = ctx.getImageData(0, 0, dw, dh);
+        const data = imgData.data;
+        let totalLuma = 0;
+        const step = 4 * 16;
+        let samples = 0;
+        for (let i = 0; i < data.length; i += step) {
+            const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            totalLuma += luma;
+            samples++;
+        }
+        const avgLuma = samples > 0 ? totalLuma / samples : 0;
+        if (avgLuma < 12) {
+            isBlocked = true;
+        }
+    } catch {
+        // Fallback gracefully if pixel read is unsupported
+    }
+
+    const imageBase64 = canvas.toDataURL('image/jpeg', quality).split(',')[1];
+    return {
+        imageDataUrl: `data:image/jpeg;base64,${imageBase64}`,
+        isBlocked,
+    };
+}
+
+/**
+ * Identify Thai banknote or coin via Gemini vision, with fast blockage detection.
  * @param {HTMLVideoElement} video
  * @param {string} apiKey
- * @returns {Promise<{ parsed: { type: 'note'|'coin', value: number } | null, rawText: string }>}
+ * @returns {Promise<{ parsed: { type: 'note'|'coin'|'blocked', value?: number, isBlocked?: boolean } | null, rawText: string, isBlocked?: boolean }>}
  */
 export async function detectCurrencyWithGemini(video, apiKey) {
     if (!apiKey) {
@@ -15,14 +79,28 @@ export async function detectCurrencyWithGemini(video, apiKey) {
     }
 
     const cropRegion = getCurrencyScanRegion(video);
-    const imageDataUrl = captureFrameFromVideo(video, {
+    const frameResult = captureFrameWithOcclusionCheck(video, {
         cropRegion,
         maxDimension: 768,
         quality: 0.72,
     });
+
+    if (!frameResult) {
+        return { parsed: null, rawText: '', isBlocked: false };
+    }
+
+    // Fast-path: client-side frame darkness / covered camera detection
+    if (frameResult.isBlocked) {
+        return {
+            parsed: { type: 'blocked', isBlocked: true },
+            rawText: 'โดนบัง',
+            isBlocked: true,
+        };
+    }
+
     const text = await callGeminiVision({
         apiKey,
-        imageDataUrl,
+        imageDataUrl: frameResult.imageDataUrl,
         systemPrompt: CURRENCY_PROMPT,
         userPrompt: 'ระบุธนบัตรหรือเหรียญเงินบาทไทยในภาพนี้',
         maxTokens: 32,
@@ -30,8 +108,11 @@ export async function detectCurrencyWithGemini(video, apiKey) {
     });
 
     const parsed = parseCurrencyResult(text);
+    const isBlocked = parsed?.isBlocked || parsed?.type === 'blocked';
+
     return {
         parsed,
         rawText: text?.trim() || '',
+        isBlocked,
     };
 }

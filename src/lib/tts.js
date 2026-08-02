@@ -1,5 +1,9 @@
 import speechManager, { Priority } from './speechManager';
 
+/**
+ * @deprecated Prefer using `speechManager.speak(text, { priority, owner, ... })` directly
+ * so that ownership and priority are explicitly managed.
+ */
 export function speakThai(text, { rate = 1.1, onEnd } = {}) {
     if (!speechManager) {
         onEnd?.();
@@ -13,6 +17,9 @@ export function speakThai(text, { rate = 1.1, onEnd } = {}) {
     });
 }
 
+/**
+ * @deprecated Prefer using `speechManager.speak(text, { priority, owner, chunk: true, ... })` directly.
+ */
 export function speakText(text, { lang = 'th-TH', rate = 1.0, onEnd } = {}) {
     if (!speechManager) {
         onEnd?.();

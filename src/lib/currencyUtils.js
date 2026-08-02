@@ -16,13 +16,25 @@ function hasDigit(text, value) {
 
 /**
  * @param {string | undefined | null} text
- * @returns {{ type: 'note' | 'coin', value: number } | null}
+ * @returns {{ type: 'note' | 'coin' | 'blocked', value?: number, isBlocked?: boolean } | null}
  */
 export function parseCurrencyResult(text) {
     if (!text) return null;
 
-    const trimmed = cleanGroqText(text);
+    const trimmed = cleanGroqText(text).replace(/,/g, '');
     const lower = trimmed.toLowerCase();
+
+    // Check for camera blockage / obstruction
+    if (
+        trimmed.includes('โดนบัง') ||
+        lower.includes('blocked') ||
+        lower.includes('covered') ||
+        lower.includes('obstructed') ||
+        lower.includes('lens covered') ||
+        trimmed.includes('มืดสนิท')
+    ) {
+        return { type: 'blocked', isBlocked: true };
+    }
 
     if (
         trimmed.includes('ไม่พบ') ||
@@ -36,7 +48,7 @@ export function parseCurrencyResult(text) {
     }
 
     // Reject long descriptive responses — prompt instructs the model to reply with
-    // only a number (note) or "เหรียญ N" (coin). Anything longer is likely a
+    // only a number (note), "เหรียญ N" (coin), or "โดนบัง". Anything longer is likely a
     // hallucinated paragraph and should not be parsed.
     if (trimmed.length > 30) return null;
 
@@ -87,22 +99,45 @@ export function parseCurrencyResult(text) {
     return null;
 }
 
-export function formatCurrencySpeech(result) {
+export function formatCurrencySpeech(result, totalAmount = null) {
     if (!result) return '';
 
-    if (result.type === 'coin') {
-        return `เหรียญ ${result.value} บาท`;
+    if (result.isBlocked || result.type === 'blocked') {
+        return 'กล้องโดนบัง กรุณาเปิดหน้ากล้อง';
     }
 
-    return `ธนบัตร ${result.value} บาท`;
+    const itemText = result.type === 'coin'
+        ? `เหรียญ ${result.value} บาท`
+        : `ธนบัตร ${result.value} บาท`;
+
+    if (typeof totalAmount === 'number' && totalAmount > 0) {
+        return `${itemText} ยอดรวมสะสม ${totalAmount} บาท`;
+    }
+
+    return itemText;
 }
 
-export function formatCurrencyDisplay(result) {
+export function formatTotalSpeech(totalAmount = 0, count = 0) {
+    if (!totalAmount || count === 0) {
+        return 'ยังไม่มียอดเงินสะสม';
+    }
+    return `ยอดรวมเงินสะสมทั้งหมด ${totalAmount} บาท จาก ${count} รายการ`;
+}
+
+export function formatCurrencyDisplay(result, totalAmount = null) {
     if (!result) return 'ยังไม่พบเงิน';
 
-    if (result.type === 'coin') {
-        return `เหรียญ ${result.value} บาท`;
+    if (result.isBlocked || result.type === 'blocked') {
+        return '⚠️ กล้องโดนบัง';
     }
 
-    return `ธนบัตร ${result.value} บาท`;
+    const itemLabel = result.type === 'coin'
+        ? `เหรียญ ${result.value} บาท`
+        : `ธนบัตร ${result.value} บาท`;
+
+    if (typeof totalAmount === 'number' && totalAmount > 0) {
+        return `${itemLabel} (รวม ฿${totalAmount})`;
+    }
+
+    return itemLabel;
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export function useSpeechInput(onResult, onFeedback) {
     const [isListening, setIsListening] = useState(false);
@@ -67,14 +68,18 @@ export function useSpeechInput(onResult, onFeedback) {
 
     const startListening = useCallback((e) => {
         e?.preventDefault();
-        if (!recognitionRef.current) return;
+        if (!recognitionRef.current) {
+            onFeedback?.('error');
+            speechManager?.speak('เบราว์เซอร์นี้ไม่รองรับการสั่งงานด้วยเสียง', { priority: Priority.HIGH, owner: 'speech-input' });
+            return;
+        }
         if (isListening) return;
         try {
             recognitionRef.current.start();
         } catch (error) {
             console.warn("Mic start error:", error);
         }
-    }, [isListening]);
+    }, [isListening, onFeedback]);
 
     const stopListening = useCallback((e) => {
         e?.preventDefault();

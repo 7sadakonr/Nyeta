@@ -5,6 +5,11 @@ export function useCamera() {
     const [isReady, setIsReady] = useState(false);
     const [error, setError] = useState(null);
     const videoRef = useRef(null);
+    const streamRef = useRef(null);
+
+    useEffect(() => {
+        streamRef.current = stream;
+    }, [stream]);
 
     const wakeLockRef = useRef(null);
 
@@ -28,6 +33,31 @@ export function useCamera() {
         }
     };
 
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || !stream) return;
+
+        video.srcObject = stream;
+        video.muted = true;
+
+        const handleReady = () => {
+            setIsReady(true);
+            video.play().catch(() => {});
+        };
+
+        if (video.readyState >= 2) {
+            handleReady();
+        } else {
+            video.addEventListener('loadedmetadata', handleReady);
+            video.addEventListener('canplay', handleReady);
+        }
+
+        return () => {
+            video.removeEventListener('loadedmetadata', handleReady);
+            video.removeEventListener('canplay', handleReady);
+        };
+    }, [stream]);
+
     const initCamera = useCallback(async () => {
         setIsReady(false);
         setError(null);
@@ -36,12 +66,6 @@ export function useCamera() {
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
             });
             setStream(mediaStream);
-            if (videoRef.current) {
-                videoRef.current.srcObject = mediaStream;
-                videoRef.current.muted = true;
-                videoRef.current.onloadedmetadata = () => videoRef.current.play().catch(() => {});
-            }
-            setIsReady(true);
             requestWakeLock();
         } catch (err) {
             console.warn('Camera Init Error:', err);
@@ -50,12 +74,14 @@ export function useCamera() {
     }, []);
 
     const stopCamera = useCallback(() => {
-        setStream(prevStream => {
-            if (prevStream) {
-                prevStream.getTracks().forEach(track => track.stop());
-            }
-            return null;
-        });
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setStream(null);
         setIsReady(false);
         releaseWakeLock();
     }, []);
@@ -70,9 +96,18 @@ export function useCamera() {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            releaseWakeLock();
         };
     }, [isReady]);
+
+    // Release wake lock and stop tracks on unmount
+    useEffect(() => {
+        return () => {
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+            }
+            releaseWakeLock();
+        };
+    }, []);
 
     return { videoRef, stream, isReady, error, initCamera, stopCamera };
 }

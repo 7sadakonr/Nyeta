@@ -17,7 +17,14 @@ function formatCurrencyBoxLabel(box) {
     return `ธนบัตร ${box.value}`;
 }
 
-export default function CurrencyOverlay({ currencyBoxes, currencyBounds, currencyDetected, video, container }) {
+export default function CurrencyOverlay({
+    currencyBoxes,
+    currencyBounds,
+    currencyDetected,
+    isBlocked,
+    video,
+    container,
+}) {
     const currencyScanRegion = getCurrencyScanRegion(video);
     const currencyScanStyle = currencyScanRegion
         ? mapRectToOverlay(currencyScanRegion, video, container)
@@ -58,11 +65,11 @@ export default function CurrencyOverlay({ currencyBoxes, currencyBounds, currenc
             {currencyScanStyle && (
                 <OverlayBox
                     style={currencyScanStyle}
-                    color={currencyDetected ? '#4ade80' : '#fbbf24'}
-                    dashed={!currencyDetected}
+                    color={isBlocked ? '#ef4444' : currencyDetected ? '#4ade80' : '#fbbf24'}
+                    dashed={!currencyDetected && !isBlocked}
                     thick
-                    label={currencyDetected ? 'ตรวจพบเงิน' : 'โซนสแกนเงิน'}
-                    pulse={currencyDetected}
+                    label={isBlocked ? '⚠️ กล้องโดนบัง' : currencyDetected ? 'ตรวจพบเงิน' : 'โซนสแกนเงิน'}
+                    pulse={currencyDetected || isBlocked}
                 />
             )}
 

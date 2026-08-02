@@ -17,6 +17,8 @@ export default function CameraView({
     currencyResult,
     currencyScanning,
     currencyHint,
+    totalAmount = 0,
+    isBlocked = false,
     guidanceText,
     voiceTranscript,
     isListening,
@@ -47,8 +49,19 @@ export default function CameraView({
                 showPage={mode === 'reader'}
                 showCurrency={mode === 'currency'}
                 currencyDetected={!!currencyResult}
+                currencyBlocked={isBlocked}
             />
             <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/30 pointer-events-none z-[5]"></div>
+
+            {/* Currency Running Total Badge (Top Center) */}
+            {mode === 'currency' && totalAmount > 0 && (
+                <div className="absolute top-4 left-4 right-4 flex justify-center z-20 pointer-events-none">
+                    <div className="bg-amber-950/85 border-2 border-amber-400/80 rounded-2xl px-5 py-2.5 backdrop-blur-md shadow-2xl flex items-center gap-3">
+                        <span className="text-sm font-semibold text-amber-200">ยอดรวมสะสม:</span>
+                        <span className="text-3xl font-black text-amber-300 tracking-wide">฿{totalAmount.toLocaleString()}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Guidance overlay: assistant uses COCO, reader uses page alignment */}
             {mode === 'assistant' && objectDetectorEnabled && guidanceText && !voiceTranscript && (
@@ -88,31 +101,44 @@ export default function CameraView({
                 </div>
             )}
 
-            {/* Currency Result Overlay */}
+            {/* Currency Result / Blocked Overlay */}
             {mode === 'currency' && (
                 <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center p-6 z-20 pointer-events-none ${currencyResult ? 'bg-amber-500/10' : ''}`}
+                    className={`absolute inset-0 flex flex-col items-center justify-center p-6 z-20 pointer-events-none ${isBlocked ? 'bg-red-950/60' : currencyResult ? 'bg-amber-500/10' : ''}`}
                     role="status"
                     aria-live="assertive"
                 >
-                    <p className={`font-black text-center drop-shadow-lg px-4 ${currencyResult
-                        ? 'text-6xl text-amber-300'
-                        : currencyScanning
-                            ? 'text-2xl text-amber-200 animate-pulse'
-                            : currencyHint
-                                ? 'text-xl text-amber-200'
-                                : 'text-2xl text-zinc-400'
-                        }`}>
-                        {currencyResult
-                            ? formatCurrencyDisplay(currencyResult)
-                            : currencyScanning
-                                ? 'กำลังถาม AI...'
-                                : currencyHint || 'ชี้กล้องไปที่ธนบัตรหรือเหรียญ'}
-                    </p>
-                    {currencyResult && (
-                        <p className="text-lg text-amber-100/80 mt-3">
-                            {formatCurrencySpeech(currencyResult)}
-                        </p>
+                    {isBlocked ? (
+                        <div className="text-center p-6 rounded-3xl bg-red-900/80 border-4 border-red-500 animate-pulse shadow-2xl">
+                            <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
+                                ⚠️ กล้องโดนบัง
+                            </p>
+                            <p className="text-lg text-red-200 mt-2 font-medium">
+                                กรุณาเปิดหน้ากล้องหรือขยับมือ
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <p className={`font-black text-center drop-shadow-lg px-4 ${currencyResult
+                                ? 'text-6xl text-amber-300'
+                                : currencyScanning
+                                    ? 'text-2xl text-amber-200 animate-pulse'
+                                    : currencyHint
+                                        ? 'text-xl text-amber-200'
+                                        : 'text-2xl text-zinc-400'
+                                }`}>
+                                {currencyResult
+                                    ? formatCurrencyDisplay(currencyResult)
+                                    : currencyScanning
+                                        ? 'กำลังถาม AI...'
+                                        : currencyHint || 'ชี้กล้องไปที่ธนบัตรหรือเหรียญ'}
+                            </p>
+                            {currencyResult && (
+                                <p className="text-lg text-amber-100/80 mt-3 font-medium">
+                                    {formatCurrencySpeech(currencyResult)}
+                                </p>
+                            )}
+                        </>
                     )}
                 </div>
             )}

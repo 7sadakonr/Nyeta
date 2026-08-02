@@ -15,7 +15,12 @@ const QUICK_MESSAGES = [
 
 export default function ChatPanel({ isOpen, onClose, messages, onSendMessage }) {
     const [inputText, setInputText] = useState('');
+    const [mounted, setMounted] = useState(false);
     const messagesEndRef = useRef(null);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -83,7 +88,7 @@ export default function ChatPanel({ isOpen, onClose, messages, onSendMessage }) 
                             >
                                 <p className="text-[15px]">{msg.text}</p>
                                 <p className="text-[10px] opacity-60 text-right mt-1">
-                                    {new Date(msg.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                                    {mounted && msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}
                                 </p>
                             </div>
                         </div>

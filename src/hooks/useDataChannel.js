@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 const CHUNK_SIZE = 16384; // 16KB limit for DataChannel
 
@@ -108,13 +108,27 @@ export function useDataChannel(channel, role) {
         }
 
         const total = chunks.length;
-        chunks.forEach((chunk, index) => {
-            const data = JSON.stringify({
-                type: 'capture-chunk',
-                payload: { id, chunk, index, total }
-            });
-            channel.send(data);
-        });
+        let index = 0;
+        const BUFFER_THRESHOLD = 64 * 1024; // 64KB threshold
+
+        const sendNext = () => {
+            while (index < total) {
+                if (channel.bufferedAmount > BUFFER_THRESHOLD) {
+                    channel.onbufferedamountlow = sendNext;
+                    channel.bufferedAmountLowThreshold = BUFFER_THRESHOLD / 2;
+                    return;
+                }
+                const data = JSON.stringify({
+                    type: 'capture-chunk',
+                    payload: { id, chunk: chunks[index], index, total }
+                });
+                channel.send(data);
+                index++;
+            }
+            channel.onbufferedamountlow = null;
+        };
+
+        sendNext();
     }, []);
 
     const onMessage = useCallback((callback) => {
@@ -125,7 +139,7 @@ export function useDataChannel(channel, role) {
         listenersRef.current.delete(callback);
     }, []);
 
-    return {
+    return useMemo(() => ({
         channelState,
         sendChat,
         sendCaptureRequest,
@@ -134,5 +148,14 @@ export function useDataChannel(channel, role) {
         sendCaptureStatus,
         onMessage,
         offMessage
-    };
+    }), [
+        channelState,
+        sendChat,
+        sendCaptureRequest,
+        sendToggleFlash,
+        sendCaptureResponse,
+        sendCaptureStatus,
+        onMessage,
+        offMessage
+    ]);
 }

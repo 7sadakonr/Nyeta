@@ -1,5 +1,24 @@
 export const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
+export function extractGeminiText(data) {
+    const candidate = data?.candidates?.[0];
+    if (!candidate?.content?.parts) return '';
+    
+    const textParts = candidate.content.parts
+        .filter(part => !part.thought && typeof part.text === 'string')
+        .map(part => part.text);
+        
+    if (textParts.length > 0) {
+        return textParts.join('\n').trim();
+    }
+    
+    const fallbackParts = candidate.content.parts
+        .filter(part => typeof part.text === 'string')
+        .map(part => part.text);
+        
+    return fallbackParts.join('\n').trim();
+}
+
 export async function callGeminiVision({
     apiKey,
     imageDataUrl,
@@ -7,40 +26,27 @@ export async function callGeminiVision({
     userPrompt,
     maxTokens = 500,
     temperature = 0,
+    signal,
 }) {
+    if (!imageDataUrl) {
+        throw new Error('Image data is missing or camera is not ready');
+    }
     const base64Data = imageDataUrl.split(',')[1];
     const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
 
-    const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-        {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                },
-                contents: [
-                    {
-                        role: 'user',
-                        parts: [
-                            { text: userPrompt },
-                            {
-                                inlineData: {
-                                    mimeType: mimeType,
-                                    data: base64Data
-                                }
-                            }
-                        ]
-                    }
-                ],
-                generationConfig: {
-                    maxOutputTokens: maxTokens,
-                    temperature: temperature,
-                }
-            })
-        }
-    );
+    const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined),
+        body: JSON.stringify({
+            systemPrompt,
+            userPrompt,
+            imageBase64: base64Data,
+            mimeType,
+            maxTokens,
+            temperature,
+        })
+    });
 
     const data = await response.json().catch(() => ({}));
 
@@ -49,7 +55,7 @@ export async function callGeminiVision({
         throw new Error(message);
     }
 
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    return extractGeminiText(data);
 }
 
 /**
@@ -58,6 +64,7 @@ export async function callGeminiVision({
  * @param {{ cropRegion?: { x: number, y: number, width: number, height: number }, maxDimension?: number, quality?: number }} [options]
  */
 export function captureFrameFromVideo(video, options = {}) {
+    if (!video || video.readyState < 2) return null;
     const { cropRegion, maxDimension = 1024, quality = 0.75 } = options;
 
     const srcW = video.videoWidth || 1280;

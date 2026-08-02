@@ -11,6 +11,7 @@ import { useObjectDetector } from '@/hooks/useObjectDetector';
 import { useAiAssistant } from '@/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/hooks/useDocumentReader';
+import { useSpeechSpeaking } from '@/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/lib/speechManager';
 
 // UI Components
@@ -24,7 +25,6 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 export default function BlindAssistPage() {
     // Mode State
     const [mode, setMode] = useState('assistant'); // 'assistant', 'currency', 'reader'
-    const [modeAnnouncement, setModeAnnouncement] = useState('');
     const [logs, setLogs] = useState([]);
     
     // Refs
@@ -47,12 +47,52 @@ export default function BlindAssistPage() {
 
     // 1. Core Services
     const { feedback } = useFeedback(hapticRef);
-    const { videoRef, isReady: aiReady, initCamera, stopCamera } = useCamera();
+    const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera } = useCamera();
 
     useEffect(() => {
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
+
+    // Immediate auditory cue when arriving at blind page
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            const savedMode = typeof window !== 'undefined' ? localStorage.getItem('nyeta_blind_mode') : null;
+            const currentMode = savedMode || 'assistant';
+            const modeName = currentMode === 'currency' ? 'ดูสกุลเงิน' : currentMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+            speechManager?.speak(`โหมด${modeName} กำลังเปิดกล้องครับ`, {
+                priority: Priority.NORMAL,
+                owner: 'page-mount',
+                rate: 1.1,
+            });
+        }, 100);
+        return () => clearTimeout(timer);
+    }, []);
+
+    // Initial camera ready announcement (Auditory cue for blind users on initial entry)
+    const hasAnnouncedReadyRef = useRef(false);
+    useEffect(() => {
+        if (aiReady && !hasAnnouncedReadyRef.current) {
+            hasAnnouncedReadyRef.current = true;
+            const modeName = mode === 'currency' ? 'ดูสกุลเงิน' : mode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+            speechManager?.speak(`กล้องโหมด${modeName}พร้อมใช้งานแล้วครับ`, {
+                priority: Priority.HIGH,
+                owner: 'camera-ready',
+                rate: 1.1,
+            });
+        }
+    }, [aiReady, mode]);
+
+    // Announce camera access error if any
+    useEffect(() => {
+        if (cameraError) {
+            speechManager?.speak('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์ครับ', {
+                priority: Priority.CRITICAL,
+                owner: 'camera-error',
+                rate: 1.1,
+            });
+        }
+    }, [cameraError]);
 
     // 2. Feature Hooks
     // A. Object Detector (always active in assistant mode)
@@ -78,8 +118,11 @@ export default function BlindAssistPage() {
         messages: aiMessages,
         captureAndAsk,
         askTextOnly,
-        clearMessages
+        clearMessages,
+        stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog);
+
+    const isSpeaking = useSpeechSpeaking('ai-response');
 
     // C. Speech Input
     const {
@@ -105,13 +148,19 @@ export default function BlindAssistPage() {
         currencyMonitoring,
         currencyHint,
         currencyBounds,
-        replayCurrency
-    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog, setModeAnnouncement);
+        totalAmount,
+        scannedHistory,
+        isBlocked: currencyBlocked,
+        replayCurrency,
+        replayTotal,
+        clearTotal
+    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
 
     // E. Document Reader
     const {
         docText,
         isReading,
+        isProcessing: isDocProcessing,
         readerGuidance,
         readerAligned,
         pageBounds,
@@ -120,7 +169,7 @@ export default function BlindAssistPage() {
         replayDocument,
         stopReading,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, aiStatus, feedback, addLog, setModeAnnouncement);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, aiStatus, feedback, addLog);
 
     // 3. Mode Switcher
     const switchMode = useCallback((newMode) => {
@@ -132,7 +181,12 @@ export default function BlindAssistPage() {
         if (typeof window !== 'undefined') {
             localStorage.setItem('nyeta_blind_mode', newMode);
         }
-        setModeAnnouncement(`เปลี่ยนเป็นโหมด${newMode === 'currency' ? 'ดูสกุลเงิน' : newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ'}`);
+        const modeName = newMode === 'currency' ? 'ดูสกุลเงิน' : newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+        speechManager?.speak(`เปลี่ยนเป็นโหมด${modeName}`, {
+            priority: Priority.CRITICAL,
+            owner: 'mode-switch',
+            rate: 1.1,
+        });
         
         // Reset state
         if (newMode !== 'reader') resetDocument();
@@ -152,7 +206,7 @@ export default function BlindAssistPage() {
         if (lastMsg?.role === 'ai' && lastMsg.content) {
             speechManager?.speak(lastMsg.content, {
                 priority: Priority.HIGH,
-                owner: 'ai-assistant',
+                owner: 'ai-response',
                 rate: 1.0,
                 chunk: true,
             });
@@ -163,10 +217,12 @@ export default function BlindAssistPage() {
     const statusLabel = !aiReady
         ? 'กำลังเริ่ม...'
         : mode === 'currency'
-            ? currencyScanning || currencyMonitoring
-                ? 'กำลังสแกนเงิน...'
-                : 'พร้อมสแกน'
-            : mode === 'reader' && aiStatus === 'thinking'
+            ? currencyBlocked
+                ? 'กล้องโดนบัง'
+                : currencyScanning || currencyMonitoring
+                    ? 'กำลังสแกนเงิน...'
+                    : 'พร้อมสแกน'
+            : mode === 'reader' && (isDocProcessing || aiStatus === 'thinking')
                 ? 'กำลังอ่านเอกสาร...'
                 : mode === 'reader' && readerAligned
                     ? 'ตรงแล้ว พร้อมถ่าย'
@@ -184,7 +240,11 @@ export default function BlindAssistPage() {
 
     return (
         <ErrorBoundary>
-        <div className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans">
+        <div 
+            onClick={() => speechManager?.unlock()}
+            onTouchStart={() => speechManager?.unlock()}
+            className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans"
+        >
             <HapticFeedback ref={hapticRef} />
 
             <TopNavBar
@@ -213,6 +273,8 @@ export default function BlindAssistPage() {
                     currencyResult={currencyResult}
                     currencyScanning={currencyScanning}
                     currencyHint={currencyHint}
+                    totalAmount={totalAmount}
+                    isBlocked={currencyBlocked}
                     guidanceText={guidanceText}
                     voiceTranscript={voiceTranscript}
                     isListening={isListening}
@@ -222,18 +284,8 @@ export default function BlindAssistPage() {
                     detectedObjects={detectedObjects}
                 />
 
-                <div className="sr-only" aria-live="assertive" aria-atomic="true">
-                    {modeAnnouncement ||
-                        (!aiReady ? "กำลังขออนุญาตใช้กล้อง" :
-                            aiStatus === 'capturing' ? "กำลังถ่ายภาพ" :
-                                aiStatus === 'thinking' ? "AI กำลังวิเคราะห์ รอสักครู่" :
-                                    mode === 'reader' && readerGuidance ? readerGuidance :
-                                        mode === 'currency' && currencyResult ? currencyResult.value + " บาท" :
-                                            mode === 'reader' && isReading ? "กำลังอ่านเอกสารออกเสียง" :
-                                                mode === 'assistant' && aiMessages.length > 0 && aiMessages[aiMessages.length - 1].role === 'ai'
-                                                    ? `AI ตอบกลับว่า: ${aiMessages[aiMessages.length - 1].content}`
-                                                    : "")}
-                </div>
+                {/* aria-live disabled — speechManager provides centralized TTS feedback without double-speaking */}
+                <div className="sr-only" aria-live="off" aria-atomic="true"></div>
 
                 <ModeSwitcher mode={mode} switchMode={switchMode} />
 
@@ -256,18 +308,26 @@ export default function BlindAssistPage() {
                     mode={mode}
                     aiReady={aiReady}
                     aiStatus={aiStatus}
+                    isSpeaking={isSpeaking}
                     isListening={isListening}
                     docText={docText}
                     isReading={isReading}
+                    isProcessingDoc={isDocProcessing}
                     currencyResult={currencyResult}
                     currencyScanning={currencyScanning}
                     currencyMonitoring={currencyMonitoring}
+                    totalAmount={totalAmount}
+                    scannedCount={scannedHistory?.length || 0}
+                    isBlocked={currencyBlocked}
                     readerAligned={readerAligned}
                     onClearChat={clearMessages}
                     onCapture={captureAndAsk}
+                    onStopSpeaking={stopSpeaking}
                     onStartListening={startListening}
                     onStopListening={stopListening}
                     onReplayCurrency={replayCurrency}
+                    onReplayTotal={replayTotal}
+                    onClearTotal={clearTotal}
                     onReadDocument={readDocument}
                     onReplayDocument={replayDocument}
                     onStopReading={stopReading}

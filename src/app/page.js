@@ -1,26 +1,55 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import HapticFeedback from '@/components/HapticFeedback';
+
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export default function Home() {
   const router = useRouter();
   const hapticRef = useRef(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      speechManager?.speak('ยินดีต้อนรับสู่ Nyeta แตะผู้ช่วย AI หรือแตะโทรหาอาสาสมัคร', {
+        priority: Priority.NORMAL,
+        owner: 'home-welcome',
+        rate: 1.1,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleStart = async () => {
+    speechManager?.unlock();
+    speechManager?.speak('กำลังเปิดโหมดผู้ช่วยเอไอ', {
+      priority: Priority.CRITICAL,
+      owner: 'home-action',
+      rate: 1.1,
+    });
     await hapticRef.current?.trigger(5, 100);
     router.push('/blind');
   };
 
   const handleCall = async () => {
+    speechManager?.unlock();
+    speechManager?.speak('กำลังเปิดหน้าโทรหาอาสาสมัคร', {
+      priority: Priority.CRITICAL,
+      owner: 'home-action',
+      rate: 1.1,
+    });
     await hapticRef.current?.trigger(3, 100);
     router.push('/call');
   };
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-8 overflow-hidden">
+    <main 
+      onClick={() => speechManager?.unlock()}
+      onTouchStart={() => speechManager?.unlock()}
+      className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-8 overflow-hidden"
+    >
       <HapticFeedback ref={hapticRef} />
 
       <h1 className="sr-only">Nyeta — ผู้ช่วย AI สำหรับผู้พิการทางสายตา</h1>

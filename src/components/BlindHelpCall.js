@@ -9,6 +9,7 @@ import { useDataChannel } from '@/hooks/useDataChannel';
 import { useCaptureHandler } from '@/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/components/BlindChatOverlay';
 import speechManager, { Priority } from '@/lib/speechManager';
+import { playEarcon } from '@/lib/audio';
 
 const STATUS_SPEECH = {
     calling: 'กำลังเรียกอาสาสมัคร กรุณารอสักครู่',
@@ -60,29 +61,7 @@ export default function BlindHelpCall() {
         });
     }, []);
 
-    const playEarcon = useCallback((type) => {
-        try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            const now = ctx.currentTime;
-            if (type === 'ring') {
-                osc.frequency.value = 880;
-            } else if (type === 'connect') {
-                osc.frequency.value = 660;
-            } else {
-                osc.frequency.value = 330;
-            }
-            gain.gain.setValueAtTime(0.2, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
-            osc.start(now);
-            osc.stop(now + 0.2);
-        } catch {
-            /* noop */
-        }
-    }, []);
+
 
     // React to status changes: announce, earcon, haptic.
     useEffect(() => {
@@ -101,6 +80,8 @@ export default function BlindHelpCall() {
             hapticRef.current?.trigger(2);
         }
         if (status === 'connected') {
+            speechManager?.stopByOwner('object-detector');
+            speechManager?.stopByOwner('page-guidance');
             playEarcon('connect');
             hapticRef.current?.trigger(3);
         }

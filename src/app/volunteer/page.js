@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useVolunteerHelp } from '@/hooks/useVolunteerHelp';
 import { useWakeLock } from '@/hooks/useWakeLock';
 import { useDataChannel } from '@/hooks/useDataChannel';
+import { playBeep } from '@/lib/audio';
 import ChatPanel from '@/components/ChatPanel';
 import ImageViewer from '@/components/ImageViewer';
 import CaptureControls from '@/components/CaptureControls';
@@ -21,6 +22,7 @@ export default function VolunteerPage() {
         goOffline,
         acceptCall,
         endCall,
+        dismissIncoming,
         dataChannel: rawDataChannel,
     } = useVolunteerHelp();
 
@@ -84,21 +86,7 @@ export default function VolunteerPage() {
         }
 
         const beep = () => {
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                const now = ctx.currentTime;
-                osc.frequency.value = 980;
-                gain.gain.setValueAtTime(0.25, now);
-                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-                osc.start(now);
-                osc.stop(now + 0.25);
-            } catch {
-                /* noop */
-            }
+            playBeep(980, 0.25);
             if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(200);
         };
 
@@ -113,6 +101,16 @@ export default function VolunteerPage() {
     }, [incomingCall]);
 
     const inCall = status === 'connecting' || status === 'connected';
+
+    // Reset state when new call starts
+    useEffect(() => {
+        if (inCall) {
+            setMessages([]);
+            setUnreadCount(0);
+            setCapturedImage(null);
+            setCaptureState('idle');
+        }
+    }, [inCall]);
 
     // Keep the screen awake during a call so it isn't backgrounded mid-call.
     useEffect(() => {
@@ -224,7 +222,7 @@ export default function VolunteerPage() {
                     <div className="flex items-center gap-6">
                         <button
                             type="button"
-                            onClick={() => endCall()}
+                            onClick={() => dismissIncoming()}
                             className="w-20 h-20 rounded-full bg-red-600 hover:bg-red-500 active:scale-90 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-red-300"
                             aria-label="ปฏิเสธสาย"
                         >

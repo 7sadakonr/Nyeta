@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 export function useSpeechInput(onResult, onFeedback) {
     const [isListening, setIsListening] = useState(false);
@@ -58,7 +59,7 @@ export function useSpeechInput(onResult, onFeedback) {
                     setTranscript('(ไม่ได้ยินเสียง)');
                     return;
                 }
-                console.error("Speech error:", event.error);
+                console.warn("Speech error:", event.error);
                 setIsListening(false);
                 setTranscript(`⚠️ Error: ${event.error}`);
             };
@@ -67,14 +68,18 @@ export function useSpeechInput(onResult, onFeedback) {
 
     const startListening = useCallback((e) => {
         e?.preventDefault();
-        if (!recognitionRef.current) return;
+        if (!recognitionRef.current) {
+            onFeedback?.('error');
+            speechManager?.speak('เบราว์เซอร์นี้ไม่รองรับการสั่งงานด้วยเสียง', { priority: Priority.HIGH, owner: 'speech-input' });
+            return;
+        }
         if (isListening) return;
         try {
             recognitionRef.current.start();
         } catch (error) {
-            console.error("Mic start error:", error);
+            console.warn("Mic start error:", error);
         }
-    }, [isListening]);
+    }, [isListening, onFeedback]);
 
     const stopListening = useCallback((e) => {
         e?.preventDefault();
@@ -85,7 +90,7 @@ export function useSpeechInput(onResult, onFeedback) {
                 setTranscript('');
             }, 2000);
         } catch (error) {
-            console.error("Mic stop error:", error);
+            console.warn("Mic stop error:", error);
         }
     }, [isListening]);
 

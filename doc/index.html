@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nyeta - เอกสารระบบ (System Documentation)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #8b5cf6;
+            --secondary: #ec4899;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Prompt', 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+
+        header {
+            text-align: center;
+            padding: 6rem 2rem 4rem;
+            position: relative;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #a78bfa, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            letter-spacing: -1px;
+        }
+
+        header p {
+            color: var(--text-muted);
+            font-size: 1.25rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem 6rem;
+        }
+
+        .section-title {
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .section-title::after {
+            content: '';
+            height: 1px;
+            flex-grow: 1;
+            background: linear-gradient(to right, var(--card-border), transparent);
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            margin-bottom: 4rem;
+        }
+
+        /* Glassmorphism Cards */
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card-icon {
+            font-size: 3rem;
+            margin-bottom: 1.5rem;
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            border-radius: 16px;
+        }
+
+        .card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #fff;
+        }
+
+        .card h4 {
+            font-size: 1rem;
+            color: var(--secondary);
+            margin-bottom: 1.5rem;
+            font-weight: 500;
+        }
+
+        .card ul {
+            list-style: none;
+        }
+
+        .card ul li {
+            position: relative;
+            padding-left: 1.75rem;
+            margin-bottom: 1rem;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .card ul li::before {
+            content: '▹';
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--primary);
+            font-size: 1.2rem;
+            line-height: 1.4;
+        }
+
+        /* Requirements List specific styles */
+        .req-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .req-item {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 1.5rem;
+            border-radius: 16px;
+            transition: background 0.3s ease;
+        }
+
+        .req-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        .req-item h4 {
+            color: #a78bfa;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .req-item p {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .tag {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            background: rgba(139, 92, 246, 0.2);
+            color: #c4b5fd;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            opacity: 0;
+        }
+        
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            .card { padding: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="animate-fade-in">
+        <h1 style="font-size: 2.8rem; margin-bottom: 0.5rem;">Nyeta Project</h1>
+        <p style="font-size: 1.1rem; color: #bae6fd; font-weight: 500; margin-bottom: 0.5rem;">
+            การพัฒนาระบบผู้ช่วยจำแนกวัตถุภายในครัวเรือนแบบโต้ตอบเรียลไทม์ผ่านเว็บแอปพลิเคชัน<br>
+            สำหรับผู้พิการทางสายตาโดยประยุกต์ใช้ปัญญาประดิษฐ์เชิงสร้างสรรค์
+        </p>
+        <p style="font-size: 0.9rem; color: #64748b; max-width: 800px;">
+            DEVELOPMENT OF AN INTERACTIVE REAL-TIME HOUSEHOLD OBJECT CLASSIFICATION ASSISTANT SYSTEM 
+            VIA WEB APPLICATION FOR VISUALLY IMPAIRED PERSONS USING GENERATIVE ARTIFICIAL INTELLIGENCE
+        </p>
+    </header>
+
+    <div class="container">
+        
+        <!-- Section 0: Project Overview -->
+        <div class="card animate-fade-in" style="margin-bottom: 4rem; padding: 2.5rem; background: rgba(15, 23, 42, 0.6); border-left: 4px solid #f472b6;">
+            <h2 style="color: #fbcfe8; margin-bottom: 1.5rem; font-size: 1.5rem; display: flex; align-items: center; gap: 0.8rem;">
+                <span>🎯</span> บทนำและวัตถุประสงค์ของโครงงาน
+            </h2>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div>
+                    <h4 style="color: #f472b6; margin-bottom: 0.5rem;">ปัญหา (Pain Point)</h4>
+                    <p style="color: #cbd5e1; font-size: 0.95rem; line-height: 1.7; margin-bottom: 1.5rem;">
+                        ผู้พิการทางสายตาเผชิญความยากลำบากในการดำเนินชีวิตประจำวันภายในบ้าน (เช่น การแยกยา หรือของใช้) 
+                        แอปพลิเคชันส่วนใหญ่เป็น Native App ที่ติดตั้งยาก ไม่รองรับภาษาไทยอย่างสมบูรณ์ และ AI มีข้อจำกัดเรื่อง
+                        ความแม่นยำในที่แสงน้อยจนอาจนำไปสู่อันตรายได้
+                    </p>
+
+                    <h4 style="color: #f472b6; margin-bottom: 0.5rem;">แนวคิดการแก้ปัญหา (Solution)</h4>
+                    <p style="color: #cbd5e1; font-size: 0.95rem; line-height: 1.7;">
+                        พัฒนาระบบแบบผสมผสาน (Hybrid Architecture) ที่ใช้ <b>AI นำทางมือแบบเรียลไทม์</b> ร่วมกับ 
+                        <b>Cloud LMM (Llama 4 Vision)</b> และอุดช่องโหว่ความผิดพลาดของ AI ด้วย <b>ระบบอาสาสมัคร (Human-in-the-Loop)</b> 
+                        ผ่านเว็บแอปพลิเคชันก้าวหน้า (PWA) ที่รองรับ Screen Reader 100%
+                    </p>
+                </div>
+                
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Objectives -->
+                    <div style="background: rgba(255, 255, 255, 0.03); padding: 1.5rem; border-radius: 12px; border: 1px dashed rgba(244, 114, 182, 0.3);">
+                        <h4 style="color: #f9a8d4; margin-bottom: 1rem;">วัตถุประสงค์ของโครงงาน</h4>
+                        <ul style="list-style: none; color: #cbd5e1; font-size: 0.9rem; line-height: 1.8;">
+                            <li style="margin-bottom: 0.8rem; display: flex; gap: 0.5rem;">
+                                <span style="color: #f472b6;">1.</span>
+                                เพื่อพัฒนาระบบผู้ช่วยอัจฉริยะสำหรับจำแนกและระบุตำแหน่งสิ่งของสำหรับผู้พิการทางสายตา ในรูปแบบ PWA
+                            </li>
+                            <li style="margin-bottom: 0.8rem; display: flex; gap: 0.5rem;">
+                                <span style="color: #f472b6;">2.</span>
+                                เพื่อประยุกต์ใช้เทคโนโลยี AI ร่วมกับระบบเครือข่ายอาสาสมัคร (Volunteer Network System)
+                            </li>
+                            <li style="display: flex; gap: 0.5rem;">
+                                <span style="color: #f472b6;">3.</span>
+                                เพื่อศึกษาและประเมินประสิทธิภาพของระบบต้นแบบ (ความแม่นยำของ AI และระยะเวลาตอบสนอง)
+                            </li>
+                        </ul>
+                    </div>
+
+                    <!-- Tech Stack -->
+                    <div style="background: rgba(255, 255, 255, 0.03); padding: 1.5rem; border-radius: 12px; border: 1px dashed rgba(244, 114, 182, 0.3);">
+                        <h4 style="color: #f9a8d4; margin-bottom: 1rem;">🛠️ เทคโนโลยีที่ใช้ในการพัฒนา (อ้างอิงบทที่ 2.6)</h4>
+                        <div>
+                            <span class="tag" style="background: rgba(56, 189, 248, 0.2); color: #bae6fd;">Next.js (PWA / SSR)</span>
+                            <span class="tag" style="background: rgba(250, 204, 21, 0.2); color: #fef08a;">TensorFlow.js (COCO-SSD)</span>
+                            <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #a7f3d0;">Groq API (Llama 4 Vision)</span>
+                            <span class="tag" style="background: rgba(139, 92, 246, 0.2); color: #c4b5fd;">WebRTC & PeerJS</span>
+                            <span class="tag" style="background: rgba(236, 72, 153, 0.2); color: #fbcfe8;">Pusher (Signaling)</span>
+                            <span class="tag" style="background: rgba(249, 115, 22, 0.2); color: #fed7aa;">Web Speech API</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 1: หลักการทำงาน -->
+        <h2 class="section-title animate-fade-in">✨ สถาปัตยกรรมการทำงาน 3 โหมด</h2>
+        
+        <!-- Custom HTML/CSS Infographic -->
+        <div class="card animate-fade-in" style="margin-bottom: 3rem; padding: 2rem;">
+            <h3 style="text-align: center; margin-bottom: 2rem; color: #a78bfa; font-size: 1.5rem;">ภาพรวมการทำงานของระบบ (System Flow)</h3>
+            
+            <div style="display: flex; flex-direction: column; gap: 2rem; align-items: center; background: rgba(0,0,0,0.2); padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+                
+                <!-- Step 1: Input -->
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 800px; gap: 1rem;">
+                    <div style="flex: 1; text-align: center; background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; padding: 1.5rem; border-radius: 12px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📱</div>
+                        <h4 style="color: #fff; margin-bottom: 0.5rem;">แอปพลิเคชัน Nyeta</h4>
+                        <p style="font-size: 0.85rem; color: #cbd5e1;">เปิดกล้องรับภาพ (วิดีโอ) <br>และรับคำสั่งเสียงจากผู้ใช้ผ่านไมโครโฟน</p>
+                    </div>
+                    
+                    <div style="flex: 0.5; text-align: center; color: #8b5cf6;">
+                        <div style="font-size: 1.5rem;">➡️</div>
+                        <span style="font-size: 0.8rem; background: #8b5cf6; color: white; padding: 2px 8px; border-radius: 12px;">ส่งภาพ/เสียง</span>
+                    </div>
+
+                    <div style="flex: 1; text-align: center; background: rgba(236, 72, 153, 0.15); border: 1px solid #ec4899; padding: 1.5rem; border-radius: 12px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🧠</div>
+                        <h4 style="color: #fff; margin-bottom: 0.5rem;">Cloud AI (Groq API)</h4>
+                        <p style="font-size: 0.85rem; color: #cbd5e1;">วิเคราะห์รูปภาพเพื่อหาคำตอบ, นับเงิน,<br> หรือดึงข้อความจากเอกสาร (OCR)</p>
+                    </div>
+                </div>
+
+                <!-- Step 2: Output -->
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 800px; gap: 1rem;">
+                    <div style="flex: 1; text-align: center; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; padding: 1.5rem; border-radius: 12px;">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔊📳</div>
+                        <h4 style="color: #fff; margin-bottom: 0.5rem;">การตอบสนองผู้ใช้</h4>
+                        <p style="font-size: 0.85rem; color: #cbd5e1;">อ่านออกเสียงคำตอบให้ฟัง (TTS) <br>และสั่นเตือนเมื่อสแกนสำเร็จ</p>
+                    </div>
+                    
+                    <div style="flex: 0.5; text-align: center; color: #10b981;">
+                        <div style="font-size: 1.5rem;">⬅️</div>
+                        <span style="font-size: 0.8rem; background: #10b981; color: white; padding: 2px 8px; border-radius: 12px;">ส่งคำตอบกลับ</span>
+                    </div>
+
+                    <div style="flex: 1; text-align: center; background: transparent; padding: 1.5rem;">
+                        <!-- Empty placeholder to align with the box above -->
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.2;">☁️</div>
+                        <p style="font-size: 0.85rem; color: #64748b;">(ข้อมูลถูกประมวลผลเสร็จสิ้นส่งกลับจากคลาวด์)</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="grid">
+            
+            <!-- AI Assistant -->
+            <div class="card animate-fade-in delay-1">
+                <div class="card-icon">🤖</div>
+                <h3>โหมดผู้ช่วยเอไอ (AI Assistant)</h3>
+                <h4>Local Detect + Cloud Vision + Speech</h4>
+                <!-- Mini Visual Flow -->
+                <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; background: rgba(0,0,0,0.2); padding: 1.2rem; border-radius: 12px;">
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(139, 92, 246, 0.2); padding: 0.5rem; border-radius: 8px;">1️⃣</span>
+                        <div>
+                            <strong style="color: #c4b5fd; display: block; font-size: 0.9rem;">ตรวจจับ & รับคำสั่ง (Local)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">โมเดลบนเครื่องหาวัตถุ + รับคำสั่งเสียง</span>
+                        </div>
+                    </div>
+                    <div style="color: #8b5cf6; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(236, 72, 153, 0.2); padding: 0.5rem; border-radius: 8px;">2️⃣</span>
+                        <div>
+                            <strong style="color: #fbcfe8; display: block; font-size: 0.9rem;">วิเคราะห์ (Cloud AI)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">ส่งภาพ+ข้อความให้ Groq Vision ตีความ</span>
+                        </div>
+                    </div>
+                    <div style="color: #8b5cf6; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(16, 185, 129, 0.2); padding: 0.5rem; border-radius: 8px;">3️⃣</span>
+                        <div>
+                            <strong style="color: #a7f3d0; display: block; font-size: 0.9rem;">ตอบสนอง (TTS)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">แปลงคำตอบกลับเป็นเสียงให้ผู้ใช้ฟัง</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deep Dive: AI Assistant (Dropdown) -->
+                <details style="margin-top: 1.5rem; background: rgba(139, 92, 246, 0.1); border: 1px dashed rgba(139, 92, 246, 0.4); border-radius: 12px; color: #cbd5e1; cursor: pointer;">
+                    <summary style="padding: 1rem; color: #c4b5fd; font-weight: 600; outline: none; user-select: none;">
+                        🔍 เจาะลึก: อัลกอริทึมทำงานอย่างไร? (คลิกเพื่ออ่านเพิ่ม)
+                    </summary>
+                    <div style="padding: 0 1rem 1rem 1rem; font-size: 0.85rem; border-top: 1px solid rgba(139, 92, 246, 0.2); margin-top: 0.5rem; padding-top: 1rem;">
+                        <ul style="padding-left: 1rem; color: #cbd5e1; list-style-type: square; line-height: 1.8;">
+                            <li style="margin-bottom: 0.5rem;"><strong>1. สแกนวัตถุเรียลไทม์ (useObjectDetector):</strong> รัน <code>requestAnimationFrame</code> โยนภาพเข้าโมเดล COCO-SSD (TF.js) ตลอดเวลา เพื่อหากรอบวัตถุ (Bounding Box)</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>2. นำทางด้วยเสียง (Spatial Guidance):</strong> นำพิกัดวัตถุมาคำนวณเทียบกับจุดกึ่งกลางจอ (Center Zone 20%) หากวัตถุเอียงไปด้านใด จะมีเสียงพูดสั่งให้ "เลื่อนซ้าย/ขวา" พร้อมระบบหน่วงเวลา (Throttle) ไม่ให้พูดซ้ำรัวเกินไป</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>3. ดักฟังเสียง:</strong> เมื่อผู้ใช้แตะหน้าจอเพื่อถามคำถาม ระบบจะเรียก <code>SpeechRecognition</code> (Web Speech API) แปลงเสียงพูดเป็นข้อความ</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>4. สร้าง Base64 (useAiAssistant):</strong> ระบบแคปภาพวิดีโอ ณ วินาทีนั้นลงบน Canvas แปลงเป็น Base64 แล้วแพ็กคู่กับคำถาม ส่งผ่าน HTTP Request ไปหาคลาวด์ <code>Groq Vision API</code></li>
+                            <li style="margin-bottom: 0.5rem;"><strong>5. รับผลลัพธ์:</strong> เมื่อ AI ตอบกลับมา ระบบจะโยนข้อความเข้า API Text-to-Speech เพื่ออ่านคำตอบให้ฟังทันที</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Currency Scanner -->
+            <div class="card animate-fade-in delay-2">
+                <div class="card-icon">💵</div>
+                <h3>โหมดสแกนธนบัตร (Currency Scanner)</h3>
+                <h4>Continuous Sampling + Vision AI</h4>
+                <!-- Mini Visual Flow -->
+                <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; background: rgba(0,0,0,0.2); padding: 1.2rem; border-radius: 12px;">
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(56, 189, 248, 0.2); padding: 0.5rem; border-radius: 8px;">📸</span>
+                        <div>
+                            <strong style="color: #bae6fd; display: block; font-size: 0.9rem;">สุ่มดึงภาพ (Frame Sampling)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">ดึงภาพนิ่งจากกล้องเป็นจังหวะเพื่อประหยัด Data</span>
+                        </div>
+                    </div>
+                    <div style="color: #38bdf8; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(250, 204, 21, 0.2); padding: 0.5rem; border-radius: 8px;">🧠</span>
+                        <div>
+                            <strong style="color: #fef08a; display: block; font-size: 0.9rem;">คัดแยกธนบัตร (Vision AI)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">ให้ AI ค้นหาและจำแนกมูลค่าธนบัตรไทย</span>
+                        </div>
+                    </div>
+                    <div style="color: #38bdf8; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(16, 185, 129, 0.2); padding: 0.5rem; border-radius: 8px;">📳</span>
+                        <div>
+                            <strong style="color: #a7f3d0; display: block; font-size: 0.9rem;">ยืนยันความแม่นยำ (Verify)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">เมื่อค่าตรงกันหลายเฟรม ระบบจะสั่นเตือน+บอกจำนวนเงิน</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deep Dive: Currency Scanner (Dropdown) -->
+                <details style="margin-top: 1.5rem; background: rgba(56, 189, 248, 0.1); border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: 12px; color: #cbd5e1; cursor: pointer;">
+                    <summary style="padding: 1rem; color: #bae6fd; font-weight: 600; outline: none; user-select: none;">
+                        🔍 เจาะลึก: อัลกอริทึมตรวจสอบธนบัตร (คลิกเพื่ออ่านเพิ่ม)
+                    </summary>
+                    <div style="padding: 0 1rem 1rem 1rem; font-size: 0.85rem; border-top: 1px solid rgba(56, 189, 248, 0.2); margin-top: 0.5rem; padding-top: 1rem;">
+                        <ul style="padding-left: 1rem; color: #cbd5e1; list-style-type: square; line-height: 1.8;">
+                            <li style="margin-bottom: 0.5rem;"><strong>1. ตั้งเวลาแอบถ่าย (Interval):</strong> รัน <code>setInterval</code> สั่งจับภาพนิ่งเงียบๆ ทุก 4 วินาที เพื่อไม่ให้เปลืองเน็ต (หากมี Error จะใช้สมการยืดเวลาออกไป)</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>2. จำแนก (Classify):</strong> ส่งภาพไปคลาวด์ โดยตั้ง Prompt บังคับให้ AI ตอบกลับมาเป็น JSON สั้นๆ เท่านั้น เช่น <code>{"value": 100}</code></li>
+                            <li style="margin-bottom: 0.5rem;"><strong>3. กรองความแม่นยำ (State Machine):</strong>
+                                <br>- <em>รอบที่ 1:</em> AI ตอบ 100 -> ระบบเก็บค่าไว้ใน <code>stableDetectionRef</code> แล้วเตือนว่า "กำลังยืนยัน" (ยังไม่สั่น)
+                                <br>- <em>รอบที่ 2:</em> ถ่ายใหม่ AI ตอบ 100 อีก -> ตัวนับครบ 2 ระบบจึงจะยอมรับผล สั่งมอเตอร์มือถือให้สั่น (Haptic) และอ่านออกเสียง
+                            </li>
+                            <li style="margin-bottom: 0.5rem;"><strong>4. รีเซ็ต (Reset):</strong> หากหมุนกล้องไปทางอื่นจน AI หาไม่เจอติดกัน 2 ครั้ง ระบบจะล้างค่าทั้งหมดทิ้งเพื่อเริ่มสแกนใหม่</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Document Reader -->
+            <div class="card animate-fade-in delay-3">
+                <div class="card-icon">📄</div>
+                <h3>โหมดอ่านเอกสาร (Document Reader)</h3>
+                <h4>Edge Detection + Cloud OCR</h4>
+                <!-- Mini Visual Flow -->
+                <div style="margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.8rem; background: rgba(0,0,0,0.2); padding: 1.2rem; border-radius: 12px;">
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(249, 115, 22, 0.2); padding: 0.5rem; border-radius: 8px;">📐</span>
+                        <div>
+                            <strong style="color: #fed7aa; display: block; font-size: 0.9rem;">ตรวจจับขอบ (Local Edge Detect)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">หาพิกัด 4 มุมกระดาษแบบเรียลไทม์ พร้อมเสียงนำทาง</span>
+                        </div>
+                    </div>
+                    <div style="color: #f97316; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(168, 85, 247, 0.2); padding: 0.5rem; border-radius: 8px;">📸</span>
+                        <div>
+                            <strong style="color: #e9d5ff; display: block; font-size: 0.9rem;">จับภาพ & ดึงข้อความ (Cloud OCR)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">เมื่อกล้องตรง ระบบจับภาพออโต้แล้วส่งทำ OCR บนคลาวด์</span>
+                        </div>
+                    </div>
+                    <div style="color: #f97316; padding-left: 1.5rem;">⬇️</div>
+                    <div style="display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem; background: rgba(16, 185, 129, 0.2); padding: 0.5rem; border-radius: 8px;">🔊</span>
+                        <div>
+                            <strong style="color: #a7f3d0; display: block; font-size: 0.9rem;">อ่านออกเสียง (Continuous TTS)</strong>
+                            <span style="font-size: 0.8rem; color: #94a3b8;">อ่านข้อความทั้งหมดให้ผู้ใช้ฟังยาวต่อเนื่อง</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Deep Dive: Edge Detection (Dropdown) -->
+                <details style="margin-top: 1.5rem; background: rgba(249, 115, 22, 0.1); border: 1px dashed rgba(249, 115, 22, 0.4); border-radius: 12px; color: #cbd5e1; cursor: pointer;">
+                    <summary style="padding: 1rem; color: #fed7aa; font-weight: 600; outline: none; user-select: none;">
+                        🔍 เจาะลึก: อัลกอริทึมอ่านเอกสาร (คลิกเพื่ออ่านเพิ่ม)
+                    </summary>
+                    <div style="padding: 0 1rem 1rem 1rem; font-size: 0.85rem; border-top: 1px solid rgba(249, 115, 22, 0.2); margin-top: 0.5rem; padding-top: 1rem;">
+                        <ul style="padding-left: 1rem; color: #cbd5e1; list-style-type: square; line-height: 1.8;">
+                            <li style="margin-bottom: 0.5rem;"><strong>1. ตั้งเวลาวิเคราะห์ (Interval):</strong> รัน <code>setInterval</code> ทุก 0.5 วินาที เพื่อเช็คเฟรมภาพจากกล้องตลอดเวลา</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>2. หาพิกัด 4 มุม (Local):</strong> โยนภาพนิ่งเข้าไลบรารี <code>scanic</code> (WASM) หารูปทรงสี่เหลี่ยม จากนั้นใช้สมการคณิตศาสตร์ <code>Distance</code> เทียบความกว้าง/ความสูง เพื่อหาว่าหน้ากระดาษเอียง (Tilt/Roll) หรือตกขอบหรือไม่</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>3. เสียงนำทาง (Throttled TTS):</strong> นำค่าความเอียงที่คำนวณได้แปลงเป็นคำสั่ง (เช่น "เงยกล้องขึ้น", "เลื่อนขวา") โดยมีระบบหน่วงเวลาไม่ให้พูดซ้ำติดกันเกินไป</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>4. ถ่ายภาพอัตโนมัติ (Auto-Capture):</strong> เมื่อผู้ใช้จัดกล้องตรง (Aligned) ติดต่อกันครบ 3 เฟรม ระบบจะสั่งจับภาพเองโดยไม่ต้องให้คนตาบอดคลำหาปุ่มถ่าย</li>
+                            <li style="margin-bottom: 0.5rem;"><strong>5. ทำ OCR (Cloud):</strong> ส่งภาพไปหาคลาวด์ ดึงข้อความออกมาทั้งหมด และโยนเข้า Text-to-Speech เพื่ออ่านให้ฟังยาวรวดเดียว</li>
+                        </ul>
+                    </div>
+                </details>
+            </div>
+
+        </div>
+
+        <!-- Section 1.5: Volunteer Mode (WebRTC & TURN) -->
+        <h2 class="section-title animate-fade-in" style="margin-top: 4rem;">🤝 สถาปัตยกรรมโหมดอาสาสมัคร (Volunteer WebRTC)</h2>
+        <div class="card animate-fade-in" style="margin-bottom: 3rem; padding: 2rem;">
+            <p style="text-align: center; color: var(--text-muted); margin-bottom: 2rem;">
+                ระบบวิดีโอคอลช่วยเหลือผู้พิการทางสายตาแบบ Real-time โดยใช้เทคโนโลยี WebRTC
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 2rem; align-items: center; background: rgba(0,0,0,0.2); padding: 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+                
+                <!-- Scenario 1: P2P -->
+                <h4 style="color: #a78bfa; margin-bottom: -1rem;">กรณีปกติ: เชื่อมต่อตรง (Peer-to-Peer)</h4>
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 700px; gap: 1rem;">
+                    <div style="flex: 1; text-align: center; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; padding: 1.5rem; border-radius: 12px;">
+                        <div style="font-size: 2.5rem;">📱</div>
+                        <h5 style="color: #fff; margin-top: 0.5rem;">ผู้พิการทางสายตา</h5>
+                    </div>
+                    
+                    <div style="flex: 1; text-align: center; color: #10b981; border-top: 2px dashed #10b981; position: relative;">
+                        <div style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #0f172a; padding: 0 10px; font-size: 0.8rem;">สตรีมวิดีโอ/เสียงตรงๆ</div>
+                    </div>
+
+                    <div style="flex: 1; text-align: center; background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; padding: 1.5rem; border-radius: 12px;">
+                        <div style="font-size: 2.5rem;">🧑‍💻</div>
+                        <h5 style="color: #fff; margin-top: 0.5rem;">อาสาสมัคร</h5>
+                    </div>
+                </div>
+
+                <div style="width: 100%; max-width: 700px; height: 1px; background: rgba(255,255,255,0.1); margin: 1rem 0;"></div>
+
+                <!-- Scenario 2: TURN Server -->
+                <h4 style="color: #f43f5e; margin-bottom: -1rem;">กรณีติด Firewall: ใช้ TURN Server</h4>
+                <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 700px; gap: 1rem; position: relative;">
+                    
+                    <!-- Firewall Wall -->
+                    <div style="position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; background: repeating-linear-gradient(45deg, #f43f5e, #f43f5e 10px, transparent 10px, transparent 20px); transform: translateX(-50%); z-index: 0; opacity: 0.5;"></div>
+
+                    <div style="flex: 1; text-align: center; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; padding: 1.5rem; border-radius: 12px; z-index: 1;">
+                        <div style="font-size: 2.5rem;">📱</div>
+                    </div>
+                    
+                    <div style="flex: 1; text-align: center; color: #f43f5e; border-top: 2px dashed #f43f5e; position: relative; z-index: 1;">
+                        <div style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #0f172a; padding: 0 10px; font-size: 0.75rem; color: #f43f5e;">เชื่อมตรงไม่ได้</div>
+                    </div>
+
+                    <div style="flex: 1; text-align: center; background: rgba(56, 189, 248, 0.15); border: 1px solid #38bdf8; padding: 1.5rem; border-radius: 12px; z-index: 1;">
+                        <div style="font-size: 2.5rem;">🧑‍💻</div>
+                    </div>
+                </div>
+
+                <!-- TURN Server Path -->
+                <div style="display: flex; align-items: center; justify-content: center; width: 100%; max-width: 700px; gap: 1rem;">
+                     <div style="text-align: center; color: #8b5cf6;">
+                        <div style="font-size: 1.5rem;">↘️</div>
+                    </div>
+                    <div style="text-align: center; background: rgba(139, 92, 246, 0.15); border: 1px solid #8b5cf6; padding: 1rem 2rem; border-radius: 12px; z-index: 2;">
+                        <div style="font-size: 2rem;">🔄</div>
+                        <h5 style="color: #fff; margin-top: 0.5rem;">TURN Server</h5>
+                        <p style="font-size: 0.75rem; color: #cbd5e1;">รับภาพแล้วส่งต่อ (Relay)</p>
+                    </div>
+                     <div style="text-align: center; color: #8b5cf6;">
+                        <div style="font-size: 1.5rem;">↗️</div>
+                    </div>
+                </div>
+
+                <!-- Technical Principle Box -->
+                <div style="margin-top: 1rem; width: 100%; max-width: 700px; background: rgba(255, 255, 255, 0.05); border-left: 4px solid #8b5cf6; padding: 1.5rem; border-radius: 8px;">
+                    <strong style="color: #c4b5fd; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        💡 หลักการทำงานของ TURN Server
+                    </strong>
+                    <p style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.6;">
+                        ปกติแล้ว WebRTC จะพยายามเชื่อมต่อวิดีโอแบบ <b>Peer-to-Peer (P2P)</b> ระหว่าง 2 อุปกรณ์โดยตรง แต่หากฝั่งใดฝั่งหนึ่งใช้อินเทอร์เน็ตที่มี <b>Symmetric NAT</b> หรือ <b>Strict Firewall</b> (เช่น เน็ตมือถือ 4G/5G บางค่าย หรือเน็ตองค์กร) การเชื่อมต่อตรงจะถูกบล็อกทันที<br><br>
+                        <b>TURN Server</b> จึงเข้ามาทำหน้าที่เป็น <b>Relay Server (เซิร์ฟเวอร์ทางผ่าน)</b> เมื่อเชื่อม P2P ไม่สำเร็จ อุปกรณ์ทั้งสองจะส่งแพ็กเก็ตวิดีโอไปที่ TURN Server แทน จากนั้นเซิร์ฟเวอร์จะทำหน้าที่ Forward ข้อมูลข้ามเครือข่ายไปให้อีกฝั่ง เป็นการการันตีว่าวิดีโอคอลจะเชื่อมต่อได้ 100%
+                    </p>
+                </div>
+            </div>
+
+            <!-- Deep Dive: Volunteer Mode -->
+            <details style="margin-top: 1.5rem; background: rgba(56, 189, 248, 0.1); border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: 12px; color: #cbd5e1; cursor: pointer;">
+                <summary style="padding: 1rem; color: #bae6fd; font-weight: 600; outline: none; user-select: none;">
+                    🔍 เจาะลึก: อัลกอริทึมการเชื่อมต่อสาย (คลิกเพื่ออ่านเพิ่ม)
+                </summary>
+                <div style="padding: 0 1rem 1rem 1rem; font-size: 0.85rem; border-top: 1px solid rgba(56, 189, 248, 0.2); margin-top: 0.5rem; padding-top: 1rem;">
+                    <ul style="padding-left: 1rem; color: #cbd5e1; list-style-type: square; line-height: 1.8;">
+                        <li style="margin-bottom: 0.5rem;"><strong>1. แจ้งเตือนแบบกลุ่ม (Broadcast):</strong> เมื่อคนตาบอดกดโทร ระบบ (<code>useBlindHelp</code>) จะสร้าง Call ID ยิง Broadcast เข้า Channel กลาง ทำให้มือถืออาสาสมัครทุกคนที่ออนไลน์อยู่ ดังขึ้นมาพร้อมกัน</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>2. กรองการรับสาย (Race Condition):</strong> อาสาสมัครคนไหนที่กดปุ่มรับสายเป็นคนแรก จะเป็นผู้ชนะ (Claimed) ระบบจะยิงคำสั่งกลับไปยกเลิกสายของคนอื่นๆ ทันที</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>3. เริ่มจับคู่ (Signaling):</strong> คนตาบอดจะสร้างข้อเสนอเทคนิค <code>SDP Offer</code> แล้วแพ็กส่งข้ามอินเทอร์เน็ตผ่าน Pusher ไปให้ฝั่งอาสาสมัคร 1 คนนั้น</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>4. หาเส้นทาง (ICE/TURN):</strong> ทั้งสองเครื่องจะแลก IP กัน (ICE Candidates) หากเชื่อมแบบ Direct P2P ไม่ทะลุ ระบบจะสลับไปพาข้อมูลวิ่งผ่าน <code>TURN Server</code> เป็นทางเบี่ยง</li>
+                        <li style="margin-bottom: 0.5rem;"><strong>5. ตัดสายอัตโนมัติ (Timeout):</strong> หากโทรไปแล้วไม่มีอาสาสมัครคนไหนกดรับสายเลยภายใน 40 วินาที ระบบฝั่งคนตาบอดจะตัดสายทิ้งอัตโนมัติ (Ring Timeout)</li>
+                    </ul>
+                </div>
+            </details>
+        </div>
+
+        <!-- Section 2: Requirements -->
+        <h2 class="section-title animate-fade-in" style="margin-top: 4rem;">⚙️ ความต้องการของระบบ (System Requirements)</h2>
+        
+        <div class="req-grid animate-fade-in">
+            <div class="req-item">
+                <h4>Core Stack</h4>
+                <div>
+                    <span class="tag">Next.js 16</span>
+                    <span class="tag">React 19</span>
+                    <span class="tag">TailwindCSS 4</span>
+                </div>
+                <p style="margin-top: 0.5rem;">ใช้ App Router เป็นแกนหลัก ทั้งส่วน UI และ API Routes</p>
+            </div>
+
+            <div class="req-item">
+                <h4>ML & Vision</h4>
+                <div>
+                    <span class="tag">TensorFlow.js 4.22</span>
+                    <span class="tag">COCO-SSD</span>
+                    <span class="tag">Scanic</span>
+                </div>
+                <p style="margin-top: 0.5rem;">ไลบรารีสำหรับรัน AI บนเบราว์เซอร์ และการจัดการ Computer Vision ภายในเครื่องผู้ใช้</p>
+            </div>
+
+            <div class="req-item">
+                <h4>Cloud APIs</h4>
+                <div>
+                    <span class="tag">Groq API</span>
+                    <span class="tag">Web Speech API</span>
+                </div>
+                <p style="margin-top: 0.5rem;">ใช้โมเดล Multimodal จากภายนอกสำหรับการมองเห็นขั้นสูง และ API ของระบบปฏิบัติการสำหรับการพูด/ฟัง</p>
+            </div>
+
+            <div class="req-item">
+                <h4>Communication</h4>
+                <div>
+                    <span class="tag">Pusher</span>
+                    <span class="tag">WebRTC</span>
+                </div>
+                <p style="margin-top: 0.5rem;">สถาปัตยกรรมสำหรับการทำ Video Call แบบ P2P ระหว่างอาสาสมัครและผู้ใช้งาน</p>
+            </div>
+
+            <div class="req-item" style="grid-column: 1 / -1; background: rgba(236, 72, 153, 0.05); border-color: rgba(236, 72, 153, 0.2);">
+                <h4 style="color: #ec4899;">Hardware & Dev Constraints</h4>
+                <p style="color: #cbd5e1; margin-bottom: 0.5rem;">
+                    <strong>ฝั่งผู้ใช้ (Client):</strong> ต้องมี กล้อง, ไมโครโฟน, ลำโพง และมอเตอร์สั่น (Haptic) เพื่อประสบการณ์การใช้งานที่สมบูรณ์
+                </p>
+                <p style="color: #cbd5e1; margin-bottom: 0.5rem;">
+                    <strong>Environment Variables:</strong> ต้องตั้งค่าไฟล์ <code>.env.local</code> โดยใส่ API Key ของ <code>Groq</code> และ <code>Pusher</code> (App ID, Key, Secret) เพื่อให้ระบบ AI และระบบคอลอาสาสมัครทำงานได้
+                </p>
+                <p style="color: #cbd5e1; margin-bottom: 0.5rem;">
+                    <strong>TURN Server (Optional):</strong> หากนำไปใช้บนเซิร์ฟเวอร์จริง ควรตั้งค่า <code>TURN_URL</code> และ Credential ใน env เพื่อให้วิดีโอคอลไม่หลุดเมื่อเจอเน็ตที่บล็อก P2P
+                </p>
+                <p style="color: #cbd5e1;">
+                    <strong>HTTPS & Local Testing:</strong> เบราว์เซอร์จะไม่อนุญาตให้ใช้กล้องและไมค์หากไม่ใช่ <b>HTTPS (Secure Context)</b> <br>
+                    * ในการรันเทสต์บนมือถือจริงในวงแลนเดียวกัน ให้ใช้คำสั่ง <code>npm run tunnel</code> (โปรเจคมีสคริปต์ <code>cloudflared</code> เตรียมไว้ให้แล้ว) เพื่อสร้าง HTTPS Tunnel ชั่วคราว
+                </p>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>

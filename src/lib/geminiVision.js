@@ -1,52 +1,61 @@
-export const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+export const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
-export async function callGroqVision({
+export function extractGeminiText(data) {
+    const candidate = data?.candidates?.[0];
+    if (!candidate?.content?.parts) return '';
+    
+    const textParts = candidate.content.parts
+        .filter(part => !part.thought && typeof part.text === 'string')
+        .map(part => part.text);
+        
+    if (textParts.length > 0) {
+        return textParts.join('\n').trim();
+    }
+    
+    const fallbackParts = candidate.content.parts
+        .filter(part => typeof part.text === 'string')
+        .map(part => part.text);
+        
+    return fallbackParts.join('\n').trim();
+}
+
+export async function callGeminiVision({
     apiKey,
     imageDataUrl,
     systemPrompt,
     userPrompt,
     maxTokens = 500,
     temperature = 0,
+    signal,
 }) {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    if (!imageDataUrl) {
+        throw new Error('Image data is missing or camera is not ready');
+    }
+    const base64Data = imageDataUrl.split(',')[1];
+    const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
+
+    const response = await fetch('/api/gemini', {
         method: 'POST',
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
+        signal: signal || (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(35000) : undefined),
         body: JSON.stringify({
-            model: GROQ_MODEL,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                {
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: userPrompt },
-                        { type: 'image_url', image_url: { url: imageDataUrl } },
-                    ],
-                },
-            ],
-            max_tokens: maxTokens,
+            systemPrompt,
+            userPrompt,
+            imageBase64: base64Data,
+            mimeType,
+            maxTokens,
             temperature,
-        }),
+        })
     });
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-        const message = data.error?.message || `Groq HTTP ${response.status}`;
-        const err = new Error(message);
-        err.status = response.status;
-        throw err;
+        const message = data.error?.message || `Gemini HTTP ${response.status}`;
+        throw new Error(message);
     }
 
-    if (data.error) {
-        const err = new Error(data.error.message || 'Groq API error');
-        err.status = data.error.code;
-        throw err;
-    }
-
-    return data.choices?.[0]?.message?.content?.trim() || '';
+    return extractGeminiText(data);
 }
 
 /**
@@ -55,6 +64,7 @@ export async function callGroqVision({
  * @param {{ cropRegion?: { x: number, y: number, width: number, height: number }, maxDimension?: number, quality?: number }} [options]
  */
 export function captureFrameFromVideo(video, options = {}) {
+    if (!video || video.readyState < 2) return null;
     const { cropRegion, maxDimension = 1024, quality = 0.75 } = options;
 
     const srcW = video.videoWidth || 1280;

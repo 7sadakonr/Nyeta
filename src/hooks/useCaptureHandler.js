@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { playBeep } from '@/lib/audio';
 
 export function useCaptureHandler({
     localStreamRef,
@@ -8,38 +9,11 @@ export function useCaptureHandler({
     dataChannel
 }) {
     const [captureState, setCaptureState] = useState('idle'); // 'idle' | 'flash-on' | 'capturing' | 'sending'
-    const audioContextRef = useRef(null);
     const manualTorchRef = useRef(false);
-
-    // Play shutter sound effect
     const playShutterSound = useCallback(() => {
-        try {
-            if (!audioContextRef.current) {
-                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            const ctx = audioContextRef.current;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(150, ctx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.1);
-            
-            gain.gain.setValueAtTime(0.1, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-            
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-            
-            // Trigger vibration if supported
-            if (navigator.vibrate) {
-                navigator.vibrate(50);
-            }
-        } catch (e) {
-            console.error("AudioContext error", e);
+        playBeep(150, 0.1);
+        if (navigator.vibrate) {
+            navigator.vibrate(50);
         }
     }, []);
 

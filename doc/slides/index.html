@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nyeta Project Review</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;800&family=IBM+Plex+Sans+Thai:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* Colors: Electric Studio Inspired */
+            --bg-dark: #0a0a0a;
+            --bg-white: #ffffff;
+            --accent-blue: #4361ee;
+            --text-dark: #0a0a0a;
+            --text-light: #ffffff;
+            
+            --bg-primary: var(--bg-white);
+            --text-primary: var(--text-dark);
+            --accent: var(--accent-blue);
+
+            /* Typography */
+            --font-display: 'Manrope', 'IBM Plex Sans Thai', sans-serif;
+            --font-body: 'Manrope', 'IBM Plex Sans Thai', sans-serif;
+            --title-size: clamp(2.5rem, 6vw, 4.5rem);
+            --subtitle-size: clamp(1rem, 2vw, 1.5rem);
+            --body-size: clamp(1.2rem, 2vw, 1.5rem);
+
+            /* Spacing */
+            --slide-padding: clamp(2rem, 5vw, 4rem);
+            --content-gap: clamp(1.5rem, 3vw, 2.5rem);
+
+            /* Animation */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration-normal: 0.6s;
+        }
+
+        /* --- BASE STYLES --- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-body); color: var(--text-primary); background: var(--bg-primary); }
+        h1, h2, h3 { font-family: var(--font-display); line-height: 1.2; }
+
+        /* --- VIEWPORT BASE CSS --- */
+        html, body { height: 100%; overflow-x: hidden; }
+        html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+        .slide {
+            width: 100vw; height: 100vh; height: 100dvh; overflow: hidden;
+            scroll-snap-align: start; display: flex; flex-direction: column; position: relative;
+        }
+        .slide-content {
+            flex: 1; display: flex; flex-direction: column; justify-content: center;
+            max-height: 100%; overflow: hidden; padding: var(--slide-padding);
+        }
+        
+        .card, .container, .content-box { max-width: min(90vw, 1200px); max-height: min(80vh, 700px); margin: 0 auto; }
+        .bullet-list { gap: clamp(0.8rem, 2vh, 1.5rem); display: flex; flex-direction: column; padding-left: 1.5rem; margin-top: 1.5rem; }
+        .bullet-list li { font-size: var(--body-size); line-height: 1.6; }
+        
+        @media (max-height: 700px) {
+            :root {
+                --slide-padding: clamp(0.75rem, 3vw, 2rem);
+                --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+                --title-size: clamp(1.5rem, 4.5vw, 2.5rem);
+                --h2-size: clamp(1.2rem, 3vw, 1.75rem);
+            }
+        }
+        @media (max-height: 600px) {
+            :root {
+                --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem);
+                --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+                --title-size: clamp(1.2rem, 4vw, 2rem);
+                --body-size: clamp(1rem, 1.5vw, 1.2rem);
+            }
+            .nav-dots { display: none; }
+        }
+        @media (max-width: 600px) {
+            :root { --title-size: clamp(1.5rem, 7vw, 2.5rem); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.2s !important; }
+            html { scroll-behavior: auto; }
+        }
+
+        /* --- ELECTRIC STUDIO THEME --- */
+        .slide {
+            background: var(--bg-white);
+            color: var(--text-dark);
+        }
+        .slide.dark-panel {
+            background: var(--bg-dark);
+            color: var(--text-light);
+        }
+        
+        /* Layouts */
+        .title-slide {
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center;
+        }
+        .title-slide h1 { font-size: var(--title-size); color: var(--accent-blue); margin-bottom: 1rem; }
+        .title-slide h1.dark-text { color: var(--text-light); }
+        .title-slide p { font-size: var(--subtitle-size); font-weight: 500; color: #888; }
+        
+        .content-slide { display: flex; align-items: center; justify-content: center; }
+        .content-box { width: 100%; border-left: 8px solid var(--accent-blue); padding-left: 2rem; }
+        .content-box h2 { font-size: var(--title-size); color: var(--accent-blue); }
+        
+        .nav-dots {
+            position: fixed; right: 20px; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; gap: 10px; z-index: 100;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(100, 100, 100, 0.5); cursor: pointer; }
+        .dot.active { background: var(--accent-blue); }
+        
+        /* Progress */
+        .progress-bar { position: fixed; top: 0; left: 0; height: 4px; background: var(--accent-blue); width: 0%; z-index: 100; transition: width 0.3s ease; }
+
+        /* --- ANIMATIONS --- */
+        .reveal {
+            opacity: 0; transform: translateY(30px);
+            transition: opacity var(--duration-normal) var(--ease-out-expo), transform var(--duration-normal) var(--ease-out-expo);
+        }
+        .slide.visible .reveal { opacity: 1; transform: translateY(0); }
+        .reveal:nth-child(1) { transition-delay: 0.1s; }
+        .reveal:nth-child(2) { transition-delay: 0.2s; }
+        .reveal:nth-child(3) { transition-delay: 0.3s; }
+        .reveal:nth-child(4) { transition-delay: 0.4s; }
+        .reveal:nth-child(5) { transition-delay: 0.5s; }
+        
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progress"></div>
+    <nav class="nav-dots" id="dots"></nav>
+
+    <!-- Slide 1: Title -->
+    <section class="slide title-slide dark-panel visible">
+        <h1 class="reveal dark-text">Nyeta Project Review</h1>
+        <p class="reveal">Road to Production</p>
+    </section>
+
+    <!-- Slide 2: Critical Bugs -->
+    <section class="slide content-slide">
+        <div class="slide-content">
+            <div class="content-box">
+                <h2 class="reveal">🐛 Critical Bugs (ต้องแก้ไขทันที)</h2>
+                <ul class="bullet-list reveal">
+                    <li><strong>ไมค์และ AI พูดซ้อนกัน:</strong> ต้องปิดเสียงพูด AI ก่อนเริ่มรับเสียงผู้ใช้เสมอ เพื่อป้องกัน Feedback Loop</li>
+                    <li><strong>Camera Deny UI:</strong> แอปค้างเมื่อผู้ใช้ไม่อนุญาตสิทธิ์กล้อง ต้องเพิ่มปุ่มลองใหม่และเสียงแจ้งเตือน</li>
+                    <li><strong>Error Boundary Silence:</strong> เมื่อระบบล่ม (React Crash) ไม่มีเสียงอ่านสำหรับ Screen Reader</li>
+                    <li><strong>Network Drop Handling:</strong> ไม่มีการแจ้งเตือนด้วยเสียงเมื่ออินเทอร์เน็ตหลุด</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 3: Missing Features -->
+    <section class="slide content-slide dark-panel">
+        <div class="slide-content">
+            <div class="content-box">
+                <h2 class="reveal" style="color: #ffffff;">✨ Missing Features (ฟีเจอร์ที่ขาดหาย)</h2>
+                <ul class="bullet-list reveal" style="color: #cccccc;">
+                    <li><strong style="color: #ffffff;">ปุ่มหยุดเสียง AI Global:</strong> ให้ผู้ใช้สามารถกดหยุดเสียง AI ที่กำลังอธิบายยาว ๆ ได้ในโหมดผู้ช่วย</li>
+                    <li><strong style="color: #ffffff;">Push Notification:</strong> เพิ่มการแจ้งเตือนอาสาสมัครแม้ว่าพับหน้าจอหรือแอปอยู่เบื้องหลัง</li>
+                    <li><strong style="color: #ffffff;">Landscape Mode:</strong> จัดการและล็อก Layout ให้ถูกต้องเมื่อหมุนหน้าจอ</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 4: Security & Architecture -->
+    <section class="slide content-slide">
+        <div class="slide-content">
+            <div class="content-box">
+                <h2 class="reveal">🔒 Security & Performance</h2>
+                <ul class="bullet-list reveal">
+                    <li><strong>ซ่อน API Key (สำคัญที่สุด):</strong> ต้องย้ายการเรียก Gemini/Groq API ไปไว้ที่ฝั่ง Server-side</li>
+                    <li><strong>Progressive Web App:</strong> ใช้ Service Worker เพื่อแคชไฟล์ระบบและโมเดล AI ให้ทำงานออฟไลน์และโหลดเร็วขึ้น</li>
+                    <li><strong>Battery Management:</strong> ลด Framerate กล้อง และหยุดพักโมเดล Object Detector เมื่อผู้ใช้ไม่มีการเคลื่อนไหวเครื่อง</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Slide 5: Conclusion / Summary -->
+    <section class="slide content-slide dark-panel">
+        <div class="slide-content">
+            <div class="content-box">
+                <h2 class="reveal" style="color: var(--accent-blue);">🎯 Priority Action Plan</h2>
+                <ul class="bullet-list reveal" style="color: #cccccc;">
+                    <li><strong style="color: #ffffff;">Priority 1:</strong> ย้าย API Key ไป Server เพื่อความปลอดภัยของระบบ</li>
+                    <li><strong style="color: #ffffff;">Priority 2:</strong> จัดการปัญหาสายหลุดและ Error พร้อมเสียงแจ้งเตือน</li>
+                    <li><strong style="color: #ffffff;">Priority 3:</strong> เพิ่มระบบทดสอบอัตโนมัติ (Unit & E2E Tests) เพื่อป้องกันบั๊กสะสม</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <script>
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.dotsContainer = document.getElementById('dots');
+                this.progressBar = document.getElementById('progress');
+                this.currentSlide = 0;
+                
+                this.setupIntersectionObserver();
+                this.setupKeyboardNav();
+                this.setupNavDots();
+                this.updateUI();
+            }
+
+            setupIntersectionObserver() {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('visible');
+                            const index = Array.from(this.slides).indexOf(entry.target);
+                            this.currentSlide = index;
+                            this.updateUI();
+                        }
+                    });
+                }, { threshold: 0.5 });
+                
+                this.slides.forEach(slide => observer.observe(slide));
+            }
+
+            setupKeyboardNav() {
+                window.addEventListener('keydown', (e) => {
+                    if (['ArrowDown', 'ArrowRight', 'Space', 'PageDown'].includes(e.code)) {
+                        e.preventDefault();
+                        this.goToSlide(this.currentSlide + 1);
+                    } else if (['ArrowUp', 'ArrowLeft', 'PageUp'].includes(e.code)) {
+                        e.preventDefault();
+                        this.goToSlide(this.currentSlide - 1);
+                    }
+                });
+            }
+
+            setupNavDots() {
+                this.slides.forEach((_, i) => {
+                    const dot = document.createElement('div');
+                    dot.className = 'dot';
+                    dot.addEventListener('click', () => this.goToSlide(i));
+                    this.dotsContainer.appendChild(dot);
+                });
+            }
+
+            goToSlide(index) {
+                if (index >= 0 && index < this.slides.length) {
+                    this.slides[index].scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+
+            updateUI() {
+                Array.from(this.dotsContainer.children).forEach((dot, i) => {
+                    dot.classList.toggle('active', i === this.currentSlide);
+                });
+                const progress = ((this.currentSlide) / (this.slides.length - 1)) * 100;
+                this.progressBar.style.width = `${progress}%`;
+            }
+        }
+        new SlidePresentation();
+    </script>
+</body>
+</html>

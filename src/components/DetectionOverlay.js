@@ -19,6 +19,7 @@ export default function DetectionOverlay({
     showPage = false,
     showCurrency = false,
     currencyDetected = false,
+    currencyBlocked = false,
 }) {
     const [, setResizeTick] = useState(0);
 
@@ -72,6 +73,7 @@ export default function DetectionOverlay({
                     currencyBoxes={currencyBoxes}
                     currencyBounds={currencyBounds}
                     currencyDetected={currencyDetected}
+                    isBlocked={currencyBlocked}
                     video={video}
                     container={container}
                 />

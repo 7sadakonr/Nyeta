@@ -15,7 +15,6 @@ export default function ModeSwitcher({ mode, switchMode }) {
                     type="button"
                     role="tab"
                     aria-selected={mode === item.id}
-                    aria-pressed={mode === item.id}
                     onClick={() => switchMode(item.id)}
                     className={`flex-1 py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus:ring-2 focus:ring-white ${mode === item.id
                         ? item.id === 'currency'

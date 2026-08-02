@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
+import speechManager, { Priority } from '@/lib/speechManager';
+import { playBeep } from '@/lib/audio';
 
 export default function BlindChatOverlay({ latestMessage, onSendMessage }) {
     const [isListening, setIsListening] = useState(false);
@@ -12,40 +14,15 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }) {
             const text = latestMessage.text;
             
             // Play notification sound
-            try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(600, ctx.currentTime);
-                osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.1);
-                
-                gain.gain.setValueAtTime(0.2, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-                
-                osc.start();
-                osc.stop(ctx.currentTime + 0.1);
-                
-                if (navigator.vibrate) navigator.vibrate(100);
-            } catch (e) {
-                console.error("Audio error", e);
-            }
+            playBeep(600, 0.1);
+            if (navigator.vibrate) navigator.vibrate(100);
 
             // Speak the text
-            if ('speechSynthesis' in window) {
-                // Cancel any ongoing speech
-                window.speechSynthesis.cancel();
-                
-                const utterance = new SpeechSynthesisUtterance(text);
-                utterance.lang = 'th-TH';
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
-                
-                window.speechSynthesis.speak(utterance);
-            }
+            speechManager?.speak(text, {
+                priority: Priority.HIGH,
+                owner: 'volunteer-message',
+                rate: 1.0,
+            });
         }
     }, [latestMessage]);
 
@@ -84,18 +61,10 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }) {
 
     const startListening = () => {
         if (recognitionRef.current && !isListening) {
+            // Play mic start sound
+            playBeep(800, 0.1);
+            if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
             try {
-                // Play mic start sound
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = ctx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.value = 800;
-                osc.connect(ctx.destination);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.1);
-                
-                if (navigator.vibrate) navigator.vibrate([50, 50, 50]);
-                
                 recognitionRef.current.start();
             } catch (e) {
                 console.error(e);

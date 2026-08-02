@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/lib/pageEdgeDetection';
-import { callGroqVision, captureFrameFromVideo } from '@/lib/groqVision';
+import { callGeminiVision, captureFrameFromVideo } from '@/lib/geminiVision';
 import { OCR_PROMPT } from '@/lib/visionPrompts';
-import { speakText, stopSpeaking, speakThai } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
-export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback, addLog, setModeAnnouncement) {
+export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback, addLog) {
     const [docText, setDocText] = useState('');
     const [isReading, setIsReading] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
     const [readerGuidance, setReaderGuidance] = useState('');
     const [readerAligned, setReaderAligned] = useState(false);
     const [pageBounds, setPageBounds] = useState(null);
@@ -32,23 +33,37 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
     useEffect(() => { isReadingRef.current = isReading; }, [isReading]);
 
     const readDocument = useCallback(async () => {
-        if (!isReady || aiStatus === 'thinking' || !enabled) return;
-
-        const apiKey = process.env.NEXT_PUBLIC_GROQ_API_KEY;
-        if (!apiKey || !videoRef.current) return;
+        if (isProcessing || !enabled) return;
+        if (!isReady || !videoRef.current) {
+            feedback?.('error');
+            speechManager?.speak('กล้องกำลังเริ่มต้น กรุณารอสักครู่ครับ', {
+                priority: Priority.HIGH,
+                owner: 'document-reader'
+            });
+            return;
+        }
 
         try {
+            setIsProcessing(true);
+            const imageDataUrl = captureFrameFromVideo(videoRef.current, { maxDimension: 1024, quality: 0.75 });
+            if (!imageDataUrl) {
+                feedback?.('error');
+                speechManager?.speak('ยังจับภาพเอกสารไม่ได้ กรุณาถือกล้องให้นิ่งแล้วลองใหม่ครับ', {
+                    priority: Priority.HIGH,
+                    owner: 'document-reader'
+                });
+                setIsProcessing(false);
+                return;
+            }
+
             autoCaptureFiredRef.current = true;
-            stopSpeaking();
+            speechManager?.stopAll();
             setIsReading(false);
             feedback?.('capture');
             addLog?.('Capturing document...');
-
-            const imageDataUrl = captureFrameFromVideo(videoRef.current);
             setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
-            const text = await callGroqVision({
-                apiKey,
+            const text = await callGeminiVision({
                 imageDataUrl,
                 systemPrompt: OCR_PROMPT,
                 userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
@@ -58,11 +73,13 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
 
             setDocText(text);
             feedback?.('success');
-            setModeAnnouncement?.(`อ่านเอกสาร: ${text.slice(0, 120)}${text.length > 120 ? '...' : ''}`);
 
             setIsReading(true);
-            speakText(text, {
+            speechManager?.speak(text, {
+                priority: Priority.NORMAL,
+                owner: 'document-reader',
                 rate: 1.0,
+                chunk: true,
                 onEnd: () => setIsReading(false),
             });
         } catch (error) {
@@ -70,8 +87,14 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
+            speechManager?.speak('เกิดข้อผิดพลาดในการอ่านเอกสาร กรุณาลองใหม่อีกครั้งครับ', {
+                priority: Priority.HIGH,
+                owner: 'document-reader'
+            });
+        } finally {
+            setIsProcessing(false);
         }
-    }, [isReady, aiStatus, enabled, videoRef, feedback, addLog, setModeAnnouncement]);
+    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog]);
 
     // Use a stable ref for readDocument to use inside the interval
     const readDocumentRef = useRef(readDocument);
@@ -107,10 +130,12 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
                 return;
             }
 
-            if ('speechSynthesis' in window) {
-                speakThai(text, { rate: 1.1 });
-                lastSpokenPageRef.current = text;
-            }
+            speechManager?.speak(text, {
+                priority: Priority.LOW,
+                owner: 'page-guidance',
+                rate: 1.1,
+            });
+            lastSpokenPageRef.current = text;
         };
 
         const clearPageOverlay = () => {
@@ -165,7 +190,11 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
                         autoCaptureFiredRef.current = true;
                         alignedCountRef.current = 0;
                         feedback?.('success');
-                        setModeAnnouncement?.('ตรงแล้ว กำลังถ่ายเอกสาร');
+                        speechManager?.speak('ตรงแล้ว กำลังถ่ายเอกสาร', {
+                            priority: Priority.HIGH,
+                            owner: 'document-reader',
+                            rate: 1.1,
+                        });
                         readDocumentRef.current?.();
                     }
                 } else if (!result.aligned) {
@@ -192,14 +221,17 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             alignedCountRef.current = 0;
             pageSeenCountRef.current = 0;
         };
-    }, [enabled, isReady, videoRef, feedback, setModeAnnouncement]);
+    }, [enabled, isReady, videoRef, feedback]);
 
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
-        stopSpeaking();
+        speechManager?.stopAll();
         setIsReading(true);
-        speakText(docText, {
+        speechManager?.speak(docText, {
+            priority: Priority.HIGH,
+            owner: 'document-reader',
             rate: 1.0,
+            chunk: true,
             onEnd: () => setIsReading(false),
         });
         feedback?.('success');
@@ -209,14 +241,28 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
         setDocText('');
         setIsReading(false);
         autoCaptureFiredRef.current = false;
-        stopSpeaking();
+        speechManager?.stopByOwner('document-reader');
+        speechManager?.stopByOwner('page-guidance');
     }, []);
 
     const stopReading = useCallback(() => {
-        stopSpeaking();
+        speechManager?.stopByOwner('document-reader');
+        speechManager?.stopByOwner('page-guidance');
         setIsReading(false);
         feedback?.('success');
     }, [feedback]);
 
-    return { docText, isReading, readerGuidance, readerAligned, pageBounds, pageCorners, readDocument, replayDocument, stopReading, resetDocument };
+    return {
+        docText,
+        isReading,
+        isProcessing,
+        readerGuidance,
+        readerAligned,
+        pageBounds,
+        pageCorners,
+        readDocument,
+        replayDocument,
+        stopReading,
+        resetDocument,
+    };
 }

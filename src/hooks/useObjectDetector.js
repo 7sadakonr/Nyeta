@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { speakThai } from '@/lib/tts';
+import speechManager, { Priority } from '@/lib/speechManager';
 
 /**
  * useObjectDetector Hook
@@ -118,15 +118,20 @@ export function useObjectDetector(videoRef, enabled = false) {
         }
 
         const video = videoRef.current;
+        let isActive = true;
 
         const detect = async () => {
+            if (!isActive) return;
             if (video.readyState < 2) {
-                animationFrameRef.current = requestAnimationFrame(detect);
+                if (isActive) {
+                    animationFrameRef.current = requestAnimationFrame(detect);
+                }
                 return;
             }
 
             try {
                 const rawPredictions = await modelRef.current.detect(video);
+                if (!isActive) return;
                 // Filter out 'book' to avoid confusion with the Document Reader mode
                 const predictions = rawPredictions.filter(p => p.class !== 'book');
                 
@@ -168,14 +173,19 @@ export function useObjectDetector(videoRef, enabled = false) {
             }
 
             // Run at ~10 FPS for performance
-            timeoutRef.current = setTimeout(() => {
-                animationFrameRef.current = requestAnimationFrame(detect);
-            }, 100);
+            if (isActive) {
+                timeoutRef.current = setTimeout(() => {
+                    if (isActive) {
+                        animationFrameRef.current = requestAnimationFrame(detect);
+                    }
+                }, 100);
+            }
         };
 
         detect();
 
         return () => {
+            isActive = false;
             if (timeoutRef.current) {
                 clearTimeout(timeoutRef.current);
             }
@@ -190,7 +200,11 @@ export function useObjectDetector(videoRef, enabled = false) {
         const now = Date.now();
         if (now - lastSpeakTimeRef.current < 2000) return; // Throttle to 2s
 
-        speakThai(text, { rate: 1.2 });
+        speechManager?.speak(text, {
+            priority: Priority.LOW,
+            owner: 'object-detector',
+            rate: 1.2,
+        });
         lastSpeakTimeRef.current = now;
     }, []);
 

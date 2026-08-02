@@ -276,6 +276,7 @@ export function useVolunteerHelp() {
         goOffline,
         acceptCall,
         endCall,
+        dismissIncoming,
         pcRef,
         dataChannel,
     };

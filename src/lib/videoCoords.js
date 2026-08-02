@@ -79,7 +79,7 @@ export function mapRectToOverlay(rect, videoEl, containerEl) {
 }
 
 /** Fixed center scan region used by currency detection (ratio of video dimensions). */
-export const CURRENCY_SCAN_RATIO = 0.45;
+export const CURRENCY_SCAN_RATIO = 0.85;
 
 export function getCurrencyScanRegion(videoEl) {
     if (!videoEl?.videoWidth) return null;

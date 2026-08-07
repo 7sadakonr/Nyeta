@@ -6,6 +6,8 @@ import {
 } from '@/lib/server/sessionAuth';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 
+import { updateCallStatus } from '@/lib/server/callStore';
+
 export async function POST(request) {
     try {
         const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
@@ -63,6 +65,14 @@ export async function POST(request) {
         const payloadSize = JSON.stringify(data || {}).length;
         if (payloadSize > 64 * 1024) { // 64KB max signal payload (sufficient for SDP / ICE)
             return NextResponse.json({ error: 'Signaling payload too large' }, { status: 413 });
+        }
+
+        // Update call store status when call ends or is cancelled
+        if (event === 'call-ended' && channel.startsWith('private-call-')) {
+            const targetCallId = channel.replace('private-call-', '');
+            updateCallStatus(targetCallId, 'ended').catch(err => console.warn('Failed to update call status:', err));
+        } else if (event === 'call-cancelled' && data?.callId) {
+            updateCallStatus(data.callId, 'cancelled').catch(err => console.warn('Failed to update call status:', err));
         }
 
         await pusherServer.trigger(channel, event, data ?? {});

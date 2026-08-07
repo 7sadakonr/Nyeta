@@ -4,6 +4,15 @@ import { Redis } from '@upstash/redis';
 // In-memory sliding window fallback store for local development / testing
 const memoryStore = new Map();
 
+export const VALID_LIMITER_TYPES = ['gemini', 'pusher_trigger', 'session', 'calls_accept'];
+
+const MEMORY_LIMITS = {
+    gemini: { max: 20, windowMs: 60 * 1000 },
+    pusher_trigger: { max: 60, windowMs: 60 * 1000 },
+    session: { max: 30, windowMs: 60 * 1000 },
+    calls_accept: { max: 10, windowMs: 60 * 1000 },
+};
+
 function checkMemoryRateLimit(identifier, maxRequests, windowMs) {
     const now = Date.now();
     const key = `${identifier}`;
@@ -84,6 +93,12 @@ function getUpstashRatelimiters() {
                 analytics: true,
                 prefix: 'nyeta:ratelimit:session',
             }),
+            calls_accept: new Ratelimit({
+                redis: redisClient,
+                limiter: Ratelimit.slidingWindow(10, '60 s'),
+                analytics: true,
+                prefix: 'nyeta:ratelimit:calls_accept',
+            }),
         };
         return ratelimiters;
     } catch (err) {
@@ -95,10 +110,23 @@ function getUpstashRatelimiters() {
 /**
  * Check rate limit for a given identifier (IP, user token, etc.)
  * @param {string} identifier - Unique client ID or IP address
- * @param {'gemini' | 'pusher_trigger' | 'session'} type - Limiter policy
+ * @param {'gemini' | 'pusher_trigger' | 'session' | 'calls_accept'} type - Limiter policy
  * @returns {Promise<{ success: boolean, limit: number, remaining: number, reset: number }>}
  */
 export async function checkRateLimit(identifier = 'anonymous', type = 'gemini') {
+    if (!VALID_LIMITER_TYPES.includes(type)) {
+        if (process.env.NODE_ENV !== 'production') {
+            throw new Error(`Unknown rate limiter type: "${type}". Expected one of: ${VALID_LIMITER_TYPES.join(', ')}`);
+        }
+        console.error(`[RateLimit] Invalid rate limiter policy "${type}", failing closed.`);
+        return {
+            success: false,
+            limit: 0,
+            remaining: 0,
+            reset: Date.now() + 60000,
+        };
+    }
+
     const limiters = getUpstashRatelimiters();
 
     if (limiters && limiters[type]) {
@@ -116,13 +144,14 @@ export async function checkRateLimit(identifier = 'anonymous', type = 'gemini') 
         }
     }
 
-    // In-memory fallback limits
-    const limits = {
-        gemini: { max: 20, windowMs: 60 * 1000 },
-        pusher_trigger: { max: 60, windowMs: 60 * 1000 },
-        session: { max: 30, windowMs: 60 * 1000 },
-    };
-
-    const config = limits[type] || limits.gemini;
+    // In-memory fallback
+    const config = MEMORY_LIMITS[type];
     return checkMemoryRateLimit(`${type}:${identifier}`, config.max, config.windowMs);
+}
+
+/**
+ * Reset memory rate limiter store (for unit tests)
+ */
+export function _resetMemoryRateLimitForTesting() {
+    memoryStore.clear();
 }

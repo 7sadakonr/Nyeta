@@ -121,7 +121,13 @@ export function useVolunteerHelp() {
             sessionTokenRef.current = session?.token;
         } catch (err) {
             console.error('Volunteer accept call session error:', err.message);
-            setError('ไม่สามารถสร้าง Session สำหรับการรับสายได้');
+            if (err.status === 409) {
+                setError('สายนี้ได้รับการช่วยเหลือจากอาสาสมัครท่านอื่นแล้ว');
+            } else if (err.status === 404 || err.status === 410) {
+                setError('สายนี้ถูกยกเลิกหรือหมดอายุแล้ว');
+            } else {
+                setError('ไม่สามารถสร้าง Session สำหรับการรับสายได้');
+            }
             cleanupCall(onlineRef.current ? 'online' : 'offline');
             return;
         }

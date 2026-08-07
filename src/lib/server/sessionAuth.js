@@ -36,22 +36,29 @@ function sign(data, secret) {
         .replace(/\//g, '_');
 }
 
+export const BASE_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+export const CALL_TOKEN_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
 /**
  * Generate a cryptographically signed session token
  * @param {Object} params
- * @param {string} params.userId - Unique user or device identifier
+ * @param {string} [params.userId] - Unique user or device identifier
  * @param {'blind' | 'volunteer'} params.role - User role
  * @param {string} [params.callId] - Active call room ID (if applicable)
- * @param {number} [params.ttlMs] - Time to live in ms (default 4 hours)
+ * @param {number} [params.ttlMs] - Time to live in ms (default 20m for call-scoped, 4h for base session)
  * @returns {string} Signed token string
  */
-export function generateSessionToken({ userId, role, callId = null, ttlMs = 4 * 60 * 60 * 1000 }) {
+export function generateSessionToken({ userId, role, callId = null, ttlMs }) {
     if (!role || !['blind', 'volunteer'].includes(role)) {
         throw new Error(`Invalid role: ${role}`);
     }
 
+    const effectiveTtl = typeof ttlMs === 'number'
+        ? ttlMs
+        : (callId ? CALL_TOKEN_TTL_MS : BASE_SESSION_TTL_MS);
+
     const iat = Date.now();
-    const exp = iat + ttlMs;
+    const exp = iat + effectiveTtl;
     const uid = userId || `${role}_${crypto.randomBytes(8).toString('hex')}`;
 
     const payload = JSON.stringify({

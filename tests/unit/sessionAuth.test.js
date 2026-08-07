@@ -26,6 +26,20 @@ describe('Server Session Authentication & Channel Authorization', () => {
         expect(payload.callId).toBe('call_abc');
     });
 
+    it('should assign separate TTLs: 4 hours for base session and 20 minutes for call-scoped token', () => {
+        // Base session token
+        const baseToken = generateSessionToken({ role: 'volunteer' });
+        const basePayload = verifySessionToken(baseToken);
+        const baseDurationMs = basePayload.exp - basePayload.iat;
+        expect(baseDurationMs).toBe(4 * 60 * 60 * 1000); // 4 hours
+
+        // Call-scoped token
+        const callToken = generateSessionToken({ role: 'volunteer', callId: 'call_xyz' });
+        const callPayload = verifySessionToken(callToken);
+        const callDurationMs = callPayload.exp - callPayload.iat;
+        expect(callDurationMs).toBe(20 * 60 * 1000); // 20 minutes
+    });
+
     it('should reject tampered tokens', () => {
         const token = generateSessionToken({ role: 'blind' });
         const [payload, sig] = token.split('.');

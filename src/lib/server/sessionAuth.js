@@ -114,6 +114,21 @@ export const ALLOWED_EVENTS = {
     'private-call': ['call-accepted', 'offer', 'answer', 'ice-candidate', 'call-ended'],
 };
 
+export const ALLOWED_ROLE_EVENTS = {
+    'presence-volunteers': {
+        'incoming-call': ['blind'],
+        'call-cancelled': ['blind'],
+        'call-claimed': ['volunteer', 'blind'],
+    },
+    'private-call': {
+        'offer': ['blind'],
+        'call-accepted': ['volunteer'],
+        'answer': ['volunteer'],
+        'ice-candidate': ['blind', 'volunteer'],
+        'call-ended': ['blind', 'volunteer'],
+    },
+};
+
 /**
  * Validate whether a decoded session token has permission to access a channel
  * @param {Object} tokenPayload
@@ -121,7 +136,7 @@ export const ALLOWED_EVENTS = {
  * @returns {boolean}
  */
 export function validateChannelPermission(tokenPayload, channelName) {
-    if (!tokenPayload || !channelName) return false;
+    if (!tokenPayload || !channelName || typeof channelName !== 'string') return false;
 
     if (channelName === ALLOWED_CHANNELS.PRESENCE_VOLUNTEERS) {
         // Volunteer presence channel: Volunteers can join, and Blind users can broadcast incoming-call
@@ -130,7 +145,9 @@ export function validateChannelPermission(tokenPayload, channelName) {
 
     if (channelName.startsWith(ALLOWED_CHANNELS.CALL_PREFIX)) {
         const targetCallId = channelName.replace(ALLOWED_CHANNELS.CALL_PREFIX, '');
-        // If token was issued for a specific callId, it must match
+        if (!targetCallId) return false;
+
+        // If token was issued for a specific callId (e.g. blind call), it must match
         if (tokenPayload.callId && tokenPayload.callId !== targetCallId) {
             return false;
         }
@@ -147,7 +164,7 @@ export function validateChannelPermission(tokenPayload, channelName) {
  * @returns {boolean}
  */
 export function validateEventPermission(channelName, eventName) {
-    if (!channelName || !eventName) return false;
+    if (!channelName || !eventName || typeof channelName !== 'string' || typeof eventName !== 'string') return false;
 
     if (channelName === ALLOWED_CHANNELS.PRESENCE_VOLUNTEERS) {
         return ALLOWED_EVENTS['presence-volunteers'].includes(eventName);
@@ -159,3 +176,41 @@ export function validateEventPermission(channelName, eventName) {
 
     return false;
 }
+
+/**
+ * Validate whether a token has permission to trigger a specific event on a channel
+ * @param {Object} tokenPayload
+ * @param {string} channelName
+ * @param {string} eventName
+ * @param {Object} [eventData]
+ * @returns {boolean}
+ */
+export function validateRoleEventPermission(tokenPayload, channelName, eventName, eventData = {}) {
+    if (!tokenPayload || !tokenPayload.role || !channelName || !eventName) return false;
+
+    if (!validateChannelPermission(tokenPayload, channelName)) return false;
+    if (!validateEventPermission(channelName, eventName)) return false;
+
+    let allowedRoles = [];
+    if (channelName === ALLOWED_CHANNELS.PRESENCE_VOLUNTEERS) {
+        allowedRoles = ALLOWED_ROLE_EVENTS['presence-volunteers'][eventName] || [];
+    } else if (channelName.startsWith(ALLOWED_CHANNELS.CALL_PREFIX)) {
+        allowedRoles = ALLOWED_ROLE_EVENTS['private-call'][eventName] || [];
+    }
+
+    if (!allowedRoles.includes(tokenPayload.role)) {
+        return false;
+    }
+
+    // Role-specific data consistency checks
+    if (channelName === ALLOWED_CHANNELS.PRESENCE_VOLUNTEERS) {
+        if (eventName === 'incoming-call' || eventName === 'call-cancelled') {
+            if (tokenPayload.callId && eventData?.callId && tokenPayload.callId !== eventData.callId) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+

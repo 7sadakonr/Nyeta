@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * useWakeLock
@@ -12,61 +12,52 @@ import { useEffect, useRef, useState } from "react";
  * @returns {Object} { isSupported, released, request, release }
  */
 export const useWakeLock = () => {
-    const [isSupported, setIsSupported] = useState(false);
+    const [isSupported] = useState(() => typeof navigator !== 'undefined' && 'wakeLock' in navigator);
     const [released, setReleased] = useState(false);
     const wakeLockRef = useRef(null);
 
-    useEffect(() => {
-        if ("wakeLock" in navigator) {
-            setIsSupported(true);
-        }
-    }, []);
-
-    const request = async () => {
-        if (!isSupported) return;
-        if (typeof document !== 'undefined' && document.visibilityState !== "visible") {
+    const request = useCallback(async () => {
+        if (!isSupported || typeof navigator === 'undefined' || !navigator.wakeLock) return;
+        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
             return;
         }
 
         try {
-            wakeLockRef.current = await navigator.wakeLock.request("screen");
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
             setReleased(false);
-            console.log("Wake Lock is active");
 
-            wakeLockRef.current.addEventListener("release", () => {
-                console.log("Wake Lock has been released");
+            wakeLockRef.current.addEventListener('release', () => {
                 setReleased(true);
             });
         } catch (err) {
-            console.error("Wake Lock Check:", err);
+            console.error('Wake Lock error:', err);
         }
-    };
+    }, [isSupported]);
 
-    const release = async () => {
+    const release = useCallback(async () => {
         if (wakeLockRef.current) {
             await wakeLockRef.current.release();
             wakeLockRef.current = null;
         }
-    };
+    }, []);
 
     useEffect(() => {
-        // Request wake lock on mount
+        if (!isSupported) return;
         request();
 
-        // Re-request wake lock when the page becomes visible again
         const handleVisibilityChange = () => {
-            if (document.visibilityState === "visible") {
+            if (document.visibilityState === 'visible') {
                 request();
             }
         };
 
-        document.addEventListener("visibilitychange", handleVisibilityChange);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             release();
-            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [isSupported]);
+    }, [isSupported, request, release]);
 
     return { isSupported, released, request, release };
 };

@@ -21,7 +21,7 @@ export async function POST(req) {
         }
 
         const body = await req.json().catch(() => ({}));
-        const { role, callId, userId } = body;
+        const { role, createCall, userId } = body;
 
         if (!role || !['blind', 'volunteer'].includes(role)) {
             return NextResponse.json(
@@ -30,18 +30,24 @@ export async function POST(req) {
             );
         }
 
+        // Server-authoritative callId generation (client CANNOT supply arbitrary callId)
+        let assignedCallId = null;
+        if (role === 'blind' && (createCall === true || createCall === undefined)) {
+            assignedCallId = crypto.randomUUID();
+        }
+
         const uid = userId || `${role}_${crypto.randomBytes(8).toString('hex')}`;
         const token = generateSessionToken({
             userId: uid,
             role,
-            callId: callId || null,
+            callId: assignedCallId,
         });
 
         return NextResponse.json({
             token,
             userId: uid,
             role,
-            callId: callId || null,
+            callId: assignedCallId,
         });
     } catch (err) {
         console.error('Session token creation error:', err);

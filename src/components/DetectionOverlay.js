@@ -21,25 +21,31 @@ export default function DetectionOverlay({
     currencyDetected = false,
     currencyBlocked = false,
 }) {
-    const [, setResizeTick] = useState(0);
+    const [elements, setElements] = useState({ video: null, container: null });
 
     useEffect(() => {
+        const updateElements = () => {
+            const video = videoRef?.current || null;
+            const container = containerRef?.current || null;
+            setElements({ video, container });
+        };
+
+        updateElements();
+
         const container = containerRef?.current;
         if (!container) return undefined;
 
-        const observer = new ResizeObserver(() => setResizeTick((t) => t + 1));
+        const observer = new ResizeObserver(updateElements);
         observer.observe(container);
-        const onResize = () => setResizeTick((t) => t + 1);
-        window.addEventListener('resize', onResize);
+        window.addEventListener('resize', updateElements);
 
         return () => {
             observer.disconnect();
-            window.removeEventListener('resize', onResize);
+            window.removeEventListener('resize', updateElements);
         };
-    }, [containerRef]);
+    }, [containerRef, videoRef]);
 
-    const video = videoRef?.current;
-    const container = containerRef?.current;
+    const { video, container } = elements;
     if (!video || !container) return null;
 
     return (

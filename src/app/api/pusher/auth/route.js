@@ -36,20 +36,23 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Missing socket_id or channel_name' }, { status: 400 });
         }
 
-        let tokenPayload = null;
-        if (token) {
-            tokenPayload = verifySessionToken(token);
-            if (!tokenPayload) {
-                return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
-            }
-            if (!validateChannelPermission(tokenPayload, channel)) {
-                return NextResponse.json({ error: 'Forbidden: unauthorized channel' }, { status: 403 });
-            }
+        // Token is mandatory for all channel authorization
+        if (!token) {
+            return NextResponse.json({ error: 'Unauthorized: Session token is required' }, { status: 401 });
+        }
+
+        const tokenPayload = verifySessionToken(token);
+        if (!tokenPayload) {
+            return NextResponse.json({ error: 'Invalid or expired session token' }, { status: 401 });
+        }
+
+        if (!validateChannelPermission(tokenPayload, channel)) {
+            return NextResponse.json({ error: 'Forbidden: unauthorized channel access' }, { status: 403 });
         }
 
         if (channel.startsWith('presence-')) {
-            const userId = tokenPayload?.userId || `user_${crypto.randomBytes(6).toString('hex')}`;
-            const role = tokenPayload?.role || 'volunteer';
+            const userId = tokenPayload.userId || `user_${crypto.randomBytes(6).toString('hex')}`;
+            const role = tokenPayload.role || 'volunteer';
 
             const presenceData = {
                 user_id: userId,

@@ -163,17 +163,27 @@ export function useBlindHelp() {
             localVideoRef.current.play?.().catch(() => {});
         }
 
-        const callId = generateId();
+        let session;
+        try {
+            session = await getCallSession({ role: 'blind', createCall: true });
+            sessionTokenRef.current = session?.token;
+        } catch (err) {
+            console.error('Session auth error:', err.message);
+            setError('ไม่สามารถสร้างเซสชันการโทรได้');
+            setStatusSafe('error');
+            return;
+        }
+
+        const callId = session?.callId;
+        if (!callId) {
+            setError('ไม่สามารถรับรหัสการโทรได้');
+            setStatusSafe('error');
+            return;
+        }
+
         callIdRef.current = callId;
         acceptedVolunteerRef.current = null;
         candidateQueueRef.current = [];
-
-        try {
-            const session = await getCallSession({ role: 'blind', callId });
-            sessionTokenRef.current = session?.token;
-        } catch (err) {
-            console.warn('Session auth warning:', err.message);
-        }
 
         const { pc } = await createPeerConnection({
             localStream: stream,

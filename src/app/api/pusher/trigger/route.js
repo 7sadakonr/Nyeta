@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { pusherServer } from '@/lib/pusher-server';
 import {
     verifySessionToken,
-    validateChannelPermission,
-    validateEventPermission,
+    validateRoleEventPermission,
 } from '@/lib/server/sessionAuth';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 
@@ -29,29 +28,35 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Invalid JSON request' }, { status: 400 });
         }
 
-        const { channel, event, data, token } = body;
+        let { channel, event, data, token } = body;
+
+        if (!token) {
+            const authHeader = request.headers.get('authorization');
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                token = authHeader.substring(7).trim();
+            }
+        }
 
         if (!channel || typeof channel !== 'string' || !event || typeof event !== 'string') {
             return NextResponse.json({ error: 'Missing channel or event name' }, { status: 400 });
         }
 
-        // Validate event whitelist on this channel
-        if (!validateEventPermission(channel, event)) {
-            return NextResponse.json(
-                { error: `Event "${event}" is not allowed on channel "${channel}"` },
-                { status: 403 }
-            );
+        // Token is mandatory for all trigger requests
+        if (!token) {
+            return NextResponse.json({ error: 'Unauthorized: Session token is required' }, { status: 401 });
         }
 
-        // Validate session token if provided or enforce channel authorization
-        if (token) {
-            const tokenPayload = verifySessionToken(token);
-            if (!tokenPayload) {
-                return NextResponse.json({ error: 'Invalid or expired session token' }, { status: 401 });
-            }
-            if (!validateChannelPermission(tokenPayload, channel)) {
-                return NextResponse.json({ error: 'Forbidden: unauthorized channel access' }, { status: 403 });
-            }
+        const tokenPayload = verifySessionToken(token);
+        if (!tokenPayload) {
+            return NextResponse.json({ error: 'Invalid or expired session token' }, { status: 401 });
+        }
+
+        // Validate channel and role-based event permissions
+        if (!validateRoleEventPermission(tokenPayload, channel, event, data || {})) {
+            return NextResponse.json(
+                { error: `Forbidden: Role "${tokenPayload.role}" is not authorized for event "${event}" on channel "${channel}"` },
+                { status: 403 }
+            );
         }
 
         // Sanitize data payload (prevent oversized payloads)

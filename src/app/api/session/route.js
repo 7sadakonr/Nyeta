@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { generateSessionToken } from '@/lib/server/sessionAuth';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 
@@ -29,14 +30,16 @@ export async function POST(req) {
             );
         }
 
+        const uid = userId || `${role}_${crypto.randomBytes(8).toString('hex')}`;
         const token = generateSessionToken({
-            userId,
+            userId: uid,
             role,
             callId: callId || null,
         });
 
         return NextResponse.json({
             token,
+            userId: uid,
             role,
             callId: callId || null,
         });

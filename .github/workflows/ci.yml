@@ -2,7 +2,7 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, feature/** ]
   pull_request:
     branches: [ main, master ]
 
@@ -57,4 +57,6 @@ jobs:
         env:
           GEMINI_API_KEY: 'test-key'
           SESSION_SECRET: 'ci-test-secret-key-32-chars-long'
+          NEXT_PUBLIC_PUSHER_KEY: 'ci-mock-pusher-key'
+          NEXT_PUBLIC_PUSHER_CLUSTER: 'ap1'
         run: npm run test:e2e

@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { generateSessionToken } from '@/lib/server/sessionAuth';
+import { generateSessionToken, verifySessionToken } from '@/lib/server/sessionAuth';
+import { createCallState } from '@/lib/server/callStore';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 
 export async function POST(req) {
     try {
-        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
+        const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+                         req.headers.get('x-real-ip') ||
+                         'anonymous';
+
         const rateLimitResult = await checkRateLimit(clientIp, 'session');
 
         if (!rateLimitResult.success) {
@@ -21,7 +25,7 @@ export async function POST(req) {
         }
 
         const body = await req.json().catch(() => ({}));
-        const { role, createCall, userId } = body;
+        const { role, createCall } = body;
 
         if (!role || !['blind', 'volunteer'].includes(role)) {
             return NextResponse.json(
@@ -30,13 +34,33 @@ export async function POST(req) {
             );
         }
 
-        // Server-authoritative callId generation (client CANNOT supply arbitrary callId)
-        let assignedCallId = null;
-        if (role === 'blind' && (createCall === true || createCall === undefined)) {
-            assignedCallId = crypto.randomUUID();
+        // Server-authoritative Identity:
+        // Check if the client holds an already verified session token to preserve identity
+        const authHeader = req.headers.get('authorization');
+        let verifiedUserId = null;
+
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.substring(7).trim();
+            const verification = verifySessionToken(token);
+            if (verification && verification.role === role) {
+                verifiedUserId = verification.userId;
+            }
         }
 
-        const uid = userId || `${role}_${crypto.randomBytes(8).toString('hex')}`;
+        // Generate server-authoritative random ID if unauthenticated (ignoring untrusted client body)
+        const uid = verifiedUserId || `${role}_${crypto.randomBytes(8).toString('hex')}`;
+
+        let assignedCallId = null;
+
+        // If blind user is requesting a call, create temporary call state in Redis
+        if (role === 'blind' && createCall === true) {
+            const callRecord = await createCallState({
+                blindUserId: uid,
+                ttlSeconds: 600, // 10 minutes
+            });
+            assignedCallId = callRecord.callId;
+        }
+
         const token = generateSessionToken({
             userId: uid,
             role,
@@ -48,6 +72,10 @@ export async function POST(req) {
             userId: uid,
             role,
             callId: assignedCallId,
+        }, {
+            headers: {
+                'Cache-Control': 'private, no-store, no-cache, must-revalidate',
+            },
         });
     } catch (err) {
         console.error('Session token creation error:', err);

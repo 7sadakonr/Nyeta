@@ -4,7 +4,7 @@
 
 ### Real-Time Visual Assistance for Blind and Visually Impaired Users
 
-A graduation project combining accessible interfaces, human assistance, on-device object detection, and Google Gemini vision features.
+A graduation project combining accessible interfaces, human volunteer assistance, on-device object detection, and Google Gemini AI vision features.
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-8B5CF6?style=for-the-badge&logo=vercel&logoColor=white)](https://nyeta.vercel.app)
 [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
@@ -32,11 +32,64 @@ Nyeta is engineered to deploy entirely on **Vercel** with zero standalone server
 - **Frontend & App Router**: Next.js 16 + React 19 + Tailwind CSS 4.
 - **AI Vision (Server-Side Only)**: Next.js Route Handler (`/api/gemini`) manages Google Gemini AI Vision calls securely. Client applications never hold Gemini API keys and request assistance via predefined mode aliases (`assistant`, `currency`, `reader`).
 - **Realtime Signaling**: Managed WebSockets via **Pusher** for presence, incoming calls, and WebRTC SDP/ICE exchange.
-- **Session Security & Authorization**:
-  - HMAC-SHA256 authenticated session tokens generated via `/api/session`.
+- **Server-Authoritative Call Lifecycle & Redis State**:
+  - Temporary call state stored in **Upstash Redis** (`nyeta:call:<callId>`) with automatic 10-minute TTL.
+  - Server generates cryptographically random `callId` and server-authoritative identities.
+  - Atomic volunteer call claiming via Redis Lua scripts (guaranteeing that two simultaneous volunteers cannot claim the same call; second volunteer receives HTTP 409 Conflict).
+- **Session Security & Token Segregation**:
+  - HMAC-SHA256 authenticated session tokens generated via `/api/session` and `/api/calls`.
+  - **Base session token**: 4-hour TTL for anonymous presence.
+  - **Call-scoped token**: 20-minute TTL strictly bound to the specific `callId`. Generic tokens with `callId: null` are strictly blocked from private call channels.
   - Strict channel and event allowlists preventing spoofed signaling.
-- **Rate Limiting**: Serverless sliding window rate limiter backed by **Upstash Redis** (via Vercel Marketplace) with automatic in-memory fallback.
-- **WebRTC ICE/TURN Fallback**: Dynamic ICE credential distribution via `/api/webrtc/ice` ensuring reliable connections across restrictive mobile NATs/firewalls.
+- **Rate Limiting**: Serverless sliding window rate limiter backed by **Upstash Redis** (with automatic in-memory fallback):
+  - `gemini`: 20 req / 60s
+  - `pusher_trigger`: 60 req / 60s
+  - `session`: 30 req / 60s
+  - `calls_accept`: 10 req / 60s
+- **WebRTC ICE/TURN Fallback**: Dynamic ICE credential distribution via `/api/webrtc/ice` with private cache headers (`Cache-Control: private, no-store, no-cache`) ensuring reliable connections across restrictive mobile NATs/firewalls.
+
+---
+
+## 🔄 Call Lifecycle Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Blind as Blind User
+    participant Server as Next.js API (/api/calls)
+    participant Redis as Upstash Redis (nyeta:call:*)
+    participant Pusher as Pusher Channels
+    actor Vol1 as Volunteer A
+    actor Vol2 as Volunteer B
+
+    Note over Blind,Server: 1. Server-Authoritative Call Creation
+    Blind->>Server: POST /api/calls
+    Server->>Server: Generate UUID (callId) & blind userId
+    Server->>Redis: SET nyeta:call:<callId> {status: "pending", blindUserId, createdAt} (EX: 600s)
+    Server-->>Blind: 200 OK { callId, token (call-scoped, TTL: 20m), userId }
+    
+    Blind->>Pusher: Trigger "incoming-call" on presence-volunteers { callId }
+    Pusher-->>Vol1: Event "incoming-call" { callId }
+    Pusher-->>Vol2: Event "incoming-call" { callId }
+
+    Note over Vol1,Vol2: 2. Atomic Volunteer Acceptance Race
+    Vol1->>Server: POST /api/calls/<callId>/accept (Bearer volunteer token)
+    Vol2->>Server: POST /api/calls/<callId>/accept (Bearer volunteer token)
+
+    Server->>Redis: Atomic Claim via Lua Script (Volunteer A wins)
+    Redis-->>Server: Status updated to "claimed", claimedBy: Vol1
+    Server-->>Vol1: 200 OK { token (call-scoped, TTL: 20m), callId, role: "volunteer" }
+
+    Server->>Redis: Atomic Claim for Volunteer B (already claimed)
+    Redis-->>Server: Conflict: status is "claimed"
+    Server-->>Vol2: 409 Conflict { error: "Call has already been accepted" }
+
+    Note over Blind,Vol1: 3. Direct WebRTC P2P Media
+    Vol1->>Pusher: Trigger "call-accepted" on private-call-<callId>
+    Blind->>Pusher: Trigger "offer" on private-call-<callId>
+    Vol1->>Pusher: Trigger "answer" on private-call-<callId>
+    Blind->>Vol1: Direct WebRTC Audio/Video Streaming + DataChannel
+```
 
 ---
 
@@ -81,7 +134,7 @@ Nyeta is engineered to deploy entirely on **Vercel** with zero standalone server
 | **Video & Audio** | Native WebRTC | Peer-to-peer media streaming and data-channel controls |
 | **Object Detection** | TensorFlow.js 4.22 & COCO-SSD 2.2.3 | Browser-side object detection and framing guidance |
 | **Document Detection** | Scanic 1.0.8 | Rust/WASM page-edge and alignment detection |
-| **Rate Limiting** | Upstash Redis | Serverless rate limiting with in-memory fallback |
+| **State & Rate Limiting** | Upstash Redis | Serverless call state and distributed rate limiting |
 | **Testing** | Vitest, React Testing Library, Playwright | Unit, integration, and E2E validation |
 
 ---
@@ -109,7 +162,7 @@ NEXT_PUBLIC_PUSHER_CLUSTER=ap1
 # Session Security
 SESSION_SECRET=your_random_32_character_secret
 
-# Upstash Redis (Rate Limiting)
+# Upstash Redis (Call State & Rate Limiting)
 UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your_token
 
@@ -149,7 +202,7 @@ npm run test:e2e
 1. Push your repository to GitHub.
 2. Import the project into **Vercel**.
 3. Under Project Settings -> **Environment Variables**, add all keys from `.env.local`.
-4. In the Vercel Integrations / Marketplace tab, optionally attach **Upstash Redis** for distributed rate limiting.
+4. In the Vercel Integrations / Marketplace tab, attach **Upstash Redis** for distributed call state and rate limiting.
 5. Deploy!
 
 ---

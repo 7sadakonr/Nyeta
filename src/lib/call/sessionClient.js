@@ -1,7 +1,7 @@
 let cachedSession = null;
 
 /**
- * Request or retrieve a signed session token from /api/session
+ * Request or retrieve a signed session token
  * @param {Object} params
  * @param {'blind' | 'volunteer'} [params.role='blind']
  * @param {boolean} [params.createCall=false]
@@ -20,23 +20,34 @@ export async function getCallSession({ role = 'blind', createCall = false, userI
     }
 
     try {
-        const response = await fetch('/api/session', {
+        const endpoint = (role === 'blind' && createCall) ? '/api/calls' : '/api/session';
+        const headers = { 'Content-Type': 'application/json' };
+        if (cachedSession?.token) {
+            headers['Authorization'] = `Bearer ${cachedSession.token}`;
+        }
+
+        const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ role, createCall, userId }),
         });
 
         if (!response.ok) {
-            throw new Error(`Failed to create session token: HTTP ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            const err = new Error(errData.error || `Failed to create session token: HTTP ${response.status}`);
+            err.status = response.status;
+            throw err;
         }
 
         const data = await response.json();
+        const ttlMs = data.callId ? 18 * 60 * 1000 : 3.5 * 60 * 60 * 1000;
+
         cachedSession = {
             token: data.token,
             role: data.role,
             callId: data.callId,
             userId: data.userId,
-            expiresAt: Date.now() + 3.5 * 60 * 60 * 1000, // 3.5 hours
+            expiresAt: Date.now() + ttlMs,
         };
 
         return cachedSession;
@@ -87,7 +98,9 @@ export async function acceptCallSession(callId, baseToken = null) {
 
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
-            throw new Error(errData.error || `Failed to accept call: HTTP ${response.status}`);
+            const err = new Error(errData.error || `Failed to accept call: HTTP ${response.status}`);
+            err.status = response.status;
+            throw err;
         }
 
         const data = await response.json();
@@ -96,7 +109,7 @@ export async function acceptCallSession(callId, baseToken = null) {
             role: data.role,
             callId: data.callId,
             userId: data.userId,
-            expiresAt: Date.now() + 3.5 * 60 * 60 * 1000,
+            expiresAt: Date.now() + 18 * 60 * 1000, // 18 minutes for call-scoped token
         };
 
         setActiveSession(callSession);
@@ -106,5 +119,3 @@ export async function acceptCallSession(callId, baseToken = null) {
         throw err;
     }
 }
-
-

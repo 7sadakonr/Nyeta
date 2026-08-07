@@ -1,6 +1,7 @@
 'use client';
 
 import PusherJS from 'pusher-js';
+import { getActiveSessionToken, getCallSession } from './call/sessionClient';
 
 let pusherClient = null;
 
@@ -70,8 +71,43 @@ export function getPusherClient() {
         cluster,
         forceTLS: true,
         channelAuthorization: {
-            endpoint: '/api/pusher/auth',
-            transport: 'ajax',
+            customHandler: async ({ socketId, channelName }, callback) => {
+                try {
+                    let token = getActiveSessionToken();
+                    if (!token) {
+                        const role = channelName === 'presence-volunteers' ? 'volunteer' : 'blind';
+                        const session = await getCallSession({ role }).catch(() => null);
+                        token = session?.token;
+                    }
+
+                    if (!token) {
+                        return callback(new Error('No session token available for channel authorization'), null);
+                    }
+
+                    const res = await fetch('/api/pusher/auth', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`,
+                        },
+                        body: JSON.stringify({
+                            socket_id: socketId,
+                            channel_name: channelName,
+                            token,
+                        }),
+                    });
+
+                    if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        return callback(new Error(errData.error || `Auth failed: HTTP ${res.status}`), null);
+                    }
+
+                    const authData = await res.json();
+                    callback(null, authData);
+                } catch (err) {
+                    callback(err, null);
+                }
+            },
         },
     });
 

@@ -3,16 +3,17 @@ let cachedSession = null;
 /**
  * Request or retrieve a signed session token from /api/session
  * @param {Object} params
- * @param {'blind' | 'volunteer'} params.role
- * @param {string} [params.callId]
- * @returns {Promise<{ token: string, role: string, callId: string | null }>}
+ * @param {'blind' | 'volunteer'} [params.role='blind']
+ * @param {boolean} [params.createCall=false]
+ * @param {string} [params.userId]
+ * @returns {Promise<{ token: string, role: string, callId: string | null, userId: string }>}
  */
-export async function getCallSession({ role = 'blind', callId = null } = {}) {
-    // If we have a cached valid session for the same role and callId, reuse it
+export async function getCallSession({ role = 'blind', createCall = false, userId = null } = {}) {
+    // If not requesting a new call and we have a valid cached session for the role, reuse it
     if (
+        !createCall &&
         cachedSession &&
         cachedSession.role === role &&
-        cachedSession.callId === (callId || null) &&
         Date.now() < cachedSession.expiresAt
     ) {
         return cachedSession;
@@ -22,7 +23,7 @@ export async function getCallSession({ role = 'blind', callId = null } = {}) {
         const response = await fetch('/api/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role, callId }),
+            body: JSON.stringify({ role, createCall, userId }),
         });
 
         if (!response.ok) {
@@ -34,6 +35,7 @@ export async function getCallSession({ role = 'blind', callId = null } = {}) {
             token: data.token,
             role: data.role,
             callId: data.callId,
+            userId: data.userId,
             expiresAt: Date.now() + 3.5 * 60 * 60 * 1000, // 3.5 hours
         };
 
@@ -44,6 +46,19 @@ export async function getCallSession({ role = 'blind', callId = null } = {}) {
     }
 }
 
+export function getActiveSession() {
+    return cachedSession;
+}
+
+export function getActiveSessionToken() {
+    return cachedSession?.token || null;
+}
+
+export function setActiveSession(session) {
+    cachedSession = session;
+}
+
 export function clearCachedSession() {
     cachedSession = null;
 }
+

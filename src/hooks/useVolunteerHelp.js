@@ -38,9 +38,11 @@ export function useVolunteerHelp() {
     const statusRef = useRef('offline');
     const onlineRef = useRef(false);
 
-    if (!volunteerIdRef.current && typeof window !== 'undefined') {
-        volunteerIdRef.current = generateId();
-    }
+    useEffect(() => {
+        if (!volunteerIdRef.current) {
+            volunteerIdRef.current = generateId();
+        }
+    }, []);
 
     const setStatusSafe = useCallback((next) => {
         statusRef.current = next;
@@ -106,7 +108,7 @@ export function useVolunteerHelp() {
         localStreamRef.current = stream;
 
         try {
-            const session = await getCallSession({ role: 'volunteer', callId, userId: volunteerIdRef.current });
+            const session = await getCallSession({ role: 'volunteer', userId: volunteerIdRef.current });
             sessionTokenRef.current = session?.token;
         } catch (err) {
             console.warn('Volunteer session token warning:', err.message);

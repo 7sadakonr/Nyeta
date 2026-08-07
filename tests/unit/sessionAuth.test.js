@@ -4,6 +4,7 @@ import {
     verifySessionToken,
     validateChannelPermission,
     validateEventPermission,
+    validateRoleEventPermission,
     ALLOWED_CHANNELS,
 } from '@/lib/server/sessionAuth';
 
@@ -70,5 +71,38 @@ describe('Server Session Authentication & Channel Authorization', () => {
         expect(validateEventPermission('private-call-123', 'answer')).toBe(true);
         expect(validateEventPermission('private-call-123', 'ice-candidate')).toBe(true);
         expect(validateEventPermission('private-call-123', 'incoming-call')).toBe(false);
+    });
+
+    it('should enforce role-based event matrix with validateRoleEventPermission', () => {
+        const blindPayload = { userId: 'b1', role: 'blind', callId: 'room1' };
+        const volunteerPayload = { userId: 'v1', role: 'volunteer', callId: null };
+
+        // Presence channel: blind can send incoming-call / call-cancelled
+        expect(validateRoleEventPermission(blindPayload, 'presence-volunteers', 'incoming-call', { callId: 'room1' })).toBe(true);
+        expect(validateRoleEventPermission(blindPayload, 'presence-volunteers', 'call-cancelled', { callId: 'room1' })).toBe(true);
+        // Blind cannot send with mismatched callId
+        expect(validateRoleEventPermission(blindPayload, 'presence-volunteers', 'incoming-call', { callId: 'room2' })).toBe(false);
+
+        // Volunteer CANNOT trigger incoming-call on presence channel
+        expect(validateRoleEventPermission(volunteerPayload, 'presence-volunteers', 'incoming-call', { callId: 'room1' })).toBe(false);
+        // Volunteer CAN trigger call-claimed
+        expect(validateRoleEventPermission(volunteerPayload, 'presence-volunteers', 'call-claimed', { callId: 'room1' })).toBe(true);
+
+        // Private call channel:
+        // Blind can send offer, ice-candidate, call-ended
+        expect(validateRoleEventPermission(blindPayload, 'private-call-room1', 'offer')).toBe(true);
+        expect(validateRoleEventPermission(blindPayload, 'private-call-room1', 'ice-candidate')).toBe(true);
+        expect(validateRoleEventPermission(blindPayload, 'private-call-room1', 'call-ended')).toBe(true);
+        // Blind CANNOT send answer or call-accepted
+        expect(validateRoleEventPermission(blindPayload, 'private-call-room1', 'answer')).toBe(false);
+        expect(validateRoleEventPermission(blindPayload, 'private-call-room1', 'call-accepted')).toBe(false);
+
+        // Volunteer can send call-accepted, answer, ice-candidate, call-ended
+        expect(validateRoleEventPermission(volunteerPayload, 'private-call-room1', 'call-accepted')).toBe(true);
+        expect(validateRoleEventPermission(volunteerPayload, 'private-call-room1', 'answer')).toBe(true);
+        expect(validateRoleEventPermission(volunteerPayload, 'private-call-room1', 'ice-candidate')).toBe(true);
+        expect(validateRoleEventPermission(volunteerPayload, 'private-call-room1', 'call-ended')).toBe(true);
+        // Volunteer CANNOT send offer
+        expect(validateRoleEventPermission(volunteerPayload, 'private-call-room1', 'offer')).toBe(false);
     });
 });

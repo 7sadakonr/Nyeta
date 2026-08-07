@@ -1,21 +1,25 @@
-'use client';
-
 import { getPusherClient } from '../pusher-client';
+import { getActiveSessionToken } from './sessionClient';
 
 /**
  * Relay a signaling event through the serverless trigger route with authorization token.
  * @param {string} channel
  * @param {string} event
  * @param {any} data
- * @param {string} [token] - Optional session token for authorization
+ * @param {string} [token] - Optional session token for authorization (defaults to active session token)
  * @returns {Promise<boolean>}
  */
 export async function sendEvent(channel, event, data, token = null) {
+    const activeToken = token || getActiveSessionToken();
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (activeToken) {
+            headers['Authorization'] = `Bearer ${activeToken}`;
+        }
         const res = await fetch('/api/pusher/trigger', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel, event, data, token }),
+            headers,
+            body: JSON.stringify({ channel, event, data, token: activeToken }),
         });
         if (!res.ok) {
             const errorData = await res.json().catch(() => ({}));

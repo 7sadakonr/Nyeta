@@ -137,7 +137,7 @@ export function useCaptureHandler({
         return () => {
             dataChannel.offMessage(handleMessage);
         };
-    }, [dataChannel, captureImage]);
+    }, [dataChannel, captureImage, localStreamRef]);
 
     return {
         captureState

@@ -31,6 +31,7 @@ export default function ChatHistory({ aiMessages }) {
                     <li key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                         {msg.role === 'user' && msg.image && (
                             <div className="bg-zinc-800 rounded-2xl rounded-br-sm p-1 max-w-[80%] border border-zinc-700">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                     src={msg.image}
                                     alt={`ภาพที่ถ่ายครั้งที่ ${Math.floor(i / 2) + 1}`}

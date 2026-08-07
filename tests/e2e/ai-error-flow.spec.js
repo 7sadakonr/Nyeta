@@ -67,11 +67,51 @@ test.describe('API Validation & Error Handling E2E', () => {
         expect(typeof json.callId).toBe('string');
     });
 
-    test('returns ICE servers on /api/webrtc/ice', async ({ request }) => {
+    test('returns ICE servers on /api/webrtc/ice with private no-store Cache-Control', async ({ request }) => {
         const response = await request.get('/api/webrtc/ice');
         expect(response.status()).toBe(200);
+        const headers = response.headers();
+        expect(headers['cache-control']).toContain('private');
+        expect(headers['cache-control']).toContain('no-store');
         const json = await response.json();
         expect(Array.isArray(json.iceServers)).toBe(true);
         expect(json.iceServers.length).toBeGreaterThan(0);
+    });
+
+    test('/api/calls/:callId/accept rejects unauthenticated requests', async ({ request }) => {
+        const response = await request.post('/api/calls/room-123/accept', {
+            data: {},
+        });
+        expect(response.status()).toBe(401);
+    });
+
+    test('/api/calls/:callId/accept rejects blind role attempting to accept call', async ({ request }) => {
+        const sessionRes = await request.post('/api/session', {
+            data: { role: 'blind' },
+        });
+        const { token } = await sessionRes.json();
+
+        const response = await request.post('/api/calls/room-123/accept', {
+            headers: { Authorization: `Bearer ${token}` },
+            data: {},
+        });
+        expect(response.status()).toBe(403);
+    });
+
+    test('/api/calls/:callId/accept issues call-scoped token for valid volunteer', async ({ request }) => {
+        const sessionRes = await request.post('/api/session', {
+            data: { role: 'volunteer' },
+        });
+        const { token } = await sessionRes.json();
+
+        const response = await request.post('/api/calls/room-xyz/accept', {
+            headers: { Authorization: `Bearer ${token}` },
+            data: {},
+        });
+        expect(response.status()).toBe(200);
+        const json = await response.json();
+        expect(json.token).toBeDefined();
+        expect(json.role).toBe('volunteer');
+        expect(json.callId).toBe('room-xyz');
     });
 });

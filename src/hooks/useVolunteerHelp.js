@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EVENTS, VOLUNTEERS_CHANNEL, callChannel } from '@/lib/call/constants';
 import { sendEvent, subscribe, unsubscribe } from '@/lib/call/signaling';
-import { getCallSession } from '@/lib/call/sessionClient';
+import { getCallSession, acceptCallSession } from '@/lib/call/sessionClient';
 import { createPeerConnection, closePeerConnection } from '@/lib/call/peerConnection';
 
 const generateId = () => {
@@ -72,6 +72,15 @@ export function useVolunteerHelp() {
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
         setDataChannel(null);
         if (nextStatus) setStatusSafe(nextStatus);
+
+        // Reset to base volunteer token when call finishes
+        if (onlineRef.current && volunteerIdRef.current) {
+            getCallSession({ role: 'volunteer', userId: volunteerIdRef.current })
+                .then((s) => {
+                    sessionTokenRef.current = s?.token || null;
+                })
+                .catch(() => {});
+        }
     }, [setStatusSafe]);
 
     const endCall = useCallback(() => {
@@ -108,10 +117,13 @@ export function useVolunteerHelp() {
         localStreamRef.current = stream;
 
         try {
-            const session = await getCallSession({ role: 'volunteer', userId: volunteerIdRef.current });
+            const session = await acceptCallSession(callId, sessionTokenRef.current);
             sessionTokenRef.current = session?.token;
         } catch (err) {
-            console.warn('Volunteer session token warning:', err.message);
+            console.error('Volunteer accept call session error:', err.message);
+            setError('ไม่สามารถสร้าง Session สำหรับการรับสายได้');
+            cleanupCall(onlineRef.current ? 'online' : 'offline');
+            return;
         }
 
         activeCallIdRef.current = callId;

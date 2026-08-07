@@ -40,7 +40,7 @@ export async function GET() {
         { iceServers },
         {
             headers: {
-                'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+                'Cache-Control': 'private, no-store, no-cache, must-revalidate',
             },
         }
     );

@@ -17,22 +17,23 @@ export const useWakeLock = () => {
     const wakeLockRef = useRef(null);
 
     const request = useCallback(async () => {
-        if (!isSupported || typeof navigator === 'undefined' || !navigator.wakeLock) return;
+        if (typeof navigator === 'undefined' || !navigator.wakeLock) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
             return;
         }
 
         try {
-            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            const lock = await navigator.wakeLock.request('screen');
+            wakeLockRef.current = lock;
             setReleased(false);
 
-            wakeLockRef.current.addEventListener('release', () => {
+            lock.addEventListener('release', () => {
                 setReleased(true);
             });
         } catch (err) {
             console.error('Wake Lock error:', err);
         }
-    }, [isSupported]);
+    }, []);
 
     const release = useCallback(async () => {
         if (wakeLockRef.current) {
@@ -43,21 +44,46 @@ export const useWakeLock = () => {
 
     useEffect(() => {
         if (!isSupported) return;
-        request();
+
+        let isMounted = true;
+
+        const acquire = async () => {
+            if (typeof navigator === 'undefined' || !navigator.wakeLock) return;
+            if (document.visibilityState !== 'visible') return;
+
+            try {
+                const lock = await navigator.wakeLock.request('screen');
+                if (!isMounted) {
+                    lock.release();
+                    return;
+                }
+                wakeLockRef.current = lock;
+                setReleased(false);
+
+                lock.addEventListener('release', () => {
+                    if (isMounted) setReleased(true);
+                });
+            } catch (err) {
+                console.error('Wake Lock error:', err);
+            }
+        };
+
+        acquire();
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
-                request();
+                acquire();
             }
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
+            isMounted = false;
             release();
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [isSupported, request, release]);
+    }, [isSupported, release]);
 
     return { isSupported, released, request, release };
 };

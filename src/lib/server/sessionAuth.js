@@ -4,7 +4,7 @@ function getSecret() {
     const secret = process.env.SESSION_SECRET || process.env.PUSHER_SECRET;
     if (secret) return secret;
     if (process.env.NODE_ENV === 'production') {
-        console.error('CRITICAL: SESSION_SECRET or PUSHER_SECRET must be set in production');
+        throw new Error('CRITICAL: SESSION_SECRET or PUSHER_SECRET must be set in production');
     }
     // Fallback for development/testing
     return 'nyeta-dev-session-secret-key-32chars-min!!';
@@ -147,8 +147,9 @@ export function validateChannelPermission(tokenPayload, channelName) {
         const targetCallId = channelName.replace(ALLOWED_CHANNELS.CALL_PREFIX, '');
         if (!targetCallId) return false;
 
-        // If token was issued for a specific callId (e.g. blind call), it must match
-        if (tokenPayload.callId && tokenPayload.callId !== targetCallId) {
+        // Private call channels require a token issued specifically for targetCallId
+        // Generic tokens with callId === null or mismatched callId are strictly rejected
+        if (!tokenPayload.callId || tokenPayload.callId !== targetCallId) {
             return false;
         }
         return tokenPayload.role === 'blind' || tokenPayload.role === 'volunteer';

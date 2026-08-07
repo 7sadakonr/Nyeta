@@ -24,22 +24,20 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 
 export default function BlindAssistPage() {
     // Mode State
-    const [mode, setMode] = useState('assistant'); // 'assistant', 'currency', 'reader'
+    const [mode, setMode] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const savedMode = localStorage.getItem('nyeta_blind_mode');
+            if (savedMode && ['assistant', 'currency', 'reader'].includes(savedMode)) {
+                return savedMode;
+            }
+        }
+        return 'assistant';
+    });
     const [logs, setLogs] = useState([]);
     
     // Refs
     const hapticRef = useRef(null);
     const cameraContainerRef = useRef(null);
-
-    // Load saved mode on mount
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const savedMode = localStorage.getItem('nyeta_blind_mode');
-            if (savedMode && ['assistant', 'currency', 'reader'].includes(savedMode)) {
-                setMode(savedMode);
-            }
-        }
-    }, []);
 
     const addLog = useCallback((msg) => {
         setLogs(prev => [...prev.slice(-4), msg]);

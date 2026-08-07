@@ -62,3 +62,49 @@ export function clearCachedSession() {
     cachedSession = null;
 }
 
+/**
+ * Accept an incoming call as a volunteer and obtain a call-scoped session token
+ * @param {string} callId
+ * @param {string} [baseToken]
+ * @returns {Promise<{ token: string, role: string, callId: string, userId: string }>}
+ */
+export async function acceptCallSession(callId, baseToken = null) {
+    if (!callId) {
+        throw new Error('callId is required to accept a call session');
+    }
+
+    const tokenToUse = baseToken || getActiveSessionToken();
+
+    try {
+        const response = await fetch(`/api/calls/${encodeURIComponent(callId)}/accept`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(tokenToUse ? { 'Authorization': `Bearer ${tokenToUse}` } : {}),
+            },
+            body: JSON.stringify({ token: tokenToUse }),
+        });
+
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `Failed to accept call: HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const callSession = {
+            token: data.token,
+            role: data.role,
+            callId: data.callId,
+            userId: data.userId,
+            expiresAt: Date.now() + 3.5 * 60 * 60 * 1000,
+        };
+
+        setActiveSession(callSession);
+        return callSession;
+    } catch (err) {
+        console.error('Accept call session error:', err);
+        throw err;
+    }
+}
+
+

@@ -44,23 +44,17 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog)
         }
 
         setCurrencyMonitoring(true);
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
         const scanCurrency = async () => {
             if (currencyBusyRef.current) return;
             if (Date.now() < currencySkipUntilRef.current) return;
             if (!videoRef.current || videoRef.current.readyState < 2) return;
 
-            if (!apiKey) {
-                setCurrencyHint('ไม่พบ API Key');
-                return;
-            }
-
             currencyBusyRef.current = true;
             setCurrencyScanning(true);
 
             try {
-                const { parsed, isBlocked: frameBlocked } = await detectCurrencyWithGemini(videoRef.current, apiKey);
+                const { parsed, isBlocked: frameBlocked } = await detectCurrencyWithGemini(videoRef.current);
                 currencyErrorCountRef.current = 0;
 
                 // Handle Camera Blockage / Obstruction
@@ -245,4 +239,3 @@ export function useCurrencyScanner(videoRef, enabled, isReady, feedback, addLog)
         clearTotal,
     };
 }
-

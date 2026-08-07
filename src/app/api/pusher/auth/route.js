@@ -1,30 +1,72 @@
+import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { pusherServer } from '@/lib/pusher-server';
+import { verifySessionToken, validateChannelPermission } from '@/lib/server/sessionAuth';
 
-// Authorizes presence and private channels for the browser Pusher client.
 export async function POST(request) {
-    const formData = await request.formData();
-    const socketId = formData.get('socket_id');
-    const channel = formData.get('channel_name');
-
-    if (!socketId || !channel) {
-        return new Response('Bad Request', { status: 400 });
-    }
-
     try {
-        if (channel.startsWith('presence-')) {
-            const presenceData = {
-                user_id: crypto.randomUUID(),
-                user_info: { name: 'volunteer' },
-            };
-            const auth = pusherServer.authorizeChannel(socketId, channel, presenceData);
-            return Response.json(auth);
+        let socketId = null;
+        let channel = null;
+        let token = null;
+
+        const contentType = request.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const json = await request.json().catch(() => ({}));
+            socketId = json.socket_id;
+            channel = json.channel_name;
+            token = json.token;
+        } else {
+            const formData = await request.formData().catch(() => null);
+            if (formData) {
+                socketId = formData.get('socket_id');
+                channel = formData.get('channel_name');
+                token = formData.get('token');
+            }
         }
 
-        // private-* channels (per-call signaling)
+        if (!token) {
+            // Also check Authorization header: Bearer <token>
+            const authHeader = request.headers.get('authorization');
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                token = authHeader.substring(7).trim();
+            }
+        }
+
+        if (!socketId || !channel) {
+            return NextResponse.json({ error: 'Missing socket_id or channel_name' }, { status: 400 });
+        }
+
+        let tokenPayload = null;
+        if (token) {
+            tokenPayload = verifySessionToken(token);
+            if (!tokenPayload) {
+                return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
+            }
+            if (!validateChannelPermission(tokenPayload, channel)) {
+                return NextResponse.json({ error: 'Forbidden: unauthorized channel' }, { status: 403 });
+            }
+        }
+
+        if (channel.startsWith('presence-')) {
+            const userId = tokenPayload?.userId || `user_${crypto.randomBytes(6).toString('hex')}`;
+            const role = tokenPayload?.role || 'volunteer';
+
+            const presenceData = {
+                user_id: userId,
+                user_info: {
+                    role,
+                    joinedAt: Date.now(),
+                },
+            };
+            const auth = pusherServer.authorizeChannel(socketId, channel, presenceData);
+            return NextResponse.json(auth);
+        }
+
+        // private-* channels
         const auth = pusherServer.authorizeChannel(socketId, channel);
-        return Response.json(auth);
+        return NextResponse.json(auth);
     } catch (err) {
-        console.error('pusher auth error', err);
-        return new Response('Server Error', { status: 500 });
+        console.error('[API /api/pusher/auth] Auth error:', err);
+        return NextResponse.json({ error: 'Server authentication error' }, { status: 500 });
     }
 }

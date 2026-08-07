@@ -1,7 +1,6 @@
 import { callGeminiVision } from '@/lib/geminiVision';
 import { parseCurrencyResult } from '@/lib/currencyUtils';
 import { getCurrencyScanRegion } from '@/lib/videoCoords';
-import { CURRENCY_PROMPT } from '@/lib/visionPrompts';
 
 /**
  * Capture frame from video and check if it's pitch black / blocked.
@@ -70,14 +69,9 @@ function captureFrameWithOcclusionCheck(video, options = {}) {
 /**
  * Identify Thai banknote or coin via Gemini vision, with fast blockage detection.
  * @param {HTMLVideoElement} video
- * @param {string} apiKey
  * @returns {Promise<{ parsed: { type: 'note'|'coin'|'blocked', value?: number, isBlocked?: boolean } | null, rawText: string, isBlocked?: boolean }>}
  */
-export async function detectCurrencyWithGemini(video, apiKey) {
-    if (!apiKey) {
-        throw new Error('Gemini API key missing');
-    }
-
+export async function detectCurrencyWithGemini(video) {
     const cropRegion = getCurrencyScanRegion(video);
     const frameResult = captureFrameWithOcclusionCheck(video, {
         cropRegion,
@@ -99,9 +93,8 @@ export async function detectCurrencyWithGemini(video, apiKey) {
     }
 
     const text = await callGeminiVision({
-        apiKey,
+        mode: 'currency',
         imageDataUrl: frameResult.imageDataUrl,
-        systemPrompt: CURRENCY_PROMPT,
         userPrompt: 'ระบุธนบัตรหรือเหรียญเงินบาทไทยในภาพนี้',
         maxTokens: 32,
         temperature: 0,

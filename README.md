@@ -14,174 +14,143 @@ A graduation project combining accessible interfaces, human assistance, on-devic
 
 ---
 
-## Overview
+## 📄 Overview
 
-**Nyeta** is a web-based visual-assistance platform designed to help blind and visually impaired users understand their surroundings and request help in real time.
+**Nyeta** is a web-based visual-assistance platform designed to help blind and visually impaired users understand their surroundings and request help in real time. Built with a **Serverless Vercel-First Architecture**, Nyeta combines **Gemini AI Vision** and **Low-Latency WebRTC Video/Audio Streaming** to deliver two primary capabilities:
 
-The system supports two complementary forms of assistance:
-
-1. **Human assistance** through live video and audio calls between a blind user and an available volunteer.
-2. **AI-assisted vision** through Google Gemini for scene descriptions, Thai currency recognition, and document reading.
+1. **Human assistance** through live video and audio calls between a blind user and an available volunteer with remote controls (flash, snapshot captures).
+2. **AI-assisted vision** through Google Gemini for scene descriptions, Thai currency recognition with running totals, and document reading.
 
 The interface is designed for eyes-free operation with spoken feedback, voice input, vibration patterns, audio cues, large controls, and screen-reader-friendly interactions.
 
 ---
 
-## Core Features
+## 🏗 Serverless Architecture & Security Model
+
+Nyeta is engineered to deploy entirely on **Vercel** with zero standalone servers (no VPS, Express, or Railway dependencies):
+
+- **Frontend & App Router**: Next.js 16 + React 19 + Tailwind CSS 4.
+- **AI Vision (Server-Side Only)**: Next.js Route Handler (`/api/gemini`) manages Google Gemini AI Vision calls securely. Client applications never hold Gemini API keys and request assistance via predefined mode aliases (`assistant`, `currency`, `reader`).
+- **Realtime Signaling**: Managed WebSockets via **Pusher** for presence, incoming calls, and WebRTC SDP/ICE exchange.
+- **Session Security & Authorization**:
+  - HMAC-SHA256 authenticated session tokens generated via `/api/session`.
+  - Strict channel and event allowlists preventing spoofed signaling.
+- **Rate Limiting**: Serverless sliding window rate limiter backed by **Upstash Redis** (via Vercel Marketplace) with automatic in-memory fallback.
+- **WebRTC ICE/TURN Fallback**: Dynamic ICE credential distribution via `/api/webrtc/ice` ensuring reliable connections across restrictive mobile NATs/firewalls.
+
+---
+
+## 🔑 Core Features
 
 ### Human Assistance
-
-- One-tap help requests from the blind-user interface
-- Volunteer availability and incoming-call handling
-- Rear-camera video and microphone streaming
-- Volunteer audio returned to the blind user
-- Remote flashlight and call controls through a WebRTC data channel
+- One-tap help requests from the blind-user interface (`/blind`)
+- Volunteer availability and incoming-call handling (`/volunteer`)
+- Rear-camera video and microphone streaming via native WebRTC
+- Remote flashlight and call controls through WebRTC data channels
 - Real-time signaling and presence events through Pusher Channels
 
 ### Gemini Visual Assistance
-
-- Scene descriptions and visual questions in Thai
-- Image-and-text conversation through a Next.js API route
-- Thai banknote and coin recognition
-- Running total for scanned currency
+- Scene descriptions and visual questions in Thai (`assistant` mode)
+- Thai banknote (20, 50, 100, 500, 1000฿) and coin (1, 2, 5, 10฿) recognition with running total (`currency` mode)
 - Camera-obstruction detection before AI processing
-- Document capture, text extraction, and spoken reading
+- Document page-edge detection, text extraction, and spoken reading (`reader` mode)
 
 ### Real-Time Object Guidance
-
 - Browser-side object detection using TensorFlow.js and COCO-SSD
 - Spoken guidance for moving an object toward the center of the frame
-- Detection loop optimized for interactive camera use
 
 ### Accessibility Features
-
 - Speech input through the Web Speech API
 - Spoken responses through SpeechSynthesis
 - Haptic feedback through the Vibration API
 - Wake Lock support during active sessions
-- Audio cues for system states
-- Camera and microphone access through MediaDevices
+- Audio cues (Earcons) for system states
 
 ---
 
-## System Architecture
+## 🛠 Verified Technology Stack
 
-### Frontend and Application Layer
-
-- **Next.js 16.1.1 App Router** for routing, pages, and server API routes
-- **React 19** with custom hooks for camera, calls, AI modes, speech, and feedback
-- **JavaScript** for application logic
-- **Tailwind CSS 4** for responsive and accessible interfaces
-
-### Real-Time Communication Layer
-
-- **Native WebRTC APIs** using `RTCPeerConnection`, media tracks, ICE candidates, and `RTCDataChannel`
-- **Pusher Channels** for volunteer presence, call requests, SDP exchange, ICE signaling, and call-state events
-- No PeerJS dependency is used in the current implementation
-
-### AI and Computer-Vision Layer
-
-- **Google Gemini API** through the `/api/gemini` Next.js route
-- Default model: **`gemini-3.1-flash-lite`**
-- **TensorFlow.js 4.22** with **COCO-SSD 2.2.3** for client-side object detection
-- **Scanic 1.0.8**, a Rust/WASM contour scanner, for document-edge and page-alignment detection
-- Canvas-based frame capture, cropping, resizing, and camera-obstruction checks
-
----
-
-## Verified Technology Stack
-
-| Category | Technology | Current Usage |
+| Category | Technology | Usage |
 |---|---|---|
-| Framework | Next.js 16.1.1 | App Router, pages, and API routes |
-| UI Runtime | React 19 | Components, state, refs, and custom hooks |
-| Language | JavaScript | Client and server application logic |
-| Styling | Tailwind CSS 4 | Responsive and accessible UI |
-| Generative AI | Google Gemini API | Scene understanding, currency recognition, and document reading |
-| AI Model | `gemini-3.1-flash-lite` | Default multimodal model configured by the application |
-| Real-Time Signaling | Pusher 5.3.4 and Pusher JS 8.5 | Presence, call events, SDP, and ICE signaling |
-| Video and Audio | Native WebRTC | Peer-to-peer media streaming and data-channel controls |
-| Object Detection | TensorFlow.js 4.22 and COCO-SSD 2.2.3 | Browser-side object detection and framing guidance |
-| Document Detection | Scanic 1.0.8 | Rust/WASM page-edge and alignment detection |
-| Browser APIs | MediaDevices, Web Speech, SpeechSynthesis, Wake Lock, Vibration, Canvas | Camera, voice, spoken feedback, haptics, and frame processing |
-| Deployment | Vercel | Production web deployment |
+| **Framework** | Next.js 16.1.1 | App Router, pages, and server API routes |
+| **UI Runtime** | React 19 | Components, state, refs, and custom hooks |
+| **Language** | JavaScript | Client and server application logic |
+| **Styling** | Tailwind CSS 4 | Responsive and accessible UI |
+| **Generative AI** | Google Gemini API (`gemini-3.1-flash-lite`) | Scene understanding, currency recognition, document OCR |
+| **Real-Time Signaling** | Pusher 5.3.4 and Pusher JS 8.5 | Presence, call events, SDP, and ICE signaling |
+| **Video & Audio** | Native WebRTC | Peer-to-peer media streaming and data-channel controls |
+| **Object Detection** | TensorFlow.js 4.22 & COCO-SSD 2.2.3 | Browser-side object detection and framing guidance |
+| **Document Detection** | Scanic 1.0.8 | Rust/WASM page-edge and alignment detection |
+| **Rate Limiting** | Upstash Redis | Serverless rate limiting with in-memory fallback |
+| **Testing** | Vitest, React Testing Library, Playwright | Unit, integration, and E2E validation |
 
 ---
 
-## Main Routes
+## 🚀 Environment Configuration & Setup
 
-| Route | Purpose |
-|---|---|
-| `/blind` | Accessible interface for requesting human help and using AI vision modes |
-| `/volunteer` | Volunteer dashboard for receiving calls and assisting through live video |
-| `/api/gemini` | Server route that sends text and images to the Gemini API |
-| `/api/pusher/auth` | Authorizes private and presence channels |
-| `/api/pusher/trigger` | Publishes signaling and call-state events |
+### 1. Prerequisites
+- **Node.js**: Version 20.x or higher
+- **Vercel CLI** (optional for local deployment)
 
----
-
-## Installation
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/7sadakonr/Nyeta.git
-cd Nyeta
-```
-
-### 2. Install dependencies
-
-```bash
-npm install
-```
-
-### 3. Configure environment variables
-
-Create `.env.local` in the project root:
+### 2. Environment Variables (`.env.local`)
+Create a `.env.local` file based on `.env.local.example`:
 
 ```env
-# Google Gemini
+# Gemini API (Server-side ONLY)
 GEMINI_API_KEY=your_gemini_api_key
-NEXT_PUBLIC_GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-3.1-flash-lite
 
-# Pusher Channels
+# Pusher Signaling
 PUSHER_APP_ID=your_pusher_app_id
-PUSHER_KEY=your_pusher_key
-PUSHER_SECRET=your_pusher_secret
-PUSHER_CLUSTER=your_pusher_cluster
 NEXT_PUBLIC_PUSHER_KEY=your_pusher_key
-NEXT_PUBLIC_PUSHER_CLUSTER=your_pusher_cluster
+PUSHER_SECRET=your_pusher_secret
+NEXT_PUBLIC_PUSHER_CLUSTER=ap1
+
+# Session Security
+SESSION_SECRET=your_random_32_character_secret
+
+# Upstash Redis (Rate Limiting)
+UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_token
+
+# Optional TURN WebRTC Relay
+TURN_URL=turn:global.relay.metered.ca:443?transport=tcp
+TURN_USERNAME=your_username
+TURN_CREDENTIAL=your_credential
 ```
 
-`NEXT_PUBLIC_GEMINI_API_KEY` is currently checked by the currency-scanning mode, while Gemini requests are processed through the server route.
-
-### 4. Start the HTTPS development server
+### 3. Local Development
 
 ```bash
+# Install dependencies
+npm install
+
+# Start development server with HTTPS (required for camera/mic permissions)
 npm run dev
-```
 
-Camera and microphone features require a secure context. The project development command starts Next.js with experimental HTTPS enabled.
-
-For HTTP-only development:
-
-```bash
+# Or HTTP mode for testing
 npm run dev:http
 ```
 
+### 4. Running Tests
+
+```bash
+# Run unit tests (Vitest)
+npm run test
+
+# Run End-to-End tests (Playwright)
+npm run test:e2e
+```
+
 ---
 
-## Available Scripts
+## 🔒 Vercel Deployment Guide
 
-| Command | Purpose |
-|---|---|
-| `npm run dev` | Start the Next.js development server with experimental HTTPS |
-| `npm run dev:http` | Start the development server over HTTP |
-| `npm run build` | Create a production build |
-| `npm run start` | Start the production server |
-| `npm run lint` | Run ESLint |
-| `npm run tunnel` | Expose the HTTPS development server through Cloudflare Tunnel |
+1. Push your repository to GitHub.
+2. Import the project into **Vercel**.
+3. Under Project Settings -> **Environment Variables**, add all keys from `.env.local`.
+4. In the Vercel Integrations / Marketplace tab, optionally attach **Upstash Redis** for distributed rate limiting.
+5. Deploy!
 
 ---
 

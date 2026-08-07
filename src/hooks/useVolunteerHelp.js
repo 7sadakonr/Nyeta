@@ -1,39 +1,40 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { RTC_CONFIG, EVENTS, VOLUNTEERS_CHANNEL, callChannel } from '@/lib/call/constants';
+import { EVENTS, VOLUNTEERS_CHANNEL, callChannel } from '@/lib/call/constants';
 import { sendEvent, subscribe, unsubscribe } from '@/lib/call/signaling';
+import { getCallSession } from '@/lib/call/sessionClient';
+import { createPeerConnection, closePeerConnection } from '@/lib/call/peerConnection';
 
 const generateId = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
     }
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    return Math.random().toString(36).substring(2, 15);
 };
 
 /**
- * Volunteer-side logic. The volunteer is the WebRTC *answerer*: receives the
- * blind user's camera video + audio and sends only their own microphone back.
- *
- * status: 'offline' | 'online' | 'ringing' | 'connecting' | 'connected' | 'ended'
+ * Volunteer-side logic: receives video/audio stream from blind user and relays voice assistance.
  */
 export function useVolunteerHelp() {
     const [status, setStatus] = useState('offline');
     const [online, setOnline] = useState(false);
     const [volunteerCount, setVolunteerCount] = useState(0);
-    const [incomingCall, setIncomingCall] = useState(null); // { callId }
+    const [incomingCall, setIncomingCall] = useState(null);
     const [error, setError] = useState(null);
     const [dataChannel, setDataChannel] = useState(null);
 
     const remoteVideoRef = useRef(null);
 
     const volunteerIdRef = useRef(null);
+    const sessionTokenRef = useRef(null);
     const presenceRef = useRef(null);
     const callChannelRef = useRef(null);
     const pcRef = useRef(null);
     const localStreamRef = useRef(null);
     const activeCallIdRef = useRef(null);
     const incomingRef = useRef(null);
+    const candidateQueueRef = useRef([]);
     const statusRef = useRef('offline');
     const onlineRef = useRef(false);
 
@@ -53,7 +54,7 @@ export function useVolunteerHelp() {
 
     const cleanupCall = useCallback((nextStatus) => {
         if (pcRef.current) {
-            try { pcRef.current.close(); } catch { /* noop */ }
+            closePeerConnection(pcRef.current);
             pcRef.current = null;
         }
         if (localStreamRef.current) {
@@ -65,6 +66,7 @@ export function useVolunteerHelp() {
         }
         callChannelRef.current = null;
         activeCallIdRef.current = null;
+        candidateQueueRef.current = [];
         if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
         setDataChannel(null);
         if (nextStatus) setStatusSafe(nextStatus);
@@ -72,7 +74,8 @@ export function useVolunteerHelp() {
 
     const endCall = useCallback(() => {
         const id = activeCallIdRef.current;
-        if (id) sendEvent(callChannel(id), EVENTS.CALL_ENDED, { from: 'volunteer' });
+        const token = sessionTokenRef.current;
+        if (id) sendEvent(callChannel(id), EVENTS.CALL_ENDED, { from: 'volunteer' }, token);
         cleanupCall(onlineRef.current ? 'online' : 'offline');
     }, [cleanupCall]);
 
@@ -84,14 +87,13 @@ export function useVolunteerHelp() {
     const acceptCall = useCallback(async () => {
         const call = incomingRef.current;
         if (!call?.callId) return;
-        if (statusRef.current === 'connecting' || statusRef.current === 'connected') return;
+        if (['connecting', 'connected'].includes(statusRef.current)) return;
 
         const callId = call.callId;
         setError(null);
         setStatusSafe('connecting');
         setIncomingSafe(null);
 
-        // 1. Volunteer mic only.
         let stream;
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -103,46 +105,46 @@ export function useVolunteerHelp() {
         }
         localStreamRef.current = stream;
 
-        // 2. Peer connection.
-        const pc = new RTCPeerConnection(RTC_CONFIG);
-        pcRef.current = pc;
+        try {
+            const session = await getCallSession({ role: 'volunteer', callId, userId: volunteerIdRef.current });
+            sessionTokenRef.current = session?.token;
+        } catch (err) {
+            console.warn('Volunteer session token warning:', err.message);
+        }
+
         activeCallIdRef.current = callId;
-        
+        candidateQueueRef.current = [];
+
+        const { pc } = await createPeerConnection({
+            localStream: stream,
+            onIceCandidate: (candidate) => {
+                sendEvent(callChannel(callId), EVENTS.ICE_CANDIDATE, {
+                    candidate,
+                    from: volunteerIdRef.current,
+                    to: 'blind',
+                }, sessionTokenRef.current);
+            },
+            onTrack: (event) => {
+                if (remoteVideoRef.current) {
+                    remoteVideoRef.current.srcObject = event.streams[0];
+                    remoteVideoRef.current.play?.().catch(() => {});
+                }
+            },
+            onConnectionStateChange: (state) => {
+                if (state === 'connected') setStatusSafe('connected');
+                else if (['failed', 'closed'].includes(state)) {
+                    if (['connected', 'connecting'].includes(statusRef.current)) {
+                        cleanupCall(onlineRef.current ? 'online' : 'offline');
+                    }
+                }
+            },
+        });
+        pcRef.current = pc;
+
         pc.ondatachannel = (event) => {
             setDataChannel(event.channel);
         };
-        
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-        pc.onicecandidate = (e) => {
-            if (e.candidate) {
-                sendEvent(callChannel(callId), EVENTS.ICE_CANDIDATE, {
-                    candidate: e.candidate,
-                    from: volunteerIdRef.current,
-                    to: 'blind',
-                });
-            }
-        };
-
-        pc.ontrack = (e) => {
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = e.streams[0];
-                remoteVideoRef.current.play?.().catch(() => { /* noop */ });
-            }
-        };
-
-        pc.onconnectionstatechange = () => {
-            const s = pc.connectionState;
-            if (s === 'connected') {
-                setStatusSafe('connected');
-            } else if (s === 'failed' || s === 'closed') {
-                if (statusRef.current === 'connected' || statusRef.current === 'connecting') {
-                    cleanupCall(onlineRef.current ? 'online' : 'offline');
-                }
-            }
-        };
-
-        // 3. Subscribe to the private call channel, bind handlers.
         const channel = subscribe(callChannel(callId));
         callChannelRef.current = channel;
 
@@ -156,17 +158,25 @@ export function useVolunteerHelp() {
                 await sendEvent(callChannel(callId), EVENTS.ANSWER, {
                     sdp: pc.localDescription,
                     from: volunteerIdRef.current,
-                });
+                }, sessionTokenRef.current);
+
+                while (candidateQueueRef.current.length > 0) {
+                    const candidate = candidateQueueRef.current.shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
+                }
             } catch (err) {
                 console.error('handleOffer error', err);
             }
         };
 
         const handleIce = async (data) => {
-            if (data?.from !== 'blind') return;
-            if (!data?.candidate) return;
+            if (data?.from !== 'blind' || !data?.candidate) return;
+            if (!pc.remoteDescription) {
+                candidateQueueRef.current.push(data.candidate);
+                return;
+            }
             try {
-                await pc.addIceCandidate(data.candidate);
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
             } catch (err) {
                 console.error('volunteer addIceCandidate error', err);
             }
@@ -179,23 +189,30 @@ export function useVolunteerHelp() {
                 cleanupCall(onlineRef.current ? 'online' : 'offline');
             });
 
-            // 4. Announce acceptance only once subscribed, so we don't miss the OFFER.
             const announce = () => {
                 sendEvent(callChannel(callId), EVENTS.CALL_ACCEPTED, {
                     volunteerId: volunteerIdRef.current,
-                });
+                }, sessionTokenRef.current);
                 sendEvent(VOLUNTEERS_CHANNEL, EVENTS.CALL_CLAIMED, {
                     callId,
                     volunteerId: volunteerIdRef.current,
-                });
+                }, sessionTokenRef.current);
             };
             if (channel.subscribed) announce();
             else channel.bind('pusher:subscription_succeeded', announce);
         }
     }, [cleanupCall, setIncomingSafe, setStatusSafe]);
 
-    const goOnline = useCallback(() => {
+    const goOnline = useCallback(async () => {
         if (online) return;
+
+        try {
+            const session = await getCallSession({ role: 'volunteer', userId: volunteerIdRef.current });
+            sessionTokenRef.current = session?.token;
+        } catch (err) {
+            console.warn('Volunteer session warning:', err.message);
+        }
+
         const channel = subscribe(VOLUNTEERS_CHANNEL);
         presenceRef.current = channel;
         if (!channel) {
@@ -215,8 +232,7 @@ export function useVolunteerHelp() {
 
         channel.bind(EVENTS.INCOMING_CALL, (data) => {
             if (!data?.callId) return;
-            // Ignore new rings while already handling/:in a call.
-            if (statusRef.current === 'connecting' || statusRef.current === 'connected') return;
+            if (['connecting', 'connected'].includes(statusRef.current)) return;
             setIncomingSafe({ callId: data.callId });
             setStatusSafe('ringing');
         });
@@ -258,12 +274,12 @@ export function useVolunteerHelp() {
     useEffect(() => {
         return () => {
             const id = activeCallIdRef.current;
-            if (id) sendEvent(callChannel(id), EVENTS.CALL_ENDED, { from: 'volunteer' });
+            const token = sessionTokenRef.current;
+            if (id) sendEvent(callChannel(id), EVENTS.CALL_ENDED, { from: 'volunteer' }, token);
             cleanupCall(null);
             if (presenceRef.current) unsubscribe(VOLUNTEERS_CHANNEL);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [cleanupCall]);
 
     return {
         status,

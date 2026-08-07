@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/lib/pageEdgeDetection';
 import { callGeminiVision, captureFrameFromVideo } from '@/lib/geminiVision';
-import { OCR_PROMPT } from '@/lib/visionPrompts';
 import speechManager, { Priority } from '@/lib/speechManager';
 
 export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback, addLog) {
@@ -25,7 +24,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
 
     const consecutiveGuidanceRef = useRef(0);
     const guidanceCandidateRef = useRef('');
-    
+
     // Status refs for effect closures
     const aiStatusRef = useRef(aiStatus);
     const isReadingRef = useRef(isReading);
@@ -38,7 +37,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             feedback?.('error');
             speechManager?.speak('กล้องกำลังเริ่มต้น กรุณารอสักครู่ครับ', {
                 priority: Priority.HIGH,
-                owner: 'document-reader'
+                owner: 'document-reader',
             });
             return;
         }
@@ -50,7 +49,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
                 feedback?.('error');
                 speechManager?.speak('ยังจับภาพเอกสารไม่ได้ กรุณาถือกล้องให้นิ่งแล้วลองใหม่ครับ', {
                     priority: Priority.HIGH,
-                    owner: 'document-reader'
+                    owner: 'document-reader',
                 });
                 setIsProcessing(false);
                 return;
@@ -64,8 +63,8 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
             const text = await callGeminiVision({
+                mode: 'reader',
                 imageDataUrl,
-                systemPrompt: OCR_PROMPT,
                 userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
                 maxTokens: 1500,
                 temperature: 0,
@@ -89,7 +88,7 @@ export function useDocumentReader(videoRef, enabled, isReady, aiStatus, feedback
             feedback?.('error');
             speechManager?.speak('เกิดข้อผิดพลาดในการอ่านเอกสาร กรุณาลองใหม่อีกครั้งครับ', {
                 priority: Priority.HIGH,
-                owner: 'document-reader'
+                owner: 'document-reader',
             });
         } finally {
             setIsProcessing(false);

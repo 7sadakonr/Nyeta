@@ -3,20 +3,23 @@
 import { getPusherClient } from '../pusher-client';
 
 /**
- * Relay a signaling event through the serverless trigger route.
- * We go through the server (instead of Pusher client events) so we don't depend
- * on the "client events" dashboard toggle and get more reliable delivery.
+ * Relay a signaling event through the serverless trigger route with authorization token.
+ * @param {string} channel
+ * @param {string} event
+ * @param {any} data
+ * @param {string} [token] - Optional session token for authorization
+ * @returns {Promise<boolean>}
  */
-export async function sendEvent(channel, event, data) {
+export async function sendEvent(channel, event, data, token = null) {
     try {
         const res = await fetch('/api/pusher/trigger', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel, event, data }),
+            body: JSON.stringify({ channel, event, data, token }),
         });
         if (!res.ok) {
-            const text = await res.text().catch(() => '');
-            console.error('sendEvent failed', res.status, text);
+            const errorData = await res.json().catch(() => ({}));
+            console.error('sendEvent failed', res.status, errorData);
             return false;
         }
         return true;

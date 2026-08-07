@@ -1,118 +1,127 @@
 # Nyeta: Real-time Visual Assistance System for the Visually Impaired with AI Integration
 
-**Graduation Project** | **Ragamangala University of Technology Suvarnabhumi Huntra]**
+**Graduation Project** | **Rajamangala University of Technology Suvarnabhumi Hantra**
 
 ---
 
 ## 📄 Abstract
 
-**Nyeta** is a web-based comprehensive visual assistance platform designed to bridge the gap between visually impaired individuals and the sighted world. By integrating **Real-time WebRTC communication** with **Generative AI (Llama 3.2 Vision)**, the system provides two distinct modes of assistance: **Peer-to-Peer Human Assistance** and **AI-Powered Visual Interpretation**. This project aims to enhance the independence of blind users through accessible technology, utilizing a Progressive Web Application (PWA) architecture for cross-platform compatibility and ease of access.
+**Nyeta** is a modern, accessible web platform designed to empower visually impaired individuals through real-time assistive technology. Built with a **Serverless Vercel-First Architecture**, Nyeta combines **Gemini AI Vision** and **Low-Latency WebRTC Video/Audio Streaming** to deliver two primary capabilities:
+1. **AI-Powered Visual Interpretation**: Scene description, Thai banknote and coin scanning with cumulative tallying, and document text reading.
+2. **Peer-to-Peer Volunteer Calling**: Low-latency video calls bridging blind users and volunteers with remote assistive controls (flash, capture snapshots, audio).
 
 ---
 
-## 🎯 Objectives
+## 🏗 Serverless Architecture & Security Model
 
-1.  **To develop a real-time assistance system** that connects blind users with sighted volunteers via low-latency video streaming.
-2.  **To integrate Artificial Intelligence** capable of answering visual queries in Thai, acting as an always-available alternative to human volunteers.
-3.  **To design an inclusive User Interface (UI)** that adheres to accessibility standards, utilizing voice commands, haptic feedback, and efficient screen reader support.
-4.  **To implement a scalable architecture** using modern web technologies to ensure reliability and performance.
+Nyeta is engineered to deploy entirely on **Vercel** with zero standalone servers (no VPS, Express, or Railway dependencies):
 
----
-
-## 🏗 System Architecture
-
-The system is built upon a **Client-Server architecture** utilizing Next.js for the frontend and serverless API routes, integrated with third-party services for real-time capabilities.
-
-### 1. Frontend Layer
--   **Framework:** **Next.js 15+ (App Router)** offers Server-Side Rendering (SSR) for performance and SEO, coupled with Client-Side Rendering (CSR) for interactive components.
--   **UI/UX:** Designed with **Tailwind CSS v4** for responsiveness and high-contrast accessibility. Custom **Haptic Feedback** mechanisms provide tactile confirmation for user actions.
--   **State Management:** React Hooks (`useState`, `useRef`, `useCallback`) interact with effective local state management for media streams and connection statuses.
-
-### 2. Communication Layer
--   **Signaling & Presence:** **Pusher** is utilized for WebSocket-based signaling, managing user presence (Online/Offline status), and event broadcasting (Call requests, cancellations, flashlight toggles).
--   **Media Streaming:** **PeerJS (WebRTC)** establishes peer-to-peer relationships for encrypted, low-latency video and audio transmission between the blind user and the volunteer.
-
-### 3. Intelligence Layer
--   **AI Processing:** The system leverages the **Groq API** to access the **Llama 3.2 Vision** model.
-    -   **Input:** Captured video frames (Base64 encoded) + User voice queries (transcribed via Web Speech API).
-    -   **Output:** Context-aware descriptions and answers in natural Thai language.
+- **Frontend & App Router**: Next.js 16 + React 19 + Tailwind CSS.
+- **AI Vision (Server-Side Only)**: Next.js Route Handler (`/api/gemini`) manages Google Gemini AI Vision calls securely. Client applications never hold Gemini API keys and request assistance via predefined mode aliases (`assistant`, `currency`, `reader`).
+- **Realtime Signaling**: Managed WebSockets via **Pusher** for presence, incoming calls, and WebRTC SDP/ICE exchange.
+- **Session Security & Authorization**:
+  - HMAC-SHA256 authenticated session tokens generated via `/api/session`.
+  - Strict channel and event allowlists preventing spoofed signaling.
+- **Rate Limiting**: Serverless sliding window rate limiter backed by **Upstash Redis** (via Vercel Marketplace) with automatic in-memory fallback.
+- **WebRTC ICE/TURN Fallback**: Dynamic ICE credential distribution via `/api/webrtc/ice` ensuring reliable connections across restrictive mobile NATs/firewalls.
 
 ---
 
-## 🔑 Key Modules & Features
+## 🔑 Key Features & Interfaces
 
-### 1. Blind User Interface (`/blind`)
-Designed for "Eyes-Free" operation:
--   **One-Tap Calling:** simplified interaction to broadcast requests to available volunteers.
--   **AI Visual Assistant:** Users can "Ask the Scene" using voice commands. The system captures a frame, transcribes the question, and audibly speaks the AI's response.
--   **Accessibility Features:**
-    -   **Wake Lock API:** Prevents the device from sleeping during active sessions.
-    -   **Earcons:** Distinct audio cues for system states (Listening, Processing, Success, Error).
-    -   **Vibration Patterns:** Tactile feedback for confirmed actions.
+### 1. Blind Interface (`/blind`)
+- **Three Specialized Modes**:
+  - **AI Assistant**: Scene description and conversational visual Q&A.
+  - **Currency Scanner**: Real-time recognition of Thai banknotes (20, 50, 100, 500, 1000฿) and coins (1, 2, 5, 10฿) with automatic running total and camera obstruction detection.
+  - **Document Reader**: Page boundary edge detection and high-accuracy Thai OCR text reading.
+- **Voice & Accessibility First**:
+  - Web Speech API and responsive audio cues (Earcons).
+  - Tactile confirmation via Vibration/Haptic Feedback.
+  - High contrast buttons with minimum 44px+ touch targets.
 
 ### 2. Volunteer Dashboard (`/volunteer`)
-Designed for situational awareness and control:
--   **Status Management:** Toggle availability (Online/Offline) to receive calls.
--   **Live Video Feed:** Real-time view from the blind user's rear camera.
--   **Remote Device Control:**
-    -   **Flashlight Toggle:** Volunteers can remotely activate the blind user's flashlight (Android support) to improve visibility in low-light environments.
-    -   **Audio Control:** Ability to mute/unmute to minimize feedback loops.
+- **Presence & Incoming Call Alerts**: Audio ringtones and instant notifications when a user requests assistance.
+- **Live Two-Way Stream**: Full WebRTC video and bidirectional voice communication.
+- **Volunteer Tools**: Remote flashlight toggle, high-resolution snapshot capture, and in-call chat.
 
 ---
 
 ## 🛠 Technology Stack
 
-| Category | Technology | Usage |
+| Category | Technology | Purpose |
 | :--- | :--- | :--- |
-| **Frontend Framework** | **Next.js 15** | Application logic & Routing |
-| **Language** | **JavaScript (ES6+)** | Core Logic |
-| **Styling** | **Tailwind CSS** | UI Design & Responsiveness |
-| **Real-time Data** | **Pusher** | Signaling, Presence, Event Triggering |
-| **P2P Streaming** | **PeerJS (WebRTC)** | Video/Audio Communication |
-| **AI Model** | **Llama 3.2 Vision (via Groq)** | Image Recognition & Generative Text |
-| **Browser APIs** | **Web Speech API** | Speech-to-Text (STT) |
-| **Browser APIs** | **Vibration API** | Haptic Feedback |
+| **Framework** | Next.js 16 (App Router) | Fullstack serverless application |
+| **Styling** | Tailwind CSS | High-contrast accessible design |
+| **AI Vision** | Google Gemini API (`gemini-3.1-flash-lite`) | Scene description, currency, OCR |
+| **Signaling** | Pusher Channels | Realtime call discovery and WebRTC handshake |
+| **WebRTC Media** | Native WebRTC PeerConnection + TURN | Low-latency audio/video calling |
+| **Rate Limiting** | Upstash Redis | API abuse protection on Vercel |
+| **Testing** | Vitest, React Testing Library, Playwright | Unit, integration, and E2E validation |
 
 ---
 
-## 🚀 Installation & Setup
+## 🚀 Environment Configuration & Setup
 
-### Prerequisites
--   **Node.js**: Version 18.17.0 or higher.
--   **npm** or **yarn**: Package manager.
--   **HTTPS Environment**: Required for accessing Camera and Microphone (e.g., localtunnel, ngrok, or production SSL).
+### 1. Prerequisites
+- **Node.js**: Version 20.x or higher
+- **Vercel CLI** (optional for local deployment)
 
-### Local Deployment Steps
+### 2. Environment Variables (`.env.local`)
+Create a `.env.local` file based on `.env.local.example`:
 
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/yourusername/nyeta.git
-    cd nyeta
-    ```
+```env
+# Gemini API (Server-side ONLY)
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-3.1-flash-lite
 
-2.  **Install Dependencies**
-    ```bash
-    npm install
-    ```
+# Pusher Signaling
+PUSHER_APP_ID=your_pusher_app_id
+NEXT_PUBLIC_PUSHER_KEY=your_pusher_key
+PUSHER_SECRET=your_pusher_secret
+NEXT_PUBLIC_PUSHER_CLUSTER=ap1
 
-3.  **Environment Configuration**
-    Create a `.env.local` file in the root directory and populate the required keys:
+# Session Security
+SESSION_SECRET=your_random_32_character_secret
 
-    ```env
-    # Pusher Configuration (Signaling)
-    NEXT_PUBLIC_PUSHER_KEY=your_pusher_key
-    NEXT_PUBLIC_PUSHER_CLUSTER=your_pusher_cluster
-    PUSHER_APP_ID=your_app_id
-    PUSHER_SECRET=your_secret
+# Upstash Redis (Rate Limiting)
+UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_token
 
-    # Groq API (AI Vision)
-    NEXT_PUBLIC_GROQ_API_KEY=your_groq_api_key
-    ```
+# Optional TURN WebRTC Relay
+TURN_URL=turn:global.relay.metered.ca:443?transport=tcp
+TURN_USERNAME=your_username
+TURN_CREDENTIAL=your_credential
+```
 
-4.  **Launch Development Server**
-    ```bash
-    npm run dev
-    ```
-    Access the application at `http://localhost:3000` (or your secure HTTPS URL).
+### 3. Local Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start local server with HTTPS support (required for camera/microphone permissions)
+npm run dev
+
+# Or HTTP mode for testing
+npm run dev:http
+```
+
+### 4. Running Tests
+
+```bash
+# Run unit tests (Vitest)
+npm run test
+
+# Run End-to-End tests (Playwright)
+npm run test:e2e
+```
 
 ---
+
+## 🔒 Vercel Deployment Guide
+
+1. Push your repository to GitHub.
+2. Import the project into **Vercel**.
+3. Under Project Settings -> **Environment Variables**, add all keys from `.env.local`.
+4. In the Vercel Integrations / Marketplace tab, optionally attach **Upstash Redis** for distributed rate limiting.
+5. Deploy!

@@ -9,11 +9,16 @@
     "tunnel:http": "cloudflared tunnel --url http://localhost:3000 || .\\cloudflared.exe tunnel --url http://localhost:3000",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.2",
     "next": "16.1.1",
     "pusher": "^5.3.4",
     "pusher-js": "^8.5.0",
@@ -22,9 +27,15 @@
     "scanic": "^1.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9.0.0",
     "eslint-config-next": "16.1.1",
-    "tailwindcss": "^4.0.0"
+    "jsdom": "^30.0.1",
+    "tailwindcss": "^4.0.0",
+    "vitest": "^4.1.10"
   }
 }

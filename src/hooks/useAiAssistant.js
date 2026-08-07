@@ -1,12 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import speechManager, { Priority } from '@/lib/speechManager';
-import { GEMINI_MODEL, captureFrameFromVideo, extractGeminiText } from '@/lib/geminiVision';
-import { ASSISTANT_PROMPT } from '@/lib/visionPrompts';
+import { captureFrameFromVideo, extractGeminiText } from '@/lib/geminiVision';
 
 export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     const [status, setStatus] = useState('idle');
     const [messages, setMessages] = useState([]);
-    
+
     const messagesRef = useRef(messages);
     const statusRef = useRef(status);
     const abortControllerRef = useRef(null);
@@ -31,9 +30,9 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                 return {
                     role: role,
                     parts: [
-                        { text: msg.content || "" },
-                        { inlineData: { mimeType: mimeType, data: base64Data } }
-                    ]
+                        { text: msg.content || '' },
+                        { inlineData: { mimeType: mimeType, data: base64Data } },
+                    ],
                 };
             } else {
                 return { role: role, parts: [{ text: msg.content }] };
@@ -80,7 +79,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
 
             const imageDataUrl = captureFrameFromVideo(videoRef.current, {
                 maxDimension: 800,
-                quality: 0.70
+                quality: 0.70,
             });
 
             if (!imageDataUrl) {
@@ -112,9 +111,9 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                     role: 'user',
                     parts: [
                         { text: userQuestion },
-                        { inlineData: { mimeType, data: base64Data } }
-                    ]
-                }
+                        { inlineData: { mimeType, data: base64Data } },
+                    ],
+                },
             ];
 
             const response = await fetch('/api/gemini', {
@@ -122,11 +121,11 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
                 headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    systemPrompt: ASSISTANT_PROMPT,
+                    mode: 'assistant',
                     contents,
                     maxTokens: 800,
-                    temperature: 0.4
-                })
+                    temperature: 0.4,
+                }),
             });
 
             if (!response.ok) {
@@ -178,8 +177,6 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
     const askTextOnly = useCallback(async (userText) => {
         if (!isReady || statusRef.current === 'thinking') return;
         if (!userText || userText.trim().length === 0) return;
-        
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -188,7 +185,7 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
         abortControllerRef.current = controller;
         const signal = controller.signal;
         const newUserMessage = { role: 'user', content: `🎤 ${userText}` };
-        
+
         setMessages(prev => [...prev, newUserMessage]);
 
         let timedOut = false;
@@ -196,26 +193,26 @@ export function useAiAssistant(videoRef, isReady, feedback, addLog) {
             timedOut = true;
             controller.abort();
         }, 35000);
-        
+
         try {
             setStatus('thinking');
             feedback?.('capture');
             addLog?.(`Text Chat: "${userText}"`);
-            
+
             const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
-            
+
             const response = await fetch('/api/gemini', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 signal,
                 body: JSON.stringify({
-                    systemPrompt: ASSISTANT_PROMPT,
+                    mode: 'assistant',
                     contents: apiMessages,
                     maxTokens: 800,
-                    temperature: 0.5
-                })
+                    temperature: 0.5,
+                }),
             });
-            
+
             if (!response.ok) {
                 if (response.status === 429) {
                     const msg = 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี กรุณารอสักครู่นะครับ';

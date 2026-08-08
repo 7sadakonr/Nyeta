@@ -2,8 +2,9 @@
  * Server-side and API route type definitions.
  */
 import { CallRecord } from '@/features/calling/types';
+import { UserRole } from '@/shared/types/user';
 
-export type UserRole = 'blind' | 'volunteer';
+export type { UserRole };
 
 export interface SessionPayload {
   userId: string;

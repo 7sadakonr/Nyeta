@@ -73,7 +73,8 @@ export default function BlindAssistScreen() {
         if (aiReady && !hasAnnouncedReadyRef.current) {
             hasAnnouncedReadyRef.current = true;
             const modeName = mode === 'currency' ? 'ดูสกุลเงิน' : mode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-            speechManager?.speak(`กล้องโหมด${modeName}พร้อมใช้งานแล้วครับ`, {
+            const instruction = mode === 'currency' ? ' วางเงินทั้งหมดในภาพ แล้วกดปุ่มถ่ายตรงกลาง ระบบจะรวมยอดให้อัตโนมัติ' : '';
+            speechManager?.speak(`กล้องโหมด${modeName}พร้อมใช้งานแล้วครับ${instruction}`, {
                 priority: Priority.HIGH,
                 owner: 'camera-ready',
                 rate: 1.1,
@@ -148,8 +149,12 @@ export default function BlindAssistScreen() {
         currencyBounds,
         totalAmount,
         scannedHistory,
+        scannedCount,
+        detailsOpen,
+        captureCurrency,
+        showCurrencyDetails,
+        closeCurrencyDetails,
         isBlocked: currencyBlocked,
-        replayCurrency,
         replayTotal,
         clearTotal
     } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
@@ -180,7 +185,8 @@ export default function BlindAssistScreen() {
             localStorage.setItem('nyeta_blind_mode', newMode);
         }
         const modeName = newMode === 'currency' ? 'ดูสกุลเงิน' : newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-        speechManager?.speak(`เปลี่ยนเป็นโหมด${modeName}`, {
+        const instruction = newMode === 'currency' ? ' วางเงินทั้งหมดในภาพ แล้วกดปุ่มถ่ายตรงกลาง ระบบจะรวมยอดให้อัตโนมัติ' : '';
+        speechManager?.speak(`เปลี่ยนเป็นโหมด${modeName}${instruction}`, {
             priority: Priority.CRITICAL,
             owner: 'mode-switch',
             rate: 1.1,
@@ -301,6 +307,23 @@ export default function BlindAssistScreen() {
                     </section>
                 )}
 
+
+                {mode === 'currency' && detailsOpen && currencyResult && (
+                    <section className="absolute inset-x-4 bottom-28 z-30 rounded-2xl bg-zinc-950 border-2 border-amber-500 p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="รายละเอียดเงินที่ตรวจพบ">
+                        <div className="flex items-center justify-between gap-4">
+                            <h2 className="text-xl font-bold text-amber-200">รายละเอียดเงิน</h2>
+                            <button type="button" onClick={closeCurrencyDetails} className="min-h-11 min-w-11 rounded-full bg-zinc-800 text-white border border-zinc-600 focus:ring-2 focus:ring-white focus:outline-none" aria-label="ปิดรายละเอียด">×</button>
+                        </div>
+                        <ul className="mt-3 space-y-2 text-base text-white">
+                            {currencyResult.items.map(item => (
+                                <li key={`${item.type}-${item.value}`}>
+                                    {item.type === 'note' ? 'ธนบัตร' : 'เหรียญ'} {item.value} บาท จำนวน {item.quantity} {item.type === 'note' ? 'ใบ' : 'เหรียญ'}{item.locations.length ? ` อยู่${item.locations.map(location => ({ top_left: 'ด้านซ้ายบน', top_center: 'ด้านบน', top_right: 'ด้านขวาบน', middle_left: 'ด้านซ้าย', center: 'กลางภาพ', middle_right: 'ด้านขวา', bottom_left: 'ด้านซ้ายล่าง', bottom_center: 'ด้านล่าง', bottom_right: 'ด้านขวาล่าง' }[location])).join(' และ ')}` : ''}
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="mt-3 text-lg font-bold text-amber-300">รวมชุดนี้ ฿{currencyResult.total.toLocaleString()}</p>
+                    </section>
+                )}
                 <ControlBar
                     mode={mode}
                     aiReady={aiReady}
@@ -314,7 +337,7 @@ export default function BlindAssistScreen() {
                     currencyScanning={currencyScanning}
                     currencyMonitoring={currencyMonitoring}
                     totalAmount={totalAmount}
-                    scannedCount={scannedHistory?.length || 0}
+                    scannedCount={scannedCount}
                     isBlocked={currencyBlocked}
                     readerAligned={readerAligned}
                     onClearChat={clearMessages}
@@ -322,7 +345,8 @@ export default function BlindAssistScreen() {
                     onStopSpeaking={stopSpeaking}
                     onStartListening={startListening}
                     onStopListening={stopListening}
-                    onReplayCurrency={replayCurrency}
+                    onCurrencyCapture={captureCurrency}
+                    onShowCurrencyDetails={showCurrencyDetails}
                     onReplayTotal={replayTotal}
                     onClearTotal={clearTotal}
                     onReadDocument={readDocument}

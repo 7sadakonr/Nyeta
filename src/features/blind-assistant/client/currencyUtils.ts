@@ -1,148 +1,140 @@
-const NOTE_VALUES = [1000, 500, 100, 50, 20];
-const COIN_VALUES = [10, 5, 2, 1];
+const NOTE_VALUES = [1000, 500, 100, 50, 20] as const;
+const COIN_VALUES = [10, 5, 2, 1] as const;
+const MAX_QUANTITY = 100;
 
-function cleanGroqText(text: string): string {
-    return text
-        .replace(/```[\s\S]*?```/g, '')
-        .replace(/\*\*/g, '')
-        .replace(/https?:\/\/\S+/g, '')
-        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .trim();
+export type CurrencyType = 'note' | 'coin';
+export type CurrencyLocation =
+    | 'top_left' | 'top_center' | 'top_right'
+    | 'middle_left' | 'center' | 'middle_right'
+    | 'bottom_left' | 'bottom_center' | 'bottom_right';
+
+export interface CurrencyLineItem {
+    type: CurrencyType;
+    value: number;
+    quantity: number;
+    locations: CurrencyLocation[];
 }
 
-function hasDigit(text: string, value: number): boolean {
-    return new RegExp(`(?:^|\\D)${value}(?:\\D|$)`).test(text);
+export interface CurrencyBatch {
+    items: CurrencyLineItem[];
+    total: number;
+    signature: string;
 }
 
-export interface ParsedCurrency {
-    type: 'note' | 'coin' | 'blocked';
-    value?: number;
-    isBlocked?: boolean;
+export type CurrencyScanResult =
+    | ({ status: 'detected' } & CurrencyBatch)
+    | { status: 'not_found' }
+    | { status: 'blocked' }
+    | { status: 'invalid' };
+
+const LOCATION_LABELS: Record<CurrencyLocation, string> = {
+    top_left: 'ด้านซ้ายบน', top_center: 'ด้านบน', top_right: 'ด้านขวาบน',
+    middle_left: 'ด้านซ้าย', center: 'กลางภาพ', middle_right: 'ด้านขวา',
+    bottom_left: 'ด้านซ้ายล่าง', bottom_center: 'ด้านล่าง', bottom_right: 'ด้านขวาล่าง',
+};
+
+function extractJson(text: string): string | null {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = (fenced?.[1] || text).trim();
+    return candidate.startsWith('{') && candidate.endsWith('}') ? candidate : null;
 }
 
-/**
- * Parse raw text response from currency model
- */
-export function parseCurrencyResult(text: string | undefined | null): ParsedCurrency | null {
-    if (!text) return null;
+function isAllowedValue(type: CurrencyType, value: number): boolean {
+    return type === 'note'
+        ? (NOTE_VALUES as readonly number[]).includes(value)
+        : (COIN_VALUES as readonly number[]).includes(value);
+}
 
-    const trimmed = cleanGroqText(text).replace(/,/g, '');
+function normalizeLocations(value: unknown): CurrencyLocation[] | null {
+    if (value === undefined) return [];
+    if (!Array.isArray(value) || value.some(location => typeof location !== 'string' || !(location in LOCATION_LABELS))) return null;
+    return [...new Set(value as CurrencyLocation[])];
+}
+
+export function createCurrencyBatch(items: CurrencyLineItem[]): CurrencyBatch | null {
+    if (items.length === 0) return null;
+    const merged = new Map<string, CurrencyLineItem>();
+    for (const item of items) {
+        if (!isAllowedValue(item.type, item.value) || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > MAX_QUANTITY) return null;
+        const key = `${item.type}-${item.value}`;
+        const existing = merged.get(key);
+        if (existing) {
+            existing.quantity += item.quantity;
+            if (existing.quantity > MAX_QUANTITY) return null;
+            existing.locations = [...new Set([...existing.locations, ...item.locations])];
+        } else {
+            merged.set(key, { ...item, locations: [...item.locations] });
+        }
+    }
+    const normalized = [...merged.values()].sort((a, b) => a.type !== b.type ? (a.type === 'note' ? -1 : 1) : b.value - a.value);
+    return {
+        items: normalized,
+        total: normalized.reduce((sum, item) => sum + item.value * item.quantity, 0),
+        signature: normalized.map(item => `${item.type}-${item.value}-${item.quantity}`).join('|'),
+    };
+}
+
+function parseJsonResult(text: string): CurrencyScanResult | null {
+    const json = extractJson(text);
+    if (!json) return null;
+    let parsed: unknown;
+    try { parsed = JSON.parse(json); } catch { return { status: 'invalid' }; }
+    if (!parsed || typeof parsed !== 'object') return { status: 'invalid' };
+    const result = parsed as Record<string, unknown>;
+    if (result.status === 'not_found') return { status: 'not_found' };
+    if (result.status === 'blocked') return { status: 'blocked' };
+    if (result.status !== 'ok' || !Array.isArray(result.items)) return { status: 'invalid' };
+    const items: CurrencyLineItem[] = [];
+    for (const rawItem of result.items) {
+        if (!rawItem || typeof rawItem !== 'object') return { status: 'invalid' };
+        const item = rawItem as Record<string, unknown>;
+        if ((item.type !== 'note' && item.type !== 'coin') || typeof item.value !== 'number' || typeof item.quantity !== 'number') return { status: 'invalid' };
+        const locations = normalizeLocations(item.locations);
+        if (!locations) return { status: 'invalid' };
+        items.push({ type: item.type, value: item.value, quantity: item.quantity, locations });
+    }
+    const batch = createCurrencyBatch(items);
+    return batch ? { status: 'detected', ...batch } : { status: 'invalid' };
+}
+
+function parseLegacyResult(text: string): CurrencyScanResult {
+    const trimmed = text.replace(/\*\*/g, '').trim();
     const lower = trimmed.toLowerCase();
-
-    // Check for camera blockage / obstruction
-    if (
-        trimmed.includes('โดนบัง') ||
-        lower.includes('blocked') ||
-        lower.includes('covered') ||
-        lower.includes('obstructed') ||
-        lower.includes('lens covered') ||
-        trimmed.includes('มืดสนิท')
-    ) {
-        return { type: 'blocked', isBlocked: true };
-    }
-
-    if (
-        trimmed.includes('ไม่พบ') ||
-        lower.includes('not found') ||
-        lower.includes('none') ||
-        lower.includes('no thai') ||
-        lower.includes('cannot see') ||
-        lower.includes("can't see")
-    ) {
-        return null;
-    }
-
-    // Reject long descriptive responses — prompt instructs the model to reply with
-    // only a number (note), "เหรียญ N" (coin), or "โดนบัง". Anything longer is likely a
-    // hallucinated paragraph and should not be parsed.
-    if (trimmed.length > 30) return null;
-
-    const coinMatch = trimmed.match(/(?:เหรียญ|coin)\s*(\d+)/i);
-    if (coinMatch) {
-        const value = parseInt(coinMatch[1], 10);
-        if (COIN_VALUES.includes(value)) return { type: 'coin', value };
-        return null;
-    }
-
-    const noteMatch = trimmed.match(/(?:ธนบัตร|banknote|note)\s*(\d+)/i);
-    if (noteMatch) {
-        const value = parseInt(noteMatch[1], 10);
-        if (NOTE_VALUES.includes(value)) return { type: 'note', value };
-        return null;
-    }
-
-    const isCoinContext = /เหรียญ|\bcoin\b/i.test(trimmed);
-
-    if (isCoinContext) {
-        for (const value of COIN_VALUES) {
-            if (hasDigit(trimmed, value)) {
-                return { type: 'coin', value };
-            }
-        }
-    }
-
-    for (const value of NOTE_VALUES) {
-        if (hasDigit(trimmed, value)) {
-            return { type: 'note', value };
-        }
-    }
-
-    for (const value of COIN_VALUES) {
-        if (hasDigit(trimmed, value)) {
-            return { type: 'coin', value };
-        }
-    }
-
-    // Only use numeric fallback when the response is a bare number with nothing else
-    const bareNumber = trimmed.match(/^\s*(\d+)\s*$/);
-    if (bareNumber) {
-        const value = parseInt(bareNumber[1], 10);
-        if (NOTE_VALUES.includes(value)) return { type: 'note', value };
-        if (COIN_VALUES.includes(value)) return { type: 'coin', value };
-    }
-
-    return null;
+    if (trimmed.includes('โดนบัง') || lower.includes('blocked') || lower.includes('covered') || lower.includes('obstructed') || trimmed.includes('มืดสนิท')) return { status: 'blocked' };
+    if (trimmed.includes('ไม่พบ') || lower.includes('not found') || lower === 'none' || lower.includes('no thai') || lower.includes('cannot see') || lower.includes("can't see")) return { status: 'not_found' };
+    if (trimmed.length > 30) return { status: 'invalid' };
+    const match = trimmed.match(/^(?:(ธนบัตร|banknote|note|เหรียญ|coin)\s*)?(\d+)$/i);
+    if (!match) return { status: 'invalid' };
+    const value = Number(match[2]);
+    const type: CurrencyType = /เหรียญ|coin/i.test(match[1] || '') || (!(NOTE_VALUES as readonly number[]).includes(value) && (COIN_VALUES as readonly number[]).includes(value)) ? 'coin' : 'note';
+    const batch = createCurrencyBatch([{ type, value, quantity: 1, locations: [] }]);
+    return batch ? { status: 'detected', ...batch } : { status: 'invalid' };
 }
 
-export function formatCurrencySpeech(result: ParsedCurrency | null, totalAmount: number | null = null): string {
+/** Parse a structured currency response, with support for legacy single-value replies. */
+export function parseCurrencyResult(text: string | undefined | null): CurrencyScanResult {
+    if (!text?.trim()) return { status: 'invalid' };
+    return parseJsonResult(text) || parseLegacyResult(text);
+}
+
+export function formatCurrencyItem(item: CurrencyLineItem, includeLocations = false): string {
+    const label = item.type === 'note' ? 'ธนบัตร' : 'เหรียญ';
+    const unit = item.type === 'note' ? 'ใบ' : 'เหรียญ';
+    const locations = includeLocations && item.locations.length > 0 ? ` อยู่${item.locations.map(location => LOCATION_LABELS[location]).join(' และ')}` : '';
+    return `${label} ${item.value} บาท ${item.quantity} ${unit}${locations}`;
+}
+
+export function formatCurrencySpeech(result: CurrencyBatch | null, totalAmount: number | null = null, includeLocations = false): string {
     if (!result) return '';
-
-    if (result.isBlocked || result.type === 'blocked') {
-        return 'กล้องโดนบัง กรุณาเปิดหน้ากล้อง';
-    }
-
-    const itemText = result.type === 'coin'
-        ? `เหรียญ ${result.value} บาท`
-        : `ธนบัตร ${result.value} บาท`;
-
-    if (typeof totalAmount === 'number' && totalAmount > 0) {
-        return `${itemText} ยอดรวมสะสม ${totalAmount} บาท`;
-    }
-
-    return itemText;
+    const batchText = `${result.items.map(item => formatCurrencyItem(item, includeLocations)).join(' และ')} รวมชุดนี้ ${result.total} บาท`;
+    return typeof totalAmount === 'number' && totalAmount > 0 ? `${batchText} ยอดรวมสะสม ${totalAmount} บาท` : batchText;
 }
 
-export function formatTotalSpeech(totalAmount: number = 0, count: number = 0): string {
-    if (!totalAmount || count === 0) {
-        return 'ยังไม่มียอดเงินสะสม';
-    }
-    return `ยอดรวมเงินสะสมทั้งหมด ${totalAmount} บาท จาก ${count} รายการ`;
-}
-
-export function formatCurrencyDisplay(result: ParsedCurrency | null, totalAmount: number | null = null): string {
+export function formatCurrencyDisplay(result: CurrencyBatch | null): string {
     if (!result) return 'ยังไม่พบเงิน';
+    return result.items.map(item => `${item.type === 'note' ? 'ธนบัตร' : 'เหรียญ'} ${item.value} × ${item.quantity}`).join(' + ');
+}
 
-    if (result.isBlocked || result.type === 'blocked') {
-        return '⚠️ กล้องโดนบัง';
-    }
-
-    const itemLabel = result.type === 'coin'
-        ? `เหรียญ ${result.value} บาท`
-        : `ธนบัตร ${result.value} บาท`;
-
-    if (typeof totalAmount === 'number' && totalAmount > 0) {
-        return `${itemLabel} (รวม ฿${totalAmount})`;
-    }
-
-    return itemLabel;
+export function formatTotalSpeech(totalAmount = 0, count = 0): string {
+    return !totalAmount || count === 0 ? 'ยังไม่มียอดเงินสะสม' : `ยอดรวมเงินสะสมทั้งหมด ${totalAmount} บาท จาก ${count} ชิ้น`;
 }

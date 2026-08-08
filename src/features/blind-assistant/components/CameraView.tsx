@@ -1,6 +1,7 @@
 import React, { RefObject } from 'react';
 import DetectionOverlay from './DetectionOverlay';
-import { formatCurrencyDisplay, formatCurrencySpeech, ParsedCurrency } from '@/features/blind-assistant/client/currencyUtils';
+import { formatCurrencyDisplay, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
+import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { BlindMode, BoundingBox, DetectedObject, QuadCorners, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 
 export interface CameraViewProps {
@@ -15,7 +16,7 @@ export interface CameraViewProps {
     mode: BlindMode;
     objectDetectorEnabled?: boolean;
     aiReady: boolean;
-    currencyResult: (ParsedCurrency & { source?: string }) | null;
+    currencyResult: CapturedCurrency | null;
     currencyScanning?: boolean;
     currencyHint?: string;
     totalAmount?: number;
@@ -157,8 +158,8 @@ export default function CameraView({
                                 {currencyResult
                                     ? formatCurrencyDisplay(currencyResult)
                                     : currencyScanning
-                                        ? 'กำลังถาม AI...'
-                                        : currencyHint || 'ชี้กล้องไปที่ธนบัตรหรือเหรียญ'}
+                                        ? 'กำลังตรวจเงิน...'
+                                        : currencyHint || 'กดปุ่มถ่ายเพื่อตรวจธนบัตรหรือเหรียญ'}
                             </p>
                             {currencyResult && (
                                 <p className="text-lg text-amber-100/80 mt-3 font-medium">

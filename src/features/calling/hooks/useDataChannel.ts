@@ -1,7 +1,5 @@
-'use client';
-
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { UserRole } from '@/server/types';
+import { UserRole } from '@/shared/types/user';
 
 const CHUNK_SIZE = 16384; // 16KB limit for DataChannel
 

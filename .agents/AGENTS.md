@@ -14,10 +14,10 @@ The codebase is organized using a **Domain-Driven / Feature-First (Vertical Slic
 
 ```text
 src/
-├── app/                  # Next.js App Router (Routes & Route Handlers only)
+├── app/                  # Next.js App Router (Thin Routes & Route Handlers only)
 │   ├── blind/page.tsx    # Thin orchestrator for blind assistant
 │   ├── volunteer/page.tsx# Thin orchestrator for volunteer screen
-│   ├── call/[id]/page.tsx# Thin orchestrator for WebRTC call screen
+│   ├── call/page.tsx     # Thin orchestrator for WebRTC call screen
 │   └── api/              # Thin route handlers delegating to src/server/
 │
 ├── features/             # Domain-specific features (Vertical slices)
@@ -26,27 +26,24 @@ src/
 │   │   ├── hooks/        # Feature business logic & custom hooks
 │   │   ├── client/       # Client-side AI / Gemini vision / OCR utilities
 │   │   ├── types/        # Assistant domain types
-│   │   └── index.ts      # Public feature exports
+│   │   └── BlindAssistScreen.tsx # Screen orchestrator
 │   │
 │   └── calling/          # WebRTC, Pusher signaling, video/audio calls, chat
 │       ├── components/   # Call UI (ImageViewer, ChatPanel, CaptureControls, etc.)
 │       ├── hooks/        # WebRTC hooks (useBlindHelp, useVolunteerHelp, useDataChannel)
 │       ├── client/       # Signaling, peer connections, session clients
-│       ├── types/        # Call domain types
+│       ├── types.ts      # Call domain types
 │       ├── BlindCallScreen.tsx
-│       ├── VolunteerScreen.tsx
-│       └── index.ts
+│       └── VolunteerScreen.tsx
 │
 ├── shared/               # Truly shared utilities, accessibility, & common UI
 │   ├── accessibility/    # Central SpeechManager, TTS, HapticFeedback, Audio earcons
-│   ├── audio/            # Audio sound cues and earcon playback
-│   ├── speech/           # SpeechManager singleton and TTS synthesis
 │   ├── hooks/            # Shared hooks (useWakeLock, useSpeechStatus)
-│   ├── ui/               # ErrorBoundary, icons, shared visual components
+│   ├── ui/               # ErrorBoundary, icons
 │   └── types/            # Shared interfaces and type definitions
 │
 └── server/               # Server-only logic (Secrets, Redis, Pusher, AI Prompts)
-    ├── ai/               # Vision prompts and server AI instructions
+    ├── ai/               # Gemini AI client, validation, types, vision prompts
     ├── auth/             # Session authentication and token signing
     ├── calls/            # Upstash Redis call session store
     ├── realtime/         # Pusher server triggers and channel auth
@@ -60,10 +57,10 @@ src/
 ## 3. Core Architectural Rules (CRITICAL)
 
 ### A. Strict Separation of Concerns & File Placement
-1. **No God Components**: Entry points in `src/app/` MUST remain thin orchestrators (typically under 100-200 lines), delegating UI and lifecycle management to feature components.
+1. **No God Components**: Entry points in `src/app/` MUST remain thin orchestrators (typically under 100 lines), delegating UI and lifecycle management to feature components.
 2. **Feature Colocation**: Code specific to a domain must live in `src/features/<feature-name>/`.
-3. **Shared Rule**: Move code to `src/shared/` ONLY when multiple independent domains genuinely use it.
-4. **Server-Only Isolation**: Anything accessing Redis (`@upstash/redis`), server Pusher instances, authentication token signing, API secrets, or server-only environment variables MUST live exclusively in `src/server/`.
+3. **Shared Rule**: Move code to `src/shared/` ONLY when multiple independent domains genuinely use it. Shared modules MUST NOT import from `features` or `server`.
+4. **Server-Only Isolation**: Anything accessing Redis (`@upstash/redis`), server Pusher instances, authentication token signing, API secrets, or server-only environment variables MUST live exclusively in `src/server/`. Client code MUST NOT import from `server`.
 
 ### B. TypeScript & Code Standards
 - Maintain strict TypeScript mode (`tsc --noEmit` must pass with 0 errors).
@@ -71,7 +68,7 @@ src/
 - Use path aliases configured in `tsconfig.json` (`@/features/...`, `@/shared/...`, `@/server/...`).
 
 ### C. Accessibility & UX Requirements
-- **Audio Feedback First**: Every interaction must provide auditory feedback via `playEarcon` (from `@/shared/audio/audio`) or `speakThai` (from `@/shared/speech/tts`).
+- **Audio Feedback First**: Every interaction must provide auditory feedback via `playEarcon` (from `@/shared/accessibility/audio`) or `speakThai` (from `@/shared/accessibility/tts`).
 - **Haptic Feedback**: Use `HapticFeedback` (`hapticRef.current?.trigger()`) to provide physical confirmation of actions.
 - **Screen Reader Compatibility**: Always include `aria-live`, `aria-label`, and `sr-only` elements for state announcements (e.g., "AI is thinking", "Camera ready").
 - **Never Rely on Visuals Alone**: Do not assume the user can see error messages on the screen. Always read them out loud or play an auditory cue.

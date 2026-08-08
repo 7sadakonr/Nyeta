@@ -2,7 +2,7 @@
 
 import PusherJS from 'pusher-js';
 import { getActiveSessionToken, getCallSession } from './sessionClient';
-import { UserRole } from '@/server/types';
+import { UserRole } from '@/shared/types/user';
 
 let pusherClient: PusherJS | MockPusher | null = null;
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 import { useBlindHelp } from '@/features/calling/hooks/useBlindHelp';
-import { useWakeLock } from '@/features/calling/hooks/useWakeLock';
+import { useWakeLock } from '@/shared/hooks/useWakeLock';
 import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';

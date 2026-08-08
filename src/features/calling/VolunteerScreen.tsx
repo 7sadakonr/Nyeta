@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useVolunteerHelp } from '@/features/calling/hooks/useVolunteerHelp';
-import { useWakeLock } from '@/features/calling/hooks/useWakeLock';
+import { useWakeLock } from '@/shared/hooks/useWakeLock';
 import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { playBeep } from '@/shared/accessibility/audio';
 import ChatPanel, { ChatMessage } from '@/features/calling/components/ChatPanel';

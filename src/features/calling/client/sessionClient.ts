@@ -1,4 +1,4 @@
-import { UserRole } from '@/server/types';
+import { UserRole } from '@/shared/types/user';
 
 export interface CallSession {
     token: string;

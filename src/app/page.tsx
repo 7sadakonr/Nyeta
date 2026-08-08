@@ -3,7 +3,7 @@
 import { useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import HapticFeedback, { HapticFeedbackHandle } from '@/shared/ui/HapticFeedback';
+import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
 

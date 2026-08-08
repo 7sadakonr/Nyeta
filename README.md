@@ -8,7 +8,7 @@ A graduation project combining accessible interfaces, human volunteer assistance
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-8B5CF6?style=for-the-badge&logo=vercel&logoColor=white)](https://nyeta.vercel.app)
 [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript_5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Gemini](https://img.shields.io/badge/Gemini_3.1_Flash_Lite-4285F4?style=for-the-badge&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
 
 </div>
@@ -32,30 +32,42 @@ The project is structured around **Domain-Driven Feature Slices** for high maint
 
 ```text
 src/
-├── app/                  # Next.js App Router (Routes & Route Handlers)
-│   ├── blind/            # Blind assistant screen
-│   ├── volunteer/        # Volunteer dashboard
-│   ├── call/             # WebRTC call room
-│   └── api/              # Thin API handlers calling server modules
+├── app/                  # Next.js App Router (Thin Routes & Route Handlers)
+│   ├── blind/            # Thin orchestrator for blind assistant
+│   ├── volunteer/        # Thin orchestrator for volunteer screen
+│   ├── call/             # Thin orchestrator for WebRTC call screen
+│   └── api/              # Thin API route handlers delegating to src/server/
 │
 ├── features/             # Domain features (Vertical Slices)
 │   ├── blind-assistant/  # AI vision, OCR reader, currency scanner, speech input
+│   │   ├── components/   # UI components (CameraView, ControlBar, etc.)
+│   │   ├── hooks/        # Assistant business logic hooks
+│   │   ├── client/       # Client-side AI / Gemini vision / OCR utilities
+│   │   ├── types/        # Assistant domain types
+│   │   └── BlindAssistScreen.tsx # Screen orchestrator
+│   │
 │   └── calling/          # WebRTC calls, Pusher signaling, video streaming, chat
+│       ├── components/   # Call UI (ImageViewer, ChatPanel, CaptureControls, etc.)
+│       ├── hooks/        # WebRTC hooks (useBlindHelp, useVolunteerHelp, useDataChannel)
+│       ├── client/       # Signaling, peer connections, session clients
+│       ├── types.ts      # Call domain types
+│       ├── BlindCallScreen.tsx
+│       └── VolunteerScreen.tsx
 │
 ├── shared/               # Cross-cutting utilities, accessibility, & common UI
 │   ├── accessibility/    # Central SpeechManager, TTS, HapticFeedback, Audio earcons
-│   ├── audio/            # Audio cues & earcons
-│   ├── speech/           # Central speech singleton
 │   ├── hooks/            # Shared custom hooks (useWakeLock, useSpeechStatus)
-│   └── ui/               # ErrorBoundary, icons, shared visual components
+│   ├── ui/               # ErrorBoundary, icons
+│   └── types/            # Shared interfaces & type definitions
 │
 └── server/               # Server-only logic (Secrets, Redis, Pusher, AI Prompts)
-    ├── ai/               # Vision prompts and server AI instructions
+    ├── ai/               # Gemini AI client, validation, types, vision prompts
     ├── auth/             # Session authentication and token signing
     ├── calls/            # Upstash Redis call session store
     ├── realtime/         # Pusher server triggers and channel auth
     ├── security/         # Rate limiting and request validation
-    └── webrtc/           # ICE/TURN server configuration
+    ├── webrtc/           # ICE/TURN server configuration
+    └── types.ts          # Server-specific types
 ```
 
 ---
@@ -162,7 +174,7 @@ sequenceDiagram
 |---|---|---|
 | **Framework** | Next.js 16.1.1 | App Router, pages, and server API routes |
 | **UI Runtime** | React 19 | Components, state, refs, and custom hooks |
-| **Language** | TypeScript 5 | Full strict-mode typing across frontend and backend |
+| **Language** | TypeScript | Full strict-mode typing across frontend and backend |
 | **Styling** | Tailwind CSS 4 | Responsive and accessible UI |
 | **Generative AI** | Google Gemini API (`gemini-3.1-flash-lite`) | Scene understanding, currency recognition, document OCR |
 | **Real-Time Signaling** | Pusher 5.3.4 and Pusher JS 8.5 | Presence, call events, SDP, and ICE signaling |

@@ -1,10 +1,10 @@
-import BlindHelpCall from '@/components/BlindHelpCall';
-import ErrorBoundary from '@/components/ErrorBoundary';
+import BlindCallScreen from '@/features/calling/BlindCallScreen';
+import ErrorBoundary from '@/shared/ui/ErrorBoundary';
 
 export default function CallPage() {
     return (
         <ErrorBoundary>
-            <BlindHelpCall />
+            <BlindCallScreen />
         </ErrorBoundary>
     );
 }

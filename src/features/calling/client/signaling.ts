@@ -1,0 +1,49 @@
+import { getPusherClient } from './pusherClient';
+import { getActiveSessionToken } from './sessionClient';
+import type { Channel } from 'pusher-js';
+
+/**
+ * Relay a signaling event through the serverless trigger route with authorization token.
+ */
+export async function sendEvent(
+    channel: string,
+    event: string,
+    data: unknown,
+    token: string | null = null
+): Promise<boolean> {
+    const activeToken = token || getActiveSessionToken();
+    try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (activeToken) {
+            headers['Authorization'] = `Bearer ${activeToken}`;
+        }
+        const res = await fetch('/api/pusher/trigger', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ channel, event, data, token: activeToken }),
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            console.error('sendEvent failed', res.status, errorData);
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error('sendEvent error', err);
+        return false;
+    }
+}
+
+/** Subscribe to a channel (reusing an existing subscription if present). */
+export function subscribe(channelName: string): Channel | null {
+    const pusher = getPusherClient();
+    if (!pusher) return null;
+    return pusher.channel(channelName) || pusher.subscribe(channelName);
+}
+
+/** Leave a channel. */
+export function unsubscribe(channelName: string): void {
+    const pusher = getPusherClient();
+    if (!pusher) return;
+    pusher.unsubscribe(channelName);
+}

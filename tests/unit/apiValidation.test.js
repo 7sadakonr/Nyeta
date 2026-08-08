@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { getSystemPromptForMode, ASSISTANT_PROMPT, CURRENCY_PROMPT, OCR_PROMPT } from '@/lib/server/visionPrompts';
-import { checkRateLimit } from '@/lib/server/rateLimit';
+import { getSystemPromptForMode, ASSISTANT_PROMPT, CURRENCY_PROMPT, OCR_PROMPT } from '@/server/ai/visionPrompts';
+import { checkRateLimit } from '@/server/security/rateLimit';
 import { validateAndSanitizeContents } from '@/app/api/gemini/route';
 
 describe('Server Vision Prompts Mapping', () => {

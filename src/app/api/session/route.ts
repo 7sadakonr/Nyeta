@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { generateSessionToken, verifySessionToken, SessionRole } from '@/lib/server/sessionAuth';
-import { createCallState } from '@/lib/server/callStore';
-import { checkRateLimit } from '@/lib/server/rateLimit';
+import { generateSessionToken, verifySessionToken, SessionRole } from '@/server/auth/sessionAuth';
+import { createCallState } from '@/server/calls/callStore';
+import { checkRateLimit } from '@/server/security/rateLimit';
 
 export async function POST(req: NextRequest) {
     try {

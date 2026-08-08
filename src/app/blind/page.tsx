@@ -1,27 +1,27 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import HapticFeedback, { HapticFeedbackHandle } from '@/components/HapticFeedback';
+import HapticFeedback, { HapticFeedbackHandle } from '@/shared/components/HapticFeedback';
+import ErrorBoundary from '@/shared/components/ErrorBoundary';
 
 // Custom Hooks
-import { useCamera } from '@/hooks/useCamera';
-import { useFeedback } from '@/hooks/useFeedback';
-import { useSpeechInput } from '@/hooks/useSpeechInput';
-import { useObjectDetector } from '@/hooks/useObjectDetector';
-import { useAiAssistant } from '@/hooks/useAiAssistant';
-import { useCurrencyScanner } from '@/hooks/useCurrencyScanner';
-import { useDocumentReader } from '@/hooks/useDocumentReader';
-import { useSpeechSpeaking } from '@/hooks/useSpeechStatus';
-import speechManager, { Priority } from '@/lib/speechManager';
-import { AssistantMode } from '@/types/assistant';
+import { useCamera } from '@/features/blind-assistant/hooks/useCamera';
+import { useFeedback } from '@/features/blind-assistant/hooks/useFeedback';
+import { useSpeechInput } from '@/features/blind-assistant/hooks/useSpeechInput';
+import { useObjectDetector } from '@/features/blind-assistant/hooks/useObjectDetector';
+import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
+import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrencyScanner';
+import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
+import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
+import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 
 // UI Components
-import TopNavBar from '@/components/blind/TopNavBar';
-import CameraView from '@/components/blind/CameraView';
-import ModeSwitcher from '@/components/blind/ModeSwitcher';
-import ChatHistory from '@/components/blind/ChatHistory';
-import ControlBar from '@/components/blind/ControlBar';
-import ErrorBoundary from '@/components/ErrorBoundary';
+import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
+import CameraView from '@/features/blind-assistant/components/CameraView';
+import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
+import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
+import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
 export default function BlindAssistPage() {
     // Mode State

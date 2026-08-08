@@ -5,7 +5,7 @@ import {
     claimCallState,
     updateCallStatus,
     _resetMemoryCallStoreForTesting,
-} from '@/lib/server/callStore';
+} from '@/server/calls/callStore';
 
 describe('Server-Side Call State Store', () => {
     beforeEach(() => {

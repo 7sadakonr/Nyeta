@@ -1,38 +1,82 @@
 # Nyeta Project Architecture & Coding Guidelines
 
 ## 1. Project Overview
-This is a Next.js (App Router) project designed specifically to assist visually impaired users and provide a platform for volunteers to help them.
-- **`src/app/blind`**: The core AI assistant interface for the blind.
-- **`src/app/volunteer`**: The dashboard for volunteers to receive calls and assist.
-- **`src/app/call`**: The WebRTC call room bridging blind users and volunteers.
+Nyeta is a Next.js (App Router) + React 19 + TypeScript application designed specifically to assist visually impaired users and provide a platform for volunteers to assist them in real-time.
+- **`src/app/blind`**: Core AI vision and assistant interface for blind users.
+- **`src/app/volunteer`**: Dashboard for volunteers to receive and manage incoming assistance calls.
+- **`src/app/call`**: WebRTC call room bridging blind users and volunteers with live video, audio, and chat.
 
-## 2. Core Architectural Rules (CRITICAL)
-If you are tasked to add features or modify code in this project, you MUST adhere to the following rules to prevent the codebase from devolving into an unreadable "God Component" spaghetti:
+---
 
-### A. Strict Separation of Concerns
-1. **No God Components**: `src/app/blind/page.js` (and similar entry points) MUST remain as an "Orchestrator" only. It should only glue together state, hooks, and UI components. It should ideally not exceed 200-300 lines.
-2. **Business Logic lives in Custom Hooks**: Any complex logic (WebRTC signaling, Camera access, AI calling, Audio synthesis, looping mechanics) MUST be extracted into `src/hooks/`.
-   - Examples: `useCamera.js`, `useAiAssistant.js`, `useCurrencyScanner.js`, `useSpeechInput.js`.
-3. **UI Elements live in Components**: Visual and interactive elements MUST be extracted to `src/components/` or a sub-folder like `src/components/blind/`.
-   - Examples: `CameraView.js`, `TopNavBar.js`, `ModeSwitcher.js`, `ControlBar.js`.
-4. **Shared Utilities live in Lib**: Pure functions, constants, and API wrappers MUST go to `src/lib/`.
-   - Examples: `audio.js` (Earcons), `tts.js` (Text-to-Speech), `groqVision.js`.
+## 2. Architectural Design: Feature-First Structure
 
-### B. Accessibility & UX Requirements
-- **Audio Feedback First**: Every interaction must provide auditory feedback via `playEarcon` (from `@/lib/audio`) or `speakThai` (from `@/lib/tts`).
-- **Haptic Feedback**: Use the `HapticFeedback` component (`hapticRef.current?.trigger()`) to provide physical confirmation of actions.
+The codebase is organized using a **Domain-Driven / Feature-First (Vertical Slice)** architecture:
+
+```text
+src/
+├── app/                  # Next.js App Router (Routes & Route Handlers only)
+│   ├── blind/page.tsx    # Thin orchestrator for blind assistant
+│   ├── volunteer/page.tsx# Thin orchestrator for volunteer screen
+│   ├── call/[id]/page.tsx# Thin orchestrator for WebRTC call screen
+│   └── api/              # Thin route handlers delegating to src/server/
+│
+├── features/             # Domain-specific features (Vertical slices)
+│   ├── blind-assistant/  # AI vision, OCR reader, currency scanner, speech input
+│   │   ├── components/   # Feature-specific UI components
+│   │   ├── hooks/        # Feature business logic & custom hooks
+│   │   ├── client/       # Client-side AI / Gemini vision / OCR utilities
+│   │   ├── types/        # Assistant domain types
+│   │   └── index.ts      # Public feature exports
+│   │
+│   └── calling/          # WebRTC, Pusher signaling, video/audio calls, chat
+│       ├── components/   # Call UI (ImageViewer, ChatPanel, CaptureControls, etc.)
+│       ├── hooks/        # WebRTC hooks (useBlindHelp, useVolunteerHelp, useDataChannel)
+│       ├── client/       # Signaling, peer connections, session clients
+│       ├── types/        # Call domain types
+│       ├── BlindCallScreen.tsx
+│       ├── VolunteerScreen.tsx
+│       └── index.ts
+│
+├── shared/               # Truly shared utilities, accessibility, & common UI
+│   ├── accessibility/    # Central SpeechManager, TTS, HapticFeedback, Audio earcons
+│   ├── audio/            # Audio sound cues and earcon playback
+│   ├── speech/           # SpeechManager singleton and TTS synthesis
+│   ├── hooks/            # Shared hooks (useWakeLock, useSpeechStatus)
+│   ├── ui/               # ErrorBoundary, icons, shared visual components
+│   └── types/            # Shared interfaces and type definitions
+│
+└── server/               # Server-only logic (Secrets, Redis, Pusher, AI Prompts)
+    ├── ai/               # Vision prompts and server AI instructions
+    ├── auth/             # Session authentication and token signing
+    ├── calls/            # Upstash Redis call session store
+    ├── realtime/         # Pusher server triggers and channel auth
+    ├── security/         # Rate limiting and request validation
+    ├── webrtc/           # ICE/TURN server configuration
+    └── types.ts          # Server-specific types
+```
+
+---
+
+## 3. Core Architectural Rules (CRITICAL)
+
+### A. Strict Separation of Concerns & File Placement
+1. **No God Components**: Entry points in `src/app/` MUST remain thin orchestrators (typically under 100-200 lines), delegating UI and lifecycle management to feature components.
+2. **Feature Colocation**: Code specific to a domain must live in `src/features/<feature-name>/`.
+3. **Shared Rule**: Move code to `src/shared/` ONLY when multiple independent domains genuinely use it.
+4. **Server-Only Isolation**: Anything accessing Redis (`@upstash/redis`), server Pusher instances, authentication token signing, API secrets, or server-only environment variables MUST live exclusively in `src/server/`.
+
+### B. TypeScript & Code Standards
+- Maintain strict TypeScript mode (`tsc --noEmit` must pass with 0 errors).
+- Prefer explicit types for functions, hook returns, and component props.
+- Use path aliases configured in `tsconfig.json` (`@/features/...`, `@/shared/...`, `@/server/...`).
+
+### C. Accessibility & UX Requirements
+- **Audio Feedback First**: Every interaction must provide auditory feedback via `playEarcon` (from `@/shared/audio/audio`) or `speakThai` (from `@/shared/speech/tts`).
+- **Haptic Feedback**: Use `HapticFeedback` (`hapticRef.current?.trigger()`) to provide physical confirmation of actions.
 - **Screen Reader Compatibility**: Always include `aria-live`, `aria-label`, and `sr-only` elements for state announcements (e.g., "AI is thinking", "Camera ready").
-- **Do NOT rely on visual only**: Do not assume the user can see error messages on the screen. Read them out loud or play an error sound.
+- **Never Rely on Visuals Alone**: Do not assume the user can see error messages on the screen. Always read them out loud or play an auditory cue.
 
-### C. Styling & UI
+### D. Styling & UI
 - Use Tailwind CSS.
-- Large touch targets for interactive elements (minimum 44x44px, preferably much larger for blind users).
-- High contrast colors (e.g., black background, vibrant borders/text).
-
-## 3. Modification Workflow
-Before making any changes to main pages like `blind/page.js` or `volunteer/page.js`:
-1. Check if the logic can be added to an existing hook or requires a new hook.
-2. Check if the UI addition requires a new component in `src/components/`.
-3. Avoid inline styles or inline complex functions inside the `render` return block.
-
-By following these rules, the codebase will remain clean, modular, and easily maintainable for all future AI agents and human developers.
+- Large touch targets for interactive elements (minimum 44x44px, preferably larger for blind users).
+- High contrast colors (e.g., black background `#000000`, vibrant borders and text).

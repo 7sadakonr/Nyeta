@@ -6,7 +6,7 @@ import {
     validateEventPermission,
     validateRoleEventPermission,
     ALLOWED_CHANNELS,
-} from '@/lib/server/sessionAuth';
+} from '@/server/auth/sessionAuth';
 
 describe('Server Session Authentication & Channel Authorization', () => {
     it('should generate and verify a valid session token for blind user', () => {

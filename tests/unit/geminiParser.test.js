@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractGeminiText } from '@/lib/geminiVision';
+import { extractGeminiText } from '@/features/blind-assistant/client/geminiVision';
 
 describe('Gemini Response Parser (extractGeminiText)', () => {
     it('should extract text while discarding thinking/reasoning parts', () => {

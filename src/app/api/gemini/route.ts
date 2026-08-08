@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSystemPromptForMode, VALID_MODES } from '@/lib/server/visionPrompts';
-import { checkRateLimit } from '@/lib/server/rateLimit';
+import { getSystemPromptForMode, VALID_MODES } from '@/server/ai/visionPrompts';
+import { checkRateLimit } from '@/server/security/rateLimit';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
 export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];

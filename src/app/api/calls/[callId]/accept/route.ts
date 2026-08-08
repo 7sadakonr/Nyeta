@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifySessionToken, generateSessionToken, CALL_TOKEN_TTL_MS } from '@/lib/server/sessionAuth';
-import { checkRateLimit } from '@/lib/server/rateLimit';
-import { claimCallState } from '@/lib/server/callStore';
+import { verifySessionToken, generateSessionToken, CALL_TOKEN_TTL_MS } from '@/server/auth/sessionAuth';
+import { checkRateLimit } from '@/server/security/rateLimit';
+import { claimCallState } from '@/server/calls/callStore';
 
 export async function POST(
     req: NextRequest,

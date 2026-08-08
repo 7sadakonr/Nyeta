@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { POST as createCallRoute } from '@/app/api/calls/route';
 import { POST as acceptCallRoute } from '@/app/api/calls/[callId]/accept/route';
-import { generateSessionToken, verifySessionToken } from '@/lib/server/sessionAuth';
-import { _resetMemoryCallStoreForTesting } from '@/lib/server/callStore';
-import { _resetMemoryRateLimitForTesting } from '@/lib/server/rateLimit';
+import { generateSessionToken, verifySessionToken } from '@/server/auth/sessionAuth';
+import { _resetMemoryCallStoreForTesting } from '@/server/calls/callStore';
+import { _resetMemoryRateLimitForTesting } from '@/server/security/rateLimit';
 
 function createMockRequest(url, { method = 'POST', headers = {}, body = null } = {}) {
     return new Request(url, {

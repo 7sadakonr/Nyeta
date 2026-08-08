@@ -8,6 +8,7 @@ A graduation project combining accessible interfaces, human volunteer assistance
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-8B5CF6?style=for-the-badge&logo=vercel&logoColor=white)](https://nyeta.vercel.app)
 [![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript_5-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Gemini](https://img.shields.io/badge/Gemini_3.1_Flash_Lite-4285F4?style=for-the-badge&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
 
 </div>
@@ -25,11 +26,45 @@ The interface is designed for eyes-free operation with spoken feedback, voice in
 
 ---
 
+## 🏛 Feature-First Architecture
+
+The project is structured around **Domain-Driven Feature Slices** for high maintainability:
+
+```text
+src/
+├── app/                  # Next.js App Router (Routes & Route Handlers)
+│   ├── blind/            # Blind assistant screen
+│   ├── volunteer/        # Volunteer dashboard
+│   ├── call/             # WebRTC call room
+│   └── api/              # Thin API handlers calling server modules
+│
+├── features/             # Domain features (Vertical Slices)
+│   ├── blind-assistant/  # AI vision, OCR reader, currency scanner, speech input
+│   └── calling/          # WebRTC calls, Pusher signaling, video streaming, chat
+│
+├── shared/               # Cross-cutting utilities, accessibility, & common UI
+│   ├── accessibility/    # Central SpeechManager, TTS, HapticFeedback, Audio earcons
+│   ├── audio/            # Audio cues & earcons
+│   ├── speech/           # Central speech singleton
+│   ├── hooks/            # Shared custom hooks (useWakeLock, useSpeechStatus)
+│   └── ui/               # ErrorBoundary, icons, shared visual components
+│
+└── server/               # Server-only logic (Secrets, Redis, Pusher, AI Prompts)
+    ├── ai/               # Vision prompts and server AI instructions
+    ├── auth/             # Session authentication and token signing
+    ├── calls/            # Upstash Redis call session store
+    ├── realtime/         # Pusher server triggers and channel auth
+    ├── security/         # Rate limiting and request validation
+    └── webrtc/           # ICE/TURN server configuration
+```
+
+---
+
 ## 🏗 Serverless Architecture & Security Model
 
 Nyeta is engineered to deploy entirely on **Vercel** with zero standalone servers (no VPS, Express, or Railway dependencies):
 
-- **Frontend & App Router**: Next.js 16 + React 19 + Tailwind CSS 4.
+- **Frontend & App Router**: Next.js 16 + React 19 + TypeScript + Tailwind CSS 4.
 - **AI Vision (Server-Side Only)**: Next.js Route Handler (`/api/gemini`) manages Google Gemini AI Vision calls securely. Client applications never hold Gemini API keys and request assistance via predefined mode aliases (`assistant`, `currency`, `reader`).
 - **Realtime Signaling**: Managed WebSockets via **Pusher** for presence, incoming calls, and WebRTC SDP/ICE exchange.
 - **Server-Authoritative Call Lifecycle & Redis State**:
@@ -127,7 +162,7 @@ sequenceDiagram
 |---|---|---|
 | **Framework** | Next.js 16.1.1 | App Router, pages, and server API routes |
 | **UI Runtime** | React 19 | Components, state, refs, and custom hooks |
-| **Language** | JavaScript | Client and server application logic |
+| **Language** | TypeScript 5 | Full strict-mode typing across frontend and backend |
 | **Styling** | Tailwind CSS 4 | Responsive and accessible UI |
 | **Generative AI** | Google Gemini API (`gemini-3.1-flash-lite`) | Scene understanding, currency recognition, document OCR |
 | **Real-Time Signaling** | Pusher 5.3.4 and Pusher JS 8.5 | Presence, call events, SDP, and ICE signaling |
@@ -185,9 +220,12 @@ npm run dev
 npm run dev:http
 ```
 
-### 4. Running Tests
+### 4. Running Verification & Tests
 
 ```bash
+# Run TypeScript typecheck
+npm run typecheck
+
 # Run unit tests (Vitest)
 npm run test
 

@@ -4,7 +4,7 @@ import {
     formatCurrencySpeech,
     formatTotalSpeech,
     formatCurrencyDisplay,
-} from '@/lib/currencyUtils';
+} from '@/features/blind-assistant/client/currencyUtils';
 
 describe('Currency Utilities', () => {
     describe('parseCurrencyResult', () => {

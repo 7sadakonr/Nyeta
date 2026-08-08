@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { pusherServer } from '@/lib/pusher-server';
-import { verifySessionToken, validateChannelPermission } from '@/lib/server/sessionAuth';
+import { pusherServer } from '@/server/realtime/pusherServer';
+import { verifySessionToken, validateChannelPermission } from '@/server/auth/sessionAuth';
 
 export async function POST(request: NextRequest) {
     try {

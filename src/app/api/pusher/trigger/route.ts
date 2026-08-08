@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pusherServer } from '@/lib/pusher-server';
+import { pusherServer } from '@/server/realtime/pusherServer';
 import {
     verifySessionToken,
     validateRoleEventPermission,
-} from '@/lib/server/sessionAuth';
-import { checkRateLimit } from '@/lib/server/rateLimit';
-
-import { updateCallStatus } from '@/lib/server/callStore';
+} from '@/server/auth/sessionAuth';
+import { checkRateLimit } from '@/server/security/rateLimit';
+import { updateCallStatus } from '@/server/calls/callStore';
 
 export async function POST(request: NextRequest) {
     try {

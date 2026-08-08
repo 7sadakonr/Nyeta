@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { checkRateLimit, VALID_LIMITER_TYPES, _resetMemoryRateLimitForTesting } from '@/lib/server/rateLimit';
+import { checkRateLimit, VALID_LIMITER_TYPES, _resetMemoryRateLimitForTesting } from '@/server/security/rateLimit';
 
 describe('Rate Limiter Policies & Enforcement', () => {
     beforeEach(() => {

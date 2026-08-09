@@ -102,8 +102,6 @@ export default function CameraView({
                         : guidanceText.includes('ไม่เจอ')
                             ? 'bg-zinc-800/80 border-zinc-600'
                             : 'bg-amber-500/80 border-amber-300'}`}
-                    role="status"
-                    aria-live="assertive"
                 >
                     <p className="text-xl font-bold text-white drop-shadow-lg">
                         {guidanceText}
@@ -123,8 +121,6 @@ export default function CameraView({
                         : readerGuidance.includes('ยังไม่เจอ')
                             ? 'bg-zinc-800/80 border-zinc-600'
                             : 'bg-violet-500/80 border-violet-300'}`}
-                    role="status"
-                    aria-live="assertive"
                 >
                     <p className="text-xl font-bold text-white drop-shadow-lg">
                         {readerGuidance}
@@ -136,8 +132,6 @@ export default function CameraView({
             {mode === 'currency' && (
                 <div
                     className={`absolute inset-0 flex flex-col items-center justify-center p-6 z-20 pointer-events-none ${isBlocked ? 'bg-red-950/60' : currencyResult ? 'bg-amber-500/10' : ''}`}
-                    role="status"
-                    aria-live="assertive"
                 >
                     {isBlocked ? (
                         <div className="text-center p-6 rounded-3xl bg-red-900/80 border-4 border-red-500 animate-pulse shadow-2xl">

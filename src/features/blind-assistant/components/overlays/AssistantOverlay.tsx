@@ -16,11 +16,12 @@ function getCocoColor(className: string): string {
 
 export interface AssistantOverlayProps {
     cocoBoxes: DetectedObject[];
+    targetObject?: DetectedObject | null;
     video: HTMLVideoElement | null;
     container: HTMLElement | null;
 }
 
-export default function AssistantOverlay({ cocoBoxes, video, container }: AssistantOverlayProps) {
+export default function AssistantOverlay({ cocoBoxes, targetObject = null, video, container }: AssistantOverlayProps) {
     if (!cocoBoxes || cocoBoxes.length === 0 || !video || !container) return null;
 
     return (
@@ -28,7 +29,7 @@ export default function AssistantOverlay({ cocoBoxes, video, container }: Assist
             {cocoBoxes.map((box, i) => {
                 const style = mapBboxToOverlay(box.bbox, video, container);
                 if (!style) return null;
-                const isPrimary = i === 0;
+                const isPrimary = box === targetObject;
                 return (
                     <OverlayBox
                         key={`coco-${box.class}-${i}`}

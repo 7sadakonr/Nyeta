@@ -13,7 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { AssistantMode, DetectedObject } from '@/features/blind-assistant/types/assistant';
+import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 
 // UI Components
@@ -22,25 +22,6 @@ import CameraView from '@/features/blind-assistant/components/CameraView';
 import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
-
-function getLockedObjectGuidance(object: DetectedObject, videoWidth: number, videoHeight: number) {
-    const [x, y, width, height] = object.bbox;
-    const diffX = x + width / 2 - videoWidth / 2;
-    const diffY = y + height / 2 - videoHeight / 2;
-    const toleranceX = videoWidth * 0.2;
-    const toleranceY = videoHeight * 0.2;
-
-    if (Math.abs(diffX) < toleranceX && Math.abs(diffY) < toleranceY) {
-        return { direction: 'center', message: 'อยู่ตรงกลางแล้ว พร้อมถ่าย' };
-    }
-
-    const directions: string[] = [];
-    if (diffX < -toleranceX) directions.push('ไปทางซ้าย');
-    if (diffX > toleranceX) directions.push('ไปทางขวา');
-    if (diffY < -toleranceY) directions.push('ขึ้นบน');
-    if (diffY > toleranceY) directions.push('ลงล่าง');
-    return { direction: directions.join('-'), message: `เลื่อนกล้อง${directions.join(' และ ')}` };
-}
 
 export default function BlindAssistScreen() {
     // Mode State
@@ -58,10 +39,6 @@ export default function BlindAssistScreen() {
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
-    const lastAnnouncedObjectClassRef = useRef<string | null>(null);
-    const lastAnnouncedGuidanceKeyRef = useRef<string | null>(null);
-    const lockedObjectClassRef = useRef<string | null>(null);
-    const lockedObjectMissingSinceRef = useRef<number | null>(null);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -118,70 +95,80 @@ export default function BlindAssistScreen() {
     }, [cameraError]);
 
     // 2. Feature Hooks
-    // A. Object Detector (always active in assistant mode)
+    // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
     const {
         detections: cocoBoxes,
         guidance: objGuidance,
-        speakGuidance: speakObjGuidance,
-        centerObject
+        targetObject,
+        targetPhase,
+        targetingEvent,
     } = useObjectDetector(videoRef, mode === 'assistant');
 
     const guidanceText = objGuidance?.message || '';
-    const detectedObjects = centerObject ? `เจอ ${getObjectLabel(centerObject.class)}` : '';
-    const guidanceDirection = objGuidance?.direction || '';
-    const lockedObject = lockedObjectClassRef.current
-        ? cocoBoxes.find(item => item.class === lockedObjectClassRef.current) ?? null
-        : centerObject;
-    const lockedGuidance = lockedObject
-        ? getLockedObjectGuidance(lockedObject, videoRef.current?.videoWidth || 1, videoRef.current?.videoHeight || 1)
-        : null;
+    const detectedObjects = targetObject
+        ? targetPhase === 'locked' ? `เจอ ${getObjectLabel(targetObject.class)}` : 'พบวัตถุ'
+        : '';
+    const lastHapticEventIdRef = useRef(0);
+    const lastSpeechAttemptAtRef = useRef(0);
+    const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string } | null>(null);
 
     useEffect(() => {
-        if (mode !== 'assistant') {
-            lockedObjectClassRef.current = null;
-            lockedObjectMissingSinceRef.current = null;
+        if (mode !== 'assistant' || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
+        lastHapticEventIdRef.current = targetingEvent.id;
+
+        if (targetingEvent.type === 'unlocked' || targetingEvent.type === 'candidate-reset') {
+            pendingObjectAnnouncementRef.current = null;
+            if (targetingEvent.type === 'unlocked') speechManager?.stopByOwner('object-detector');
             return;
         }
-        const lockedClass = lockedObjectClassRef.current;
-        if (!lockedClass && centerObject) {
-            lockedObjectClassRef.current = centerObject.class;
-            lockedObjectMissingSinceRef.current = null;
-            return;
+
+        const target = targetingEvent.target;
+        const eventGuidance = targetingEvent.guidance;
+        if (!target || !eventGuidance) return;
+
+        const label = getObjectLabel(target.class);
+        const text = targetingEvent.type === 'candidate-guidance'
+            ? eventGuidance.message
+            : targetingEvent.type === 'locked'
+                ? `ล็อก${label}แล้ว ${eventGuidance.message}`
+                : targetingEvent.type === 'centered' || eventGuidance.direction === 'center'
+                    ? eventGuidance.message
+                    : `${label} ${eventGuidance.message}`;
+        pendingObjectAnnouncementRef.current = { eventId: targetingEvent.id, text };
+
+        if (targetingEvent.type === 'centered' || (targetingEvent.type === 'locked' && eventGuidance.direction === 'center')) {
+            hapticRef.current?.trigger(2);
+        } else if (targetingEvent.type === 'locked') {
+            hapticRef.current?.trigger(1);
         }
-        if (lockedClass && !cocoBoxes.some(item => item.class === lockedClass)) {
-            lockedObjectMissingSinceRef.current ??= Date.now();
-            if (Date.now() - lockedObjectMissingSinceRef.current >= 1000) {
-                lockedObjectClassRef.current = null;
-                lockedObjectMissingSinceRef.current = null;
-                lastAnnouncedObjectClassRef.current = null;
-                lastAnnouncedGuidanceKeyRef.current = null;
-            }
-        } else {
-            lockedObjectMissingSinceRef.current = null;
-        }
-    }, [centerObject, cocoBoxes, mode]);
+    }, [mode, targetingEvent]);
+
     useEffect(() => {
-        if (mode !== 'assistant') {
-            lastAnnouncedObjectClassRef.current = null;
-            lastAnnouncedGuidanceKeyRef.current = null;
+        if (mode !== 'assistant' || (targetPhase !== 'locked' && targetPhase !== 'candidate')) {
+            pendingObjectAnnouncementRef.current = null;
             return;
         }
 
-        if (!lockedObject || !lockedGuidance) return;
+        const pending = pendingObjectAnnouncementRef.current;
+        if (!pending) return;
+        const now = Date.now();
+        if (now - lastSpeechAttemptAtRef.current < 2000) return;
+        lastSpeechAttemptAtRef.current = now;
 
-        const guidanceKey = `${lockedObject.class}:${lockedGuidance.direction}`;
-        if (lastAnnouncedGuidanceKeyRef.current === guidanceKey) return;
-
-        const objectChanged = lastAnnouncedObjectClassRef.current !== lockedObject.class;
-        const didSpeak = speakObjGuidance(objectChanged
-            ? `เจอ ${getObjectLabel(lockedObject.class)} ${lockedGuidance.message}`
-            : lockedGuidance.message);
-
-        if (didSpeak) {
-            lastAnnouncedObjectClassRef.current = lockedObject.class;
-            lastAnnouncedGuidanceKeyRef.current = guidanceKey;
+        const didSpeak = speechManager?.speak(pending.text, {
+            priority: Priority.LOW,
+            owner: 'object-detector',
+            rate: 1.2,
+        }) ?? false;
+        if (didSpeak && pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
+            pendingObjectAnnouncementRef.current = null;
         }
-    }, [lockedGuidance, lockedObject, mode, speakObjGuidance]);
+    }, [mode, targetPhase, targetingEvent, objGuidance]);
+
+    useEffect(() => () => {
+        pendingObjectAnnouncementRef.current = null;
+        speechManager?.stopByOwner('object-detector');
+    }, []);
     // B. AI Assistant
     const {
         status: aiStatus,
@@ -337,6 +324,7 @@ export default function BlindAssistScreen() {
                     cameraContainerRef={cameraContainerRef}
                     cameraHeightClass={cameraHeightClass}
                     cocoBoxes={cocoBoxes}
+                    targetObject={targetObject}
                     pageBounds={pageBounds}
                     pageCorners={pageCorners}
                     readerAligned={readerAligned}

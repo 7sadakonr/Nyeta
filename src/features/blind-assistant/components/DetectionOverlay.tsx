@@ -10,6 +10,7 @@ export interface DetectionOverlayProps {
     videoRef: RefObject<HTMLVideoElement | null>;
     containerRef: RefObject<HTMLElement | null>;
     cocoBoxes?: DetectedObject[];
+    targetObject?: DetectedObject | null;
     pageBounds?: BoundingBox | null;
     pageCorners?: QuadCorners | null;
     pageAligned?: boolean;
@@ -27,6 +28,7 @@ export default function DetectionOverlay({
     videoRef,
     containerRef,
     cocoBoxes = [],
+    targetObject = null,
     pageBounds = null,
     pageCorners = null,
     pageAligned = false,
@@ -80,6 +82,7 @@ export default function DetectionOverlay({
             {mode === 'assistant' && showCoco && (
                 <AssistantOverlay
                     cocoBoxes={cocoBoxes}
+                    targetObject={targetObject}
                     video={video}
                     container={container}
                 />

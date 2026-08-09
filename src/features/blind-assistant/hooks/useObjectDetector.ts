@@ -9,7 +9,7 @@ export interface UseObjectDetectorResult {
     detections: DetectedObject[];
     centerObject: DetectedObject | null;
     guidance: DetectionGuidance | null;
-    speakGuidance: (text: string) => void;
+    speakGuidance: (text: string) => boolean;
 }
 
 /**
@@ -208,16 +208,17 @@ export function useObjectDetector(
     }, [enabled, isLoading, videoRef, calculateGuidance]);
 
     // Speak guidance (throttled)
-    const speakGuidance = useCallback((text: string) => {
+    const speakGuidance = useCallback((text: string): boolean => {
         const now = Date.now();
-        if (now - lastSpeakTimeRef.current < 2000) return; // Throttle to 2s
+        if (now - lastSpeakTimeRef.current < 2000) return false; // Throttle to 2s
 
-        speechManager?.speak(text, {
+        const didSpeak = speechManager?.speak(text, {
             priority: Priority.LOW,
             owner: 'object-detector',
             rate: 1.2,
-        });
-        lastSpeakTimeRef.current = now;
+        }) ?? false;
+        if (didSpeak) lastSpeakTimeRef.current = now;
+        return didSpeak;
     }, []);
 
     return {

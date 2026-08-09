@@ -14,6 +14,7 @@ import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentR
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
+import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 
 // UI Components
 import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
@@ -38,6 +39,8 @@ export default function BlindAssistScreen() {
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
+    const lastAnnouncedObjectClassRef = useRef<string | null>(null);
+    const lastAnnouncedGuidanceKeyRef = useRef<string | null>(null);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -103,14 +106,31 @@ export default function BlindAssistScreen() {
     } = useObjectDetector(videoRef, mode === 'assistant');
 
     const guidanceText = objGuidance?.message || '';
-    const detectedObjects = centerObject ? `เจอ ${centerObject.class}` : '';
+    const detectedObjects = centerObject ? `เจอ ${getObjectLabel(centerObject.class)}` : '';
+    const guidanceDirection = objGuidance?.direction || '';
 
     useEffect(() => {
-        if (mode === 'assistant' && guidanceText && !guidanceText.includes('ไม่เจอ')) {
-            speakObjGuidance(guidanceText);
+        if (mode !== 'assistant' || !centerObject) {
+            lastAnnouncedObjectClassRef.current = null;
+            lastAnnouncedGuidanceKeyRef.current = null;
+            return;
         }
-    }, [guidanceText, mode, speakObjGuidance]);
 
+        if (!guidanceText || guidanceText.includes('ไม่เจอ')) return;
+
+        const guidanceKey = `${centerObject.class}:${guidanceDirection}`;
+        if (lastAnnouncedGuidanceKeyRef.current === guidanceKey) return;
+
+        const objectChanged = lastAnnouncedObjectClassRef.current !== centerObject.class;
+        const didSpeak = speakObjGuidance(objectChanged
+            ? `เจอ ${getObjectLabel(centerObject.class)} ${guidanceText}`
+            : guidanceText);
+
+        if (didSpeak) {
+            lastAnnouncedObjectClassRef.current = centerObject.class;
+            lastAnnouncedGuidanceKeyRef.current = guidanceKey;
+        }
+    }, [centerObject, guidanceDirection, guidanceText, mode, speakObjGuidance]);
     // B. AI Assistant
     const {
         status: aiStatus,

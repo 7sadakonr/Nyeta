@@ -2,6 +2,7 @@ import React from 'react';
 import { mapBboxToOverlay } from '@/features/blind-assistant/client/videoCoords';
 import OverlayBox from './OverlayBox';
 import { DetectedObject } from '@/features/blind-assistant/types/assistant';
+import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 
 const COCO_COLORS: Record<string, string> = {
     book: '#a78bfa',
@@ -33,7 +34,7 @@ export default function AssistantOverlay({ cocoBoxes, video, container }: Assist
                         key={`coco-${box.class}-${i}`}
                         style={style}
                         color={getCocoColor(box.class)}
-                        label={`${box.class}${box.score ? ` ${Math.round(box.score * 100)}%` : ''}`}
+                        label={`${getObjectLabel(box.class)}${box.score ? ` ${Math.round(box.score * 100)}%` : ''}`}
                         thick={isPrimary}
                         pulse={isPrimary && style.width > 8}
                     />

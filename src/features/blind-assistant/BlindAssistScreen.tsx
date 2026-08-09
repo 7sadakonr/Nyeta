@@ -42,6 +42,13 @@ function getLockedObjectGuidance(object: DetectedObject, videoWidth: number, vid
     return { direction: directions.join('-'), message: `เลื่อนกล้อง${directions.join(' และ ')}` };
 }
 
+function getDistanceToFrameCenter(object: DetectedObject, videoWidth: number, videoHeight: number) {
+    const [x, y, width, height] = object.bbox;
+    return Math.hypot(
+        x + width / 2 - videoWidth / 2,
+        y + height / 2 - videoHeight / 2
+    );
+}
 export default function BlindAssistScreen() {
     // Mode State
     const [mode, setMode] = useState<AssistantMode>(() => {
@@ -129,11 +136,14 @@ export default function BlindAssistScreen() {
     const guidanceText = objGuidance?.message || '';
     const detectedObjects = centerObject ? `เจอ ${getObjectLabel(centerObject.class)}` : '';
     const guidanceDirection = objGuidance?.direction || '';
-    const lockedObject = lockedObjectClassRef.current
-        ? cocoBoxes.find(item => item.class === lockedObjectClassRef.current) ?? null
+    const videoWidth = videoRef.current?.videoWidth || 1;
+    const videoHeight = videoRef.current?.videoHeight || 1;
+    const lockedObject = lockedObjectClassRef.current ? cocoBoxes
+        .filter(item => item.class === lockedObjectClassRef.current)
+        .sort((a, b) => getDistanceToFrameCenter(a, videoWidth, videoHeight) - getDistanceToFrameCenter(b, videoWidth, videoHeight))[0] ?? null
         : centerObject;
     const lockedGuidance = lockedObject
-        ? getLockedObjectGuidance(lockedObject, videoRef.current?.videoWidth || 1, videoRef.current?.videoHeight || 1)
+        ? getLockedObjectGuidance(lockedObject, videoWidth, videoHeight)
         : null;
 
     useEffect(() => {
@@ -172,10 +182,7 @@ export default function BlindAssistScreen() {
         const guidanceKey = `${lockedObject.class}:${lockedGuidance.direction}`;
         if (lastAnnouncedGuidanceKeyRef.current === guidanceKey) return;
 
-        const objectChanged = lastAnnouncedObjectClassRef.current !== lockedObject.class;
-        const didSpeak = speakObjGuidance(objectChanged
-            ? `เจอ ${getObjectLabel(lockedObject.class)} ${lockedGuidance.message}`
-            : lockedGuidance.message);
+        const didSpeak = speakObjGuidance(`${getObjectLabel(lockedObject.class)} ${lockedGuidance.message}`);
 
         if (didSpeak) {
             lastAnnouncedObjectClassRef.current = lockedObject.class;

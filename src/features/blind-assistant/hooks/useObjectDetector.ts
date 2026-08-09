@@ -149,22 +149,21 @@ export function useObjectDetector(
                 
                 setDetections(predictions);
 
-                // Find object closest to center
+                // Pick the object whose centre is nearest the target reticle.
                 if (predictions.length > 0) {
                     const videoWidth = video.videoWidth;
                     const videoHeight = video.videoHeight;
                     const frameCenterX = videoWidth / 2;
                     const frameCenterY = videoHeight / 2;
 
-                    // Sort by distance to center
                     const sorted = predictions
                         .map(p => {
-                            const [x, y, w, h] = p.bbox;
-                            const objCenterX = x + w / 2;
-                            const objCenterY = y + h / 2;
-                            const distance = Math.sqrt(
-                                Math.pow(objCenterX - frameCenterX, 2) +
-                                Math.pow(objCenterY - frameCenterY, 2)
+                            const [x, y, width, height] = p.bbox;
+                            const objectCenterX = x + width / 2;
+                            const objectCenterY = y + height / 2;
+                            const distance = Math.hypot(
+                                objectCenterX - frameCenterX,
+                                objectCenterY - frameCenterY
                             );
                             return { ...p, distance };
                         })

@@ -178,7 +178,7 @@ describe('guidance geometry', () => {
 
     it('names the centered candidate before it is locked', () => {
         const guidance = calculateCandidateGuidance(box('cup', [480, 370, 40, 60]), frame, 'แก้วน้ำ');
-        expect(guidance.message).toBe('แก้วน้ำอยู่ตรงกลาง ถือกล้องให้นิ่ง');
+        expect(guidance.message).toBe('แก้วน้ำอยู่ตรงกลางแล้ว');
     });
     it('uses locked-target hysteresis after lock', () => {
         const nearRight = box('cup', [590, 350, 100, 100]);

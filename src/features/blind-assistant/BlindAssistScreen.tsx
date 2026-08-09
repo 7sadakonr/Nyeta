@@ -171,31 +171,22 @@ export default function BlindAssistScreen() {
             return;
         }
 
-        const now = Date.now();
-        if (pending.candidate && now - lastCandidateSpeechAtRef.current < 2000) {
-            // Candidate guidance is intentionally disposable and must never delay a lock/lost cue.
-            pendingObjectAnnouncementRef.current = null;
-            return;
-        }
-
         const didSpeak = speechManager?.speak(pending.text, {
             priority: Priority.LOW,
             owner: 'object-detector',
             rate: 1.2,
         }) ?? false;
         if (didSpeak) {
-            if (pending.candidate) lastCandidateSpeechAtRef.current = now;
+
             if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
             clearObjectSpeechRetry();
             return;
         }
 
-        if (pending.important) {
-            clearObjectSpeechRetry();
-            speechRetryTimerRef.current = setTimeout(() => setSpeechRetryTick((tick) => tick + 1), 500);
-        } else {
-            pendingObjectAnnouncementRef.current = null;
-        }
+        // Retry only this still-current state. A newer candidate, lock, or loss event
+        // clears this timer and replaces it, so delayed speech cannot become stale.
+        clearObjectSpeechRetry();
+        speechRetryTimerRef.current = setTimeout(() => setSpeechRetryTick((tick) => tick + 1), 500);
     }, [clearObjectSpeechRetry, mode, speechRetryTick, targetPhase, targetingEvent]);
 
     useEffect(() => () => {

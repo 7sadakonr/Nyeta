@@ -236,7 +236,7 @@ export function calculateCandidateGuidance(target: DetectedObject, frame: VideoF
     const edgeDistance = Math.hypot(deltaX, deltaY) / diagonal(frame);
 
     if (edgeDistance === 0) {
-        return { direction: 'center', proximity: 'center', message: `${label}อยู่ตรงกลาง ถือกล้องให้นิ่ง` };
+        return { direction: 'center', proximity: 'center', message: `${label}อยู่ตรงกลางแล้ว` };
     }
 
     const useHorizontal = Math.abs(deltaX / frame.width) >= Math.abs(deltaY / frame.height);

@@ -1,230 +1,128 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback, RefObject } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { useEffect, useRef, useState, RefObject } from 'react';
 import { DetectedObject, DetectionGuidance } from '@/features/blind-assistant/types/assistant';
+import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
+import {
+    advanceObjectTargeting,
+    createInitialObjectTargetingState,
+    ObjectTargetingState,
+    TargetingEvent,
+    TargetPhase,
+} from '@/features/blind-assistant/client/objectTargeting';
 
 export interface UseObjectDetectorResult {
     isLoading: boolean;
     detections: DetectedObject[];
-    centerObject: DetectedObject | null;
+    targetObject: DetectedObject | null;
+    targetIndex: number | null;
+    targetPhase: TargetPhase;
     guidance: DetectionGuidance | null;
-    speakGuidance: (text: string) => boolean;
+    targetingEvent: TargetingEvent | null;
 }
 
-/**
- * useObjectDetector Hook
- * Provides real-time object detection using TensorFlow.js COCO-SSD model
- * for assisting visually impaired users in framing their shots.
- */
+/** Client-side COCO-SSD orchestration plus stable reticle-based target tracking. */
 export function useObjectDetector(
     videoRef: RefObject<HTMLVideoElement | null>,
-    enabled: boolean = false
+    enabled = false,
 ): UseObjectDetectorResult {
-    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isLoading, setIsLoading] = useState(true);
     const [detections, setDetections] = useState<DetectedObject[]>([]);
-    const [centerObject, setCenterObject] = useState<DetectedObject | null>(null); // Object closest to center
-    const [guidance, setGuidance] = useState<DetectionGuidance | null>(null); // Direction guidance
+    const [targetObject, setTargetObject] = useState<DetectedObject | null>(null);
+    const [targetIndex, setTargetIndex] = useState<number | null>(null);
+    const [targetPhase, setTargetPhase] = useState<TargetPhase>('searching');
+    const [guidance, setGuidance] = useState<DetectionGuidance | null>(null);
+    const [targetingEvent, setTargetingEvent] = useState<TargetingEvent | null>(null);
 
     const modelRef = useRef<any>(null);
     const animationFrameRef = useRef<number | null>(null);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-    const lastSpeakTimeRef = useRef<number>(0);
+    const targetingStateRef = useRef<ObjectTargetingState>(createInitialObjectTargetingState());
 
-    // Load model only when enabled (client-side only)
     useEffect(() => {
-        // Skip on server-side
-        if (typeof window === 'undefined') return;
-        // Don't load until explicitly enabled
-        if (!enabled) return;
-        // Already loaded
+        if (typeof window === 'undefined' || !enabled) return;
         if (modelRef.current) {
             setIsLoading(false);
             return;
         }
 
         let isMounted = true;
-
         const loadModel = async () => {
             try {
-                // Dynamic import to avoid SSR issues
                 await import('@tensorflow/tfjs');
                 const cocoSsd = await import('@tensorflow-models/coco-ssd');
-
-                console.log('Loading COCO-SSD model...');
                 const model = await cocoSsd.load();
-
                 if (isMounted) {
                     modelRef.current = model;
                     setIsLoading(false);
-                    console.log('COCO-SSD model loaded!');
                 }
             } catch (error) {
-                console.error('Failed to load model:', error);
-                if (isMounted) {
-                    setIsLoading(false);
-                }
+                console.error('Failed to load COCO-SSD model:', error);
+                if (isMounted) setIsLoading(false);
             }
         };
 
         loadModel();
-
         return () => {
             isMounted = false;
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
         };
     }, [enabled]);
 
-    // Calculate guidance direction based on bounding box position
-    const calculateGuidance = useCallback((detection: DetectedObject | null, videoWidth: number, videoHeight: number): DetectionGuidance | null => {
-        if (!detection) return null;
-
-        const [x, y, width, height] = detection.bbox;
-        const centerX = x + width / 2;
-        const centerY = y + height / 2;
-
-        const frameCenterX = videoWidth / 2;
-        const frameCenterY = videoHeight / 2;
-
-        // Define center zone (20% of frame)
-        const toleranceX = videoWidth * 0.2;
-        const toleranceY = videoHeight * 0.2;
-
-        const diffX = centerX - frameCenterX;
-        const diffY = centerY - frameCenterY;
-
-        // Check if object is centered
-        if (Math.abs(diffX) < toleranceX && Math.abs(diffY) < toleranceY) {
-            return { direction: 'center', message: 'อยู่ตรงกลางแล้ว พร้อมถ่าย' };
-        }
-
-        // Determine direction
-        let direction = '';
-        let message = 'เลื่อนกล้อง';
-
-        if (diffX < -toleranceX) {
-            direction = 'left';
-            message += 'ไปทางซ้าย';
-        } else if (diffX > toleranceX) {
-            direction = 'right';
-            message += 'ไปทางขวา';
-        }
-
-        if (diffY < -toleranceY) {
-            direction += direction ? '-up' : 'up';
-            message += ' และขึ้นบน';
-        } else if (diffY > toleranceY) {
-            direction += direction ? '-down' : 'down';
-            message += ' และลงล่าง';
-        }
-
-        return { direction, message };
-    }, []);
-
-    // Run detection loop
     useEffect(() => {
-        if (!enabled || isLoading || !modelRef.current || !videoRef?.current) {
-            return;
-        }
+        if (enabled) return;
+        targetingStateRef.current = createInitialObjectTargetingState(targetingStateRef.current.eventId);
+        setDetections([]);
+        setTargetObject(null);
+        setTargetIndex(null);
+        setTargetPhase('searching');
+        setGuidance(null);
+        setTargetingEvent(null);
+    }, [enabled]);
+
+    useEffect(() => {
+        if (!enabled || isLoading || !modelRef.current || !videoRef.current) return;
 
         const video = videoRef.current;
         let isActive = true;
-
         const detect = async () => {
             if (!isActive) return;
-            if (video.readyState < 2) {
-                if (isActive) {
-                    animationFrameRef.current = requestAnimationFrame(detect);
+            if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+                try {
+                    const rawPredictions: DetectedObject[] = await modelRef.current.detect(video);
+                    if (!isActive) return;
+                    const next = advanceObjectTargeting(
+                        targetingStateRef.current,
+                        rawPredictions,
+                        { width: video.videoWidth, height: video.videoHeight },
+                        Date.now(),
+                        getObjectLabel,
+                    );
+                    targetingStateRef.current = next.state;
+                    setDetections(next.detections);
+                    setTargetObject(next.targetObject);
+                    setTargetIndex(next.targetIndex);
+                    setTargetPhase(next.state.phase);
+                    setGuidance(next.guidance);
+                    if (next.event) setTargetingEvent(next.event);
+                } catch (error) {
+                    console.error('Object detection error:', error);
                 }
-                return;
             }
 
-            try {
-                const rawPredictions: DetectedObject[] = await modelRef.current.detect(video);
-                if (!isActive) return;
-                // Filter out 'book' to avoid confusion with the Document Reader mode
-                const predictions = rawPredictions.filter(p => p.class !== 'book');
-                
-                setDetections(predictions);
-
-                // Pick the object whose centre is nearest the target reticle.
-                if (predictions.length > 0) {
-                    const videoWidth = video.videoWidth;
-                    const videoHeight = video.videoHeight;
-                    const frameCenterX = videoWidth / 2;
-                    const frameCenterY = videoHeight / 2;
-
-                    const sorted = predictions
-                        .map(p => {
-                            const [x, y, width, height] = p.bbox;
-                            const objectCenterX = x + width / 2;
-                            const objectCenterY = y + height / 2;
-                            const distance = Math.hypot(
-                                objectCenterX - frameCenterX,
-                                objectCenterY - frameCenterY
-                            );
-                            return { ...p, distance };
-                        })
-                        .sort((a, b) => (a.distance || 0) - (b.distance || 0));
-
-                    const closest = sorted[0];
-                    setCenterObject(closest);
-
-                    // Calculate and set guidance
-                    const newGuidance = calculateGuidance(closest, videoWidth, videoHeight);
-                    setGuidance(newGuidance);
-                } else {
-                    setCenterObject(null);
-                    setGuidance({ direction: 'none', message: 'ไม่เจอวัตถุ กวาดกล้องช้าๆ' });
-                }
-            } catch (error) {
-                console.error('Detection error:', error);
-            }
-
-            // Run at ~10 FPS for performance
             if (isActive) {
                 timeoutRef.current = setTimeout(() => {
-                    if (isActive) {
-                        animationFrameRef.current = requestAnimationFrame(detect);
-                    }
+                    if (isActive) animationFrameRef.current = requestAnimationFrame(detect);
                 }, 100);
             }
         };
 
         detect();
-
         return () => {
             isActive = false;
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
+            if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
-    }, [enabled, isLoading, videoRef, calculateGuidance]);
+    }, [enabled, isLoading, videoRef]);
 
-    // Speak guidance (throttled)
-    const speakGuidance = useCallback((text: string): boolean => {
-        const now = Date.now();
-        if (now - lastSpeakTimeRef.current < 2000) return false; // Throttle to 2s
-
-        const didSpeak = speechManager?.speak(text, {
-            priority: Priority.LOW,
-            owner: 'object-detector',
-            rate: 1.2,
-        }) ?? false;
-        if (didSpeak) lastSpeakTimeRef.current = now;
-        return didSpeak;
-    }, []);
-
-    return {
-        isLoading,
-        detections,
-        centerObject,
-        guidance,
-        speakGuidance
-    };
+    return { isLoading, detections, targetObject, targetIndex, targetPhase, guidance, targetingEvent };
 }

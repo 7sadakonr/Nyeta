@@ -9,6 +9,7 @@ export interface CameraViewProps {
     cameraContainerRef: RefObject<HTMLDivElement | null>;
     cameraHeightClass: string;
     cocoBoxes?: DetectedObject[];
+    targetObject?: DetectedObject | null;
     pageBounds?: BoundingBox | null;
     pageCorners?: QuadCorners | null;
     readerAligned?: boolean;
@@ -35,6 +36,7 @@ export default function CameraView({
     cameraContainerRef,
     cameraHeightClass,
     cocoBoxes = [],
+    targetObject = null,
     pageBounds = null,
     pageCorners = null,
     readerAligned = false,
@@ -68,6 +70,7 @@ export default function CameraView({
                 videoRef={videoRef}
                 containerRef={cameraContainerRef}
                 cocoBoxes={cocoBoxes}
+                targetObject={targetObject}
                 pageBounds={pageBounds}
                 pageCorners={pageCorners}
                 pageAligned={readerAligned}

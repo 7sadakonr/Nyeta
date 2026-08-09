@@ -34,7 +34,8 @@ export interface DetectedCenterObject extends DetectedObject {
 }
 
 export interface DetectionGuidance {
-  direction: string;
+  direction: 'left' | 'right' | 'up' | 'down' | 'center' | 'none';
+  proximity?: 'near' | 'far' | 'center';
   message: string;
   distance?: number;
 }

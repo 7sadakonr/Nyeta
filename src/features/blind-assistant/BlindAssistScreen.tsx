@@ -13,7 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { AssistantMode } from '@/features/blind-assistant/types/assistant';
+import { AssistantMode, DetectedObject } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 
 // UI Components
@@ -22,6 +22,25 @@ import CameraView from '@/features/blind-assistant/components/CameraView';
 import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
+
+function getLockedObjectGuidance(object: DetectedObject, videoWidth: number, videoHeight: number) {
+    const [x, y, width, height] = object.bbox;
+    const diffX = x + width / 2 - videoWidth / 2;
+    const diffY = y + height / 2 - videoHeight / 2;
+    const toleranceX = videoWidth * 0.2;
+    const toleranceY = videoHeight * 0.2;
+
+    if (Math.abs(diffX) < toleranceX && Math.abs(diffY) < toleranceY) {
+        return { direction: 'center', message: 'อยู่ตรงกลางแล้ว พร้อมถ่าย' };
+    }
+
+    const directions: string[] = [];
+    if (diffX < -toleranceX) directions.push('ไปทางซ้าย');
+    if (diffX > toleranceX) directions.push('ไปทางขวา');
+    if (diffY < -toleranceY) directions.push('ขึ้นบน');
+    if (diffY > toleranceY) directions.push('ลงล่าง');
+    return { direction: directions.join('-'), message: `เลื่อนกล้อง${directions.join(' และ ')}` };
+}
 
 export default function BlindAssistScreen() {
     // Mode State
@@ -41,6 +60,8 @@ export default function BlindAssistScreen() {
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
     const lastAnnouncedObjectClassRef = useRef<string | null>(null);
     const lastAnnouncedGuidanceKeyRef = useRef<string | null>(null);
+    const lockedObjectClassRef = useRef<string | null>(null);
+    const lockedObjectMissingSinceRef = useRef<number | null>(null);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -108,29 +129,59 @@ export default function BlindAssistScreen() {
     const guidanceText = objGuidance?.message || '';
     const detectedObjects = centerObject ? `เจอ ${getObjectLabel(centerObject.class)}` : '';
     const guidanceDirection = objGuidance?.direction || '';
+    const lockedObject = lockedObjectClassRef.current
+        ? cocoBoxes.find(item => item.class === lockedObjectClassRef.current) ?? null
+        : centerObject;
+    const lockedGuidance = lockedObject
+        ? getLockedObjectGuidance(lockedObject, videoRef.current?.videoWidth || 1, videoRef.current?.videoHeight || 1)
+        : null;
 
     useEffect(() => {
-        if (mode !== 'assistant' || !centerObject) {
+        if (mode !== 'assistant') {
+            lockedObjectClassRef.current = null;
+            lockedObjectMissingSinceRef.current = null;
+            return;
+        }
+        const lockedClass = lockedObjectClassRef.current;
+        if (!lockedClass && centerObject) {
+            lockedObjectClassRef.current = centerObject.class;
+            lockedObjectMissingSinceRef.current = null;
+            return;
+        }
+        if (lockedClass && !cocoBoxes.some(item => item.class === lockedClass)) {
+            lockedObjectMissingSinceRef.current ??= Date.now();
+            if (Date.now() - lockedObjectMissingSinceRef.current >= 1000) {
+                lockedObjectClassRef.current = null;
+                lockedObjectMissingSinceRef.current = null;
+                lastAnnouncedObjectClassRef.current = null;
+                lastAnnouncedGuidanceKeyRef.current = null;
+            }
+        } else {
+            lockedObjectMissingSinceRef.current = null;
+        }
+    }, [centerObject, cocoBoxes, mode]);
+    useEffect(() => {
+        if (mode !== 'assistant') {
             lastAnnouncedObjectClassRef.current = null;
             lastAnnouncedGuidanceKeyRef.current = null;
             return;
         }
 
-        if (!guidanceText || guidanceText.includes('ไม่เจอ')) return;
+        if (!lockedObject || !lockedGuidance) return;
 
-        const guidanceKey = `${centerObject.class}:${guidanceDirection}`;
+        const guidanceKey = `${lockedObject.class}:${lockedGuidance.direction}`;
         if (lastAnnouncedGuidanceKeyRef.current === guidanceKey) return;
 
-        const objectChanged = lastAnnouncedObjectClassRef.current !== centerObject.class;
+        const objectChanged = lastAnnouncedObjectClassRef.current !== lockedObject.class;
         const didSpeak = speakObjGuidance(objectChanged
-            ? `เจอ ${getObjectLabel(centerObject.class)} ${guidanceText}`
-            : guidanceText);
+            ? `เจอ ${getObjectLabel(lockedObject.class)} ${lockedGuidance.message}`
+            : lockedGuidance.message);
 
         if (didSpeak) {
-            lastAnnouncedObjectClassRef.current = centerObject.class;
+            lastAnnouncedObjectClassRef.current = lockedObject.class;
             lastAnnouncedGuidanceKeyRef.current = guidanceKey;
         }
-    }, [centerObject, guidanceDirection, guidanceText, mode, speakObjGuidance]);
+    }, [lockedGuidance, lockedObject, mode, speakObjGuidance]);
     // B. AI Assistant
     const {
         status: aiStatus,

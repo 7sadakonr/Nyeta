@@ -6,6 +6,7 @@ import {
     calculateObjectGuidance,
     createInitialObjectTargetingState,
     rankNearReticle,
+    isImportantTargetingEvent,
 } from '@/features/blind-assistant/client/objectTargeting';
 
 const frame = { width: 1000, height: 800 };
@@ -24,6 +25,24 @@ describe('pre-lock nearest bbox selection', () => {
         const edgeNear = box('cup', [510, 200, 300, 300]);
         const centerNearButEdgeFar = box('cell phone', [300, 350, 100, 100]);
         expect(rankNearReticle([centerNearButEdgeFar, edgeNear], frame)[0]).toBe(edgeNear);
+    });
+
+    it('demotes an oversized bbox enclosing the reticle when a small object is nearby', () => {
+        const monitor = box('tv', [0, 0, 1000, 500], 0.99);
+        const cup = box('cup', [510, 360, 80, 80], 0.55);
+        expect(rankNearReticle([monitor, cup], frame)[0]).toBe(cup);
+    });
+
+    it('keeps an oversized bbox when no small object is near the reticle', () => {
+        const monitor = box('tv', [0, 0, 1000, 500], 0.99);
+        const phone = box('cell phone', [850, 650, 80, 80], 0.8);
+        expect(rankNearReticle([monitor, phone], frame)[0]).toBe(monitor);
+    });
+
+    it('ranks nearby small objects deterministically', () => {
+        const leftCup = box('cup', [440, 350, 40, 80], 0.7);
+        const rightCup = box('cup', [535, 350, 40, 80], 0.7);
+        expect(rankNearReticle([rightCup, leftCup], frame)[0]).toBe(leftCup);
     });
 
     it('treats an enclosing bbox as distance zero and chooses the smaller overlapping bbox', () => {
@@ -110,6 +129,25 @@ describe('locked target tracking', () => {
         expect(result.targetObject?.bbox).toEqual(cupANext.bbox);
     });
 
+    it('keeps a small locked target after a faster, size-relative movement', () => {
+        let result = step(createInitialObjectTargetingState(), [box('cup', [480, 370, 40, 60])], 0);
+        result = step(result.state, [box('cup', [482, 370, 40, 60])], 100);
+        result = step(result.state, [box('cup', [484, 370, 40, 60])], 200);
+        const movedCup = box('cup', [503, 370, 40, 60]);
+        result = step(result.state, [movedCup], 300);
+        expect(result.state.phase).toBe('locked');
+        expect(result.targetObject?.bbox).toEqual(movedCup.bbox);
+    });
+
+    it('does not switch to a nearby same-class object when the locked target disappears', () => {
+        let result = step(createInitialObjectTargetingState(), [box('cup', [480, 370, 40, 60])], 0);
+        result = step(result.state, [box('cup', [482, 370, 40, 60])], 100);
+        result = step(result.state, [box('cup', [484, 370, 40, 60])], 200);
+        result = step(result.state, [box('cup', [509, 370, 40, 60])], 300);
+        expect(result.state.phase).toBe('lost');
+        expect(result.targetObject).toBeNull();
+    });
+
     it('silently re-acquires the same locked target during the one-second grace period', () => {
         let result = step(createInitialObjectTargetingState(), [box('cup', [450, 350, 100, 100])], 0);
         result = step(result.state, [box('cup', [452, 350, 100, 100])], 100);
@@ -138,6 +176,10 @@ describe('guidance geometry', () => {
         expect(guidance.message).toBe(message);
     });
 
+    it('names the centered candidate before it is locked', () => {
+        const guidance = calculateCandidateGuidance(box('cup', [480, 370, 40, 60]), frame, 'แก้วน้ำ');
+        expect(guidance.message).toBe('แก้วน้ำอยู่ตรงกลาง ถือกล้องให้นิ่ง');
+    });
     it('uses locked-target hysteresis after lock', () => {
         const nearRight = box('cup', [590, 350, 100, 100]);
         const right = calculateObjectGuidance(nearRight, frame, null, 'แก้ว');
@@ -145,5 +187,14 @@ describe('guidance geometry', () => {
         const jitterWithinExit = box('cup', [580, 350, 100, 100]);
         expect(calculateObjectGuidance(jitterWithinExit, frame, { direction: 'center', proximity: 'center', message: '' }, 'แก้ว').direction).toBe('center');
         expect(calculateObjectGuidance(jitterWithinExit, frame, right, 'แก้ว').direction).toBe('right');
+    });
+});
+
+describe('targeting announcement priority', () => {
+    it('allows a lock, centered, or loss announcement to replace disposable candidate guidance', () => {
+        expect(isImportantTargetingEvent('candidate-guidance')).toBe(false);
+        expect(isImportantTargetingEvent('locked')).toBe(true);
+        expect(isImportantTargetingEvent('centered')).toBe(true);
+        expect(isImportantTargetingEvent('target-lost')).toBe(true);
     });
 });

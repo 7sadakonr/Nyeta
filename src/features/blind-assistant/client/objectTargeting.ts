@@ -23,7 +23,11 @@ export interface VideoFrameSize {
 }
 
 export type TargetPhase = 'searching' | 'candidate' | 'locked' | 'lost';
-export type TargetingEventType = 'candidate-reset' | 'candidate-guidance' | 'locked' | 'guidance' | 'centered' | 'unlocked';
+export type TargetingEventType = 'candidate-reset' | 'candidate-guidance' | 'locked' | 'guidance' | 'centered' | 'target-lost';
+
+export function isImportantTargetingEvent(type: TargetingEventType): boolean {
+    return type === 'locked' || type === 'centered' || type === 'target-lost';
+}
 
 export interface TargetingEvent {
     id: number;
@@ -154,9 +158,23 @@ function rankDetection(detection: DetectedObject, frame: VideoFrameSize): Ranked
 }
 
 export function rankNearReticle(detections: DetectedObject[], frame: VideoFrameSize): DetectedObject[] {
-    return detections
-        .map((detection) => rankDetection(detection, frame))
+    const ranked = detections.map((detection) => rankDetection(detection, frame));
+    const hasNearbySpecificObject = ranked.some((candidate) =>
+        candidate.areaRatio < OBJECT_TARGETING.OVERSIZED_AREA
+        && candidate.boxDistance <= OBJECT_TARGETING.CANDIDATE_NEAR_DISTANCE,
+    );
+
+    return ranked
         .sort((a, b) => {
+            const aIsOversizedEnclosure = a.containsReticle
+                && a.areaRatio >= OBJECT_TARGETING.OVERSIZED_AREA
+                && hasNearbySpecificObject;
+            const bIsOversizedEnclosure = b.containsReticle
+                && b.areaRatio >= OBJECT_TARGETING.OVERSIZED_AREA
+                && hasNearbySpecificObject;
+            // A monitor/table enclosing the reticle is useful when it is alone, but should
+            // yield to a nearby specific object the user is likely aiming for.
+            if (aIsOversizedEnclosure !== bIsOversizedEnclosure) return aIsOversizedEnclosure ? 1 : -1;
             // Distance from reticle to the nearest bbox edge is the primary intent signal.
             if (a.boxDistance !== b.boxDistance) return a.boxDistance - b.boxDistance;
             if (a.containsReticle && b.containsReticle && a.areaRatio !== b.areaRatio) return a.areaRatio - b.areaRatio;
@@ -192,9 +210,10 @@ function sizeRatio(a: DetectedObject, b: DetectedObject): number {
 
 function findSpatialMatch(previous: DetectedObject, detections: DetectedObject[], frame: VideoFrameSize, minimumIou: number, maximumCenterDistance: number): DetectedObject | null {
     const [, , previousWidth, previousHeight] = previous.bbox;
-    const centerFallbackLimit = Math.min(maximumCenterDistance, (Math.min(previousWidth, previousHeight) * 0.25) / diagonal(frame));
+    const minimumDimension = Math.min(previousWidth, previousHeight);
+    const centerFallbackLimit = Math.min(maximumCenterDistance, Math.max(8, minimumDimension * 0.5) / diagonal(frame));
     const matches = detections
-        .filter((detection) => detection.class === previous.class && sizeRatio(previous, detection) <= 2)
+        .filter((detection) => detection.class === previous.class && sizeRatio(previous, detection) <= 1.6)
         .filter((detection) => intersectionOverUnion(previous, detection) >= minimumIou || centerDistanceRatio(previous, detection, frame) <= centerFallbackLimit)
         .map((detection) => ({ detection, iou: intersectionOverUnion(previous, detection), centerDistance: centerDistanceRatio(previous, detection, frame) }))
         .sort((a, b) => b.iou - a.iou || a.centerDistance - b.centerDistance);
@@ -209,7 +228,7 @@ function isInTargetZone(target: DetectedObject, frame: VideoFrameSize): boolean 
     return containsPoint({ x: frame.width / 2, y: frame.height / 2 }, target);
 }
 
-export function calculateCandidateGuidance(target: DetectedObject, frame: VideoFrameSize): DetectionGuidance {
+export function calculateCandidateGuidance(target: DetectedObject, frame: VideoFrameSize, label = target.class): DetectionGuidance {
     const reticle = { x: frame.width / 2, y: frame.height / 2 };
     const nearest = nearestPointOnBbox(reticle, target);
     const deltaX = nearest.x - reticle.x;
@@ -217,7 +236,7 @@ export function calculateCandidateGuidance(target: DetectedObject, frame: VideoF
     const edgeDistance = Math.hypot(deltaX, deltaY) / diagonal(frame);
 
     if (edgeDistance === 0) {
-        return { direction: 'center', proximity: 'center', message: 'มีวัตถุอยู่ตรงกลาง ถือกล้องให้นิ่ง' };
+        return { direction: 'center', proximity: 'center', message: `${label}อยู่ตรงกลาง ถือกล้องให้นิ่ง` };
     }
 
     const useHorizontal = Math.abs(deltaX / frame.width) >= Math.abs(deltaY / frame.height);
@@ -293,7 +312,7 @@ export function advanceObjectTargeting(previousState: ObjectTargetingState, rawD
         const lostSince = previousState.lostSince ?? now;
         if (now - lostSince < OBJECT_TARGETING.GRACE_PERIOD_MS) return result({ ...previousState, phase: 'lost', lostSince }, detections, null, null, null);
         const reset = createInitialObjectTargetingState(previousState.eventId);
-        const withEvent = makeEvent(reset, 'unlocked', null, null);
+        const withEvent = makeEvent(reset, 'target-lost', lockedTarget, null);
         return result(withEvent.state, detections, null, null, withEvent.event);
     }
 
@@ -346,7 +365,7 @@ export function advanceObjectTargeting(previousState: ObjectTargetingState, rawD
         return result(state, detections, guideTarget, lockedGuidance, withEvent.event);
     }
 
-    const guidance = calculateCandidateGuidance(guideTarget, frame);
+    const guidance = calculateCandidateGuidance(guideTarget, frame, getLabel(guideTarget.class));
     const key = guidanceKey(guidance);
     const sameGuideTarget = previousState.candidateGuidanceTarget
         && findSpatialMatch(previousState.candidateGuidanceTarget, [guideTarget], frame, OBJECT_TARGETING.TRACK_IOU, OBJECT_TARGETING.TRACK_CENTER_DISTANCE);

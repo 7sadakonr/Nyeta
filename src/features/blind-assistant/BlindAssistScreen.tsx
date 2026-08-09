@@ -15,6 +15,7 @@ import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechSta
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
+import { isImportantTargetingEvent } from '@/features/blind-assistant/client/objectTargeting';
 
 // UI Components
 import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
@@ -35,7 +36,7 @@ export default function BlindAssistScreen() {
         return 'assistant';
     });
     const [, setLogs] = useState<string[]>([]);
-    
+
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
@@ -105,70 +106,104 @@ export default function BlindAssistScreen() {
     } = useObjectDetector(videoRef, mode === 'assistant');
 
     const guidanceText = objGuidance?.message || '';
+
     const detectedObjects = targetObject
         ? targetPhase === 'locked' ? `เจอ ${getObjectLabel(targetObject.class)}` : 'พบวัตถุ'
         : '';
     const lastHapticEventIdRef = useRef(0);
-    const lastSpeechAttemptAtRef = useRef(0);
-    const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string } | null>(null);
+    const lastCandidateSpeechAtRef = useRef(0);
+    const speechRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [speechRetryTick, setSpeechRetryTick] = useState(0);
+    const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string; important: boolean; candidate: boolean } | null>(null);
+
+    const clearObjectSpeechRetry = useCallback(() => {
+        if (speechRetryTimerRef.current) clearTimeout(speechRetryTimerRef.current);
+        speechRetryTimerRef.current = null;
+    }, []);
 
     useEffect(() => {
         if (mode !== 'assistant' || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
         lastHapticEventIdRef.current = targetingEvent.id;
 
-        if (targetingEvent.type === 'unlocked' || targetingEvent.type === 'candidate-reset') {
+
+        if (targetingEvent.type === 'candidate-reset') {
             pendingObjectAnnouncementRef.current = null;
-            if (targetingEvent.type === 'unlocked') speechManager?.stopByOwner('object-detector');
             return;
         }
 
         const target = targetingEvent.target;
         const eventGuidance = targetingEvent.guidance;
-        if (!target || !eventGuidance) return;
-
-        const label = getObjectLabel(target.class);
-        const text = targetingEvent.type === 'candidate-guidance'
-            ? eventGuidance.message
-            : targetingEvent.type === 'locked'
-                ? `ล็อก${label}แล้ว ${eventGuidance.message}`
-                : targetingEvent.type === 'centered' || eventGuidance.direction === 'center'
+        const important = isImportantTargetingEvent(targetingEvent.type);
+        if (!important && pendingObjectAnnouncementRef.current?.important) return;
+        clearObjectSpeechRetry();
+        const label = target ? getObjectLabel(target.class) : '';
+        const text = targetingEvent.type === 'target-lost'
+            ? `ไม่พบ${label}แล้ว`
+            : !target || !eventGuidance
+                ? ''
+                : targetingEvent.type === 'candidate-guidance'
                     ? eventGuidance.message
-                    : `${label} ${eventGuidance.message}`;
-        pendingObjectAnnouncementRef.current = { eventId: targetingEvent.id, text };
+                    : targetingEvent.type === 'locked'
+                        ? `ล็อก${label}แล้ว ${eventGuidance.message}`
+                        : targetingEvent.type === 'centered' || eventGuidance.direction === 'center'
+                            ? eventGuidance.message
+                            : `${label} ${eventGuidance.message}`;
+        if (!text) return;
 
-        if (targetingEvent.type === 'centered' || (targetingEvent.type === 'locked' && eventGuidance.direction === 'center')) {
+        // A current lock/lost notification replaces expendable candidate guidance.
+        pendingObjectAnnouncementRef.current = { eventId: targetingEvent.id, text, important, candidate: targetingEvent.type === 'candidate-guidance' };
+        if (targetingEvent.type === 'centered' || (targetingEvent.type === 'locked' && eventGuidance?.direction === 'center')) {
             hapticRef.current?.trigger(2);
         } else if (targetingEvent.type === 'locked') {
             hapticRef.current?.trigger(1);
         }
-    }, [mode, targetingEvent]);
+    }, [clearObjectSpeechRetry, mode, targetingEvent]);
 
     useEffect(() => {
-        if (mode !== 'assistant' || (targetPhase !== 'locked' && targetPhase !== 'candidate')) {
-            pendingObjectAnnouncementRef.current = null;
+        const pending = pendingObjectAnnouncementRef.current;
+        const eventIsCurrent = !!targetingEvent && targetingEvent.id === pending?.eventId;
+        const phaseMatches = pending?.important
+            ? (targetingEvent?.type === 'target-lost' ? targetPhase === 'searching' : targetPhase === 'locked')
+            : pending?.candidate ? targetPhase === 'candidate' : targetPhase === 'locked';
+        if (mode !== 'assistant' || !pending || !eventIsCurrent || !phaseMatches) {
+            if (!phaseMatches) pendingObjectAnnouncementRef.current = null;
+            clearObjectSpeechRetry();
             return;
         }
 
-        const pending = pendingObjectAnnouncementRef.current;
-        if (!pending) return;
         const now = Date.now();
-        if (now - lastSpeechAttemptAtRef.current < 2000) return;
-        lastSpeechAttemptAtRef.current = now;
+        if (pending.candidate && now - lastCandidateSpeechAtRef.current < 2000) {
+            // Candidate guidance is intentionally disposable and must never delay a lock/lost cue.
+            pendingObjectAnnouncementRef.current = null;
+            return;
+        }
 
         const didSpeak = speechManager?.speak(pending.text, {
             priority: Priority.LOW,
             owner: 'object-detector',
             rate: 1.2,
         }) ?? false;
-        if (didSpeak && pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
+        if (didSpeak) {
+            if (pending.candidate) lastCandidateSpeechAtRef.current = now;
+            if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
+            clearObjectSpeechRetry();
+            return;
+        }
+
+        if (pending.important) {
+            clearObjectSpeechRetry();
+            speechRetryTimerRef.current = setTimeout(() => setSpeechRetryTick((tick) => tick + 1), 500);
+        } else {
             pendingObjectAnnouncementRef.current = null;
         }
-    }, [mode, targetPhase, targetingEvent, objGuidance]);
+    }, [clearObjectSpeechRetry, mode, speechRetryTick, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
+        clearObjectSpeechRetry();
         speechManager?.stopByOwner('object-detector');
-    }, []);
+    }, [clearObjectSpeechRetry]);
+
     // B. AI Assistant
     const {
         status: aiStatus,
@@ -249,7 +284,7 @@ export default function BlindAssistScreen() {
             owner: 'mode-switch',
             rate: 1.1,
         });
-        
+
         // Reset state
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
@@ -298,10 +333,12 @@ export default function BlindAssistScreen() {
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
 
+    const accessibilityStatus = mode === 'assistant' ? guidanceText : mode === 'reader' ? readerGuidance : currencyHint;
+
     const cameraHeightClass = showCapturedText ? 'h-[38%]' : 'flex-1 min-h-0';
 
     return (
-        <div 
+        <div
             onClick={() => speechManager?.unlock()}
             onTouchStart={() => speechManager?.unlock()}
             className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans"
@@ -318,7 +355,7 @@ export default function BlindAssistScreen() {
             />
 
             <main className="w-full h-full flex flex-col relative min-h-0 overflow-hidden" aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา">
-                
+
                 <CameraView
                     videoRef={videoRef}
                     cameraContainerRef={cameraContainerRef}
@@ -345,9 +382,9 @@ export default function BlindAssistScreen() {
                     showCapturedText={showCapturedText}
                     detectedObjects={detectedObjects}
                 />
-
-                {/* aria-live disabled — speechManager provides centralized TTS feedback without double-speaking */}
-                <div className="sr-only" aria-live="off" aria-atomic="true"></div>
+                <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                    {accessibilityStatus}
+                </div>
 
                 <ModeSwitcher mode={mode} switchMode={switchMode} />
 

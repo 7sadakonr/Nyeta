@@ -17,7 +17,7 @@ export interface SpeechOptions {
   rate?: number;
   lang?: string;
   chunk?: boolean;
-  onEnd?: () => void;
+  onEnd?: (completed?: boolean) => void;
 }
 
 export interface SpeechQueueItem {

@@ -15,7 +15,6 @@ describe('TTS and VoiceOver announcement ownership', () => {
     it('does not give TTS-owned realtime surfaces a second live-announcement channel', () => {
         for (const path of TTS_OWNED_SURFACES) {
             const source = readSource(path);
-
             expect(source).not.toMatch(/\baria-live\s*=/);
             expect(source).not.toMatch(/\brole\s*=\s*["'](?:status|alert)["']/);
         }
@@ -33,9 +32,14 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain("owner: 'page-mount'");
         expect(screen).not.toContain("owner: 'camera-ready'");
         expect(screen).not.toContain('accessibilityStatus');
+        expect(screen).toContain('useAccessibilitySpeechNavigation(handleAccessibilityNavigation)');
+        expect(screen).toContain('pendingObjectAnnouncementRef.current = null;');
+        expect(screen).toContain('clearObjectSpeechRetry();');
+        expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
         expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
         expect(currencyScanner).toContain("speechManager?.speak('พร้อมสแกนใบถัดไป'");
         expect(callScreen).toContain("owner: 'call-status'");
+        expect(callScreen).toContain('useAccessibilitySpeechNavigation()');
         expect(callScreen).not.toMatch(/<h1[^>]*aria-hidden/);
         expect(chatOverlay).toContain("owner: 'volunteer-message'");
     });

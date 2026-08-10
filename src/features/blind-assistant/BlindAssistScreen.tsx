@@ -13,6 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 import { isImportantTargetingEvent } from '@/features/blind-assistant/client/objectTargeting';
@@ -163,6 +164,12 @@ export default function BlindAssistScreen() {
         clearObjectSpeechRetry();
         speechManager?.stopByOwner('object-detector');
     }, [clearObjectSpeechRetry]);
+
+    const handleAccessibilityNavigation = useCallback(() => {
+        pendingObjectAnnouncementRef.current = null;
+        clearObjectSpeechRetry();
+    }, [clearObjectSpeechRetry]);
+    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation(handleAccessibilityNavigation);
 
     // B. AI Assistant
     const {

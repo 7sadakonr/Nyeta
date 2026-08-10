@@ -59,7 +59,8 @@ export default function BlindAssistScreen() {
         const timer = setTimeout(() => {
             const savedMode = typeof window !== 'undefined' ? (localStorage.getItem('nyeta_blind_mode') as AssistantMode | null) : null;
             const currentMode = savedMode || 'assistant';
-            const modeName = currentMode === 'currency' ? 'ดูสกุลเงิน' : currentMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+            if (currentMode === 'currency') return;
+            const modeName = currentMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
             speechManager?.speak(`โหมด${modeName} กำลังเปิดกล้องครับ`, {
                 priority: Priority.NORMAL,
                 owner: 'page-mount',
@@ -74,8 +75,9 @@ export default function BlindAssistScreen() {
     useEffect(() => {
         if (aiReady && !hasAnnouncedReadyRef.current) {
             hasAnnouncedReadyRef.current = true;
-            const modeName = mode === 'currency' ? 'ดูสกุลเงิน' : mode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-            const instruction = mode === 'currency' ? ' วางเงินทั้งหมดในภาพ แล้วกดปุ่มถ่ายตรงกลาง ระบบจะรวมยอดให้อัตโนมัติ' : '';
+            if (mode === 'currency') return;
+            const modeName = mode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+            const instruction = '';
             speechManager?.speak(`กล้องโหมด${modeName}พร้อมใช้งานแล้วครับ${instruction}`, {
                 priority: Priority.HIGH,
                 owner: 'camera-ready',
@@ -268,13 +270,15 @@ export default function BlindAssistScreen() {
         if (typeof window !== 'undefined') {
             localStorage.setItem('nyeta_blind_mode', newMode);
         }
-        const modeName = newMode === 'currency' ? 'ดูสกุลเงิน' : newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-        const instruction = newMode === 'currency' ? ' วางเงินทั้งหมดในภาพ แล้วกดปุ่มถ่ายตรงกลาง ระบบจะรวมยอดให้อัตโนมัติ' : '';
+        if (newMode !== 'currency') {
+            const modeName = newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
+        const instruction = '';
         speechManager?.speak(`เปลี่ยนเป็นโหมด${modeName}${instruction}`, {
             priority: Priority.CRITICAL,
             owner: 'mode-switch',
             rate: 1.1,
         });
+        }
 
         // Reset state
         if (newMode !== 'reader') resetDocument();

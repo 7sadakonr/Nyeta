@@ -132,24 +132,21 @@ export default function ControlBar({
             )}
 
             {mode === 'currency' && (
-                <div className="space-y-3">
-                    <div className="flex items-center justify-center gap-4">
-                        <button type="button" disabled={!currencyResult} onClick={onShowCurrencyDetails} className={`w-14 h-14 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none ${currencyResult ? 'bg-zinc-900 text-amber-300 border-amber-500 active:scale-95' : 'bg-zinc-900 text-white/40 border-zinc-800 cursor-not-allowed'}`} aria-label="ดูรายละเอียดเงินที่ตรวจพบ">
-                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="13" height="16" rx="2" /><path d="M7 8h5M7 12h5M7 16h3" /><circle cx="17.5" cy="17.5" r="3.5" /><path d="m20 20 1.5 1.5" /></svg>
-                        </button>
-                        <button type="button" disabled={!aiReady || currencyScanning} onClick={onCurrencyCapture} className={`relative w-[88px] h-[88px] rounded-full flex items-center justify-center border-4 focus:ring-4 focus:ring-amber-200 focus:outline-none ${(!aiReady || currencyScanning) ? 'bg-zinc-800 border-zinc-700 text-white/40 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-400 active:scale-90 border-amber-300 text-black'}`} aria-label={currencyScanning ? 'กำลังตรวจเงิน' : 'ถ่ายภาพเพื่อตรวจเงิน'} aria-busy={currencyScanning}>
-                            {currencyScanning ? <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" /><circle cx="12" cy="13" r="3" /></svg>}
-                        </button>
-                        <button type="button" disabled={totalAmount === 0} onClick={onClearTotal} className={`w-14 h-14 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none ${totalAmount > 0 ? 'bg-zinc-900 text-red-300 border-red-700 active:scale-95' : 'bg-zinc-900 text-white/40 border-zinc-800 cursor-not-allowed'}`} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>
-                            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><path d="M10 11v6M14 11v6" /></svg>
-                        </button>
+                <div className="mx-auto w-full max-w-md space-y-3" aria-label="การสแกนสกุลเงินอัตโนมัติ">
+                    <div className="flex items-center justify-center gap-2 text-sm font-semibold text-amber-200" aria-live="polite">
+                        <span className={`h-2.5 w-2.5 rounded-full ${currencyMonitoring ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden="true" />
+                        {currencyMonitoring ? 'กำลังสแกนอัตโนมัติ' : 'รอกล้องพร้อม'}
                     </div>
-                    <div className="flex items-center justify-center gap-3">
-                        <button type="button" onClick={onReplayTotal} className="min-h-11 px-4 rounded-xl bg-amber-950 text-amber-200 border border-amber-700 focus:ring-2 focus:ring-white focus:outline-none" aria-label={`ยอดรวมสะสม ${totalAmount} บาท มี ${scannedCount} ชิ้น กดเพื่ออ่านออกเสียง`}>ยอดรวม ฿{totalAmount.toLocaleString()}</button>
+                    <button type="button" onClick={onReplayTotal} className="min-h-14 w-full rounded-2xl border-2 border-amber-600 bg-amber-950 px-5 text-left text-amber-100 focus:outline-none focus:ring-2 focus:ring-white active:scale-[0.98]" aria-label={`ยอดรวมสะสม ${totalAmount} บาท มี ${scannedCount} ชิ้น กดเพื่ออ่านออกเสียง`}>
+                        <span className="block text-xs font-semibold uppercase tracking-wide text-amber-300">ยอดรวมสะสม</span>
+                        <span className="mt-1 block text-3xl font-black tracking-wide">฿{totalAmount.toLocaleString()}</span>
+                    </button>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button type="button" disabled={!currencyResult} onClick={onShowCurrencyDetails} className={`min-h-12 rounded-xl border-2 px-4 font-bold focus:outline-none focus:ring-2 focus:ring-white ${currencyResult ? 'border-amber-500 bg-zinc-900 text-amber-200 active:scale-[0.98]' : 'cursor-not-allowed border-zinc-800 bg-zinc-900 text-white/40'}`} aria-label="ฟังรายละเอียดเงินล่าสุด">รายละเอียด</button>
+                        <button type="button" disabled={totalAmount === 0} onClick={onClearTotal} className="min-h-12 rounded-xl border-2 border-red-800 bg-zinc-900 px-4 font-bold text-red-200 focus:outline-none focus:ring-2 focus:ring-white active:scale-[0.98] disabled:cursor-not-allowed disabled:border-zinc-800 disabled:text-white/40" aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</button>
                     </div>
                 </div>
             )}
-
             {mode === 'reader' && (
                 <div className="flex items-center justify-center gap-4">
                     <button

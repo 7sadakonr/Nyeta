@@ -28,47 +28,74 @@ The interface is designed for eyes-free operation with spoken feedback, voice in
 
 ## 🏛 Feature-First Architecture
 
-The project is structured around **Domain-Driven Feature Slices** for high maintainability:
+Nyeta uses a **Feature-First / Vertical Slice Architecture**. Instead of grouping the entire application only by technical file type, code is grouped by the product feature or responsibility it belongs to. This keeps feature-specific UI, logic, client utilities, and types close together while shared and server-only concerns stay separated.
+
+### Main areas
+
+| Area | What it is | Responsibility |
+|---|---|---|
+| `src/app/` | **Application entry points** | Defines Next.js routes, pages, layouts, and API endpoints. These files stay thin and mainly connect requests/screens to feature or server logic. |
+| `src/features/` | **Product feature modules** | Contains the real user-facing behavior of Nyeta. Each feature owns its UI, hooks, client logic, and domain-specific types. |
+| `src/shared/` | **Reusable cross-feature code** | Holds accessibility services, common hooks, UI primitives, and types that are used by more than one feature. |
+| `src/server/` | **Trusted server-only layer** | Handles secrets, authentication, Redis state, Pusher server operations, AI requests, security checks, and WebRTC server configuration. |
 
 ```text
 src/
-├── app/                  # Next.js App Router (Thin Routes & Route Handlers)
-│   ├── blind/            # Thin orchestrator for blind assistant
-│   ├── volunteer/        # Thin orchestrator for volunteer screen
-│   ├── call/             # Thin orchestrator for WebRTC call screen
-│   └── api/              # Thin API route handlers delegating to src/server/
+├── app/                  # ROUTING LAYER: Next.js entry points; keeps route/page files thin
+│   ├── blind/            # /blind page; starts and renders the blind-assistant experience
+│   ├── volunteer/        # /volunteer page; starts and renders the volunteer experience
+│   ├── call/             # Call-page route; connects URL/session state to the calling feature
+│   └── api/              # HTTP API endpoints; validates requests then delegates to src/server/
 │
-├── features/             # Domain features (Vertical Slices)
-│   ├── blind-assistant/  # AI vision, OCR reader, currency scanner, speech input
-│   │   ├── components/   # UI components (CameraView, ControlBar, etc.)
-│   │   ├── hooks/        # Assistant business logic hooks
-│   │   ├── client/       # Client-side AI / Gemini vision / OCR utilities
-│   │   ├── types/        # Assistant domain types
-│   │   └── BlindAssistScreen.tsx # Screen orchestrator
+├── features/             # FEATURE LAYER: complete user-facing capabilities grouped by domain
+│   ├── blind-assistant/  # Everything specific to AI assistance for blind users
+│   │   ├── components/   # Feature UI: camera view, controls, status panels, etc.
+│   │   ├── hooks/        # Feature behavior/state: camera, scanning, speech, mode workflows
+│   │   ├── client/       # Browser-side helpers: object detection, image/OCR processing, AI request clients
+│   │   ├── types/        # Types used only by the blind-assistant domain
+│   │   └── BlindAssistScreen.tsx # Top-level screen that composes the feature pieces together
 │   │
-│   └── calling/          # WebRTC calls, Pusher signaling, video streaming, chat
-│       ├── components/   # Call UI (ImageViewer, ChatPanel, CaptureControls, etc.)
-│       ├── hooks/        # WebRTC hooks (useBlindHelp, useVolunteerHelp, useDataChannel)
-│       ├── client/       # Signaling, peer connections, session clients
-│       ├── types.ts      # Call domain types
-│       ├── BlindCallScreen.tsx
-│       └── VolunteerScreen.tsx
+│   └── calling/          # Everything specific to live blind-user ↔ volunteer assistance calls
+│       ├── components/   # Call UI: video/image viewer, chat, capture and remote-control UI
+│       ├── hooks/        # WebRTC/call behavior: blind flow, volunteer flow, data-channel handling
+│       ├── client/       # Browser-side signaling, peer connection, and call-session clients
+│       ├── types.ts      # Types used by the calling domain
+│       ├── BlindCallScreen.tsx   # Blind user's active-call screen/orchestrator
+│       └── VolunteerScreen.tsx   # Volunteer dashboard/call screen/orchestrator
 │
-├── shared/               # Cross-cutting utilities, accessibility, & common UI
-│   ├── accessibility/    # Central SpeechManager, TTS, HapticFeedback, Audio earcons
-│   ├── hooks/            # Shared custom hooks (useWakeLock, useSpeechStatus)
-│   ├── ui/               # ErrorBoundary, icons
-│   └── types/            # Shared interfaces & type definitions
+├── shared/               # SHARED LAYER: reusable code that does not belong to only one feature
+│   ├── accessibility/    # SpeechManager/TTS, haptics, audio earcons, accessibility coordination
+│   ├── hooks/            # Generic reusable hooks such as Wake Lock and speech-status handling
+│   ├── ui/               # Common UI infrastructure such as ErrorBoundary and shared icons
+│   └── types/            # Interfaces/types reused across multiple domains
 │
-└── server/               # Server-only logic (Secrets, Redis, Pusher, AI Prompts)
-    ├── ai/               # Gemini AI client, validation, types, vision prompts
-    ├── auth/             # Session authentication and token signing
-    ├── calls/            # Upstash Redis call session store
-    ├── realtime/         # Pusher server triggers and channel auth
-    ├── security/         # Rate limiting and request validation
-    ├── webrtc/           # ICE/TURN server configuration
-    └── types.ts          # Server-specific types
+└── server/               # SERVER LAYER: trusted code that must never run in the browser
+    ├── ai/               # Gemini client, prompts, validation, response/domain types
+    ├── auth/             # Session authentication, identity validation, and token signing
+    ├── calls/            # Server-authoritative call lifecycle and Upstash Redis call state
+    ├── realtime/         # Pusher server triggers, presence/private-channel authentication
+    ├── security/         # Rate limiting, request validation, and abuse/security guards
+    ├── webrtc/           # ICE/STUN/TURN configuration delivered securely to clients
+    └── types.ts          # Types used only by server-side code
 ```
+
+### How the layers work together
+
+A typical request flows in one direction:
+
+```text
+User / Browser
+     ↓
+src/app/          Route or API entry point
+     ↓
+src/features/     Feature UI + feature-specific client behavior
+     ↓
+src/server/       Trusted backend operations when server access is required
+
+src/shared/       Reusable accessibility/UI utilities can be consumed by multiple features
+```
+
+For example, the `/blind` route should mainly load the **blind-assistant feature** rather than contain all camera, AI, speech, and scanning logic itself. Likewise, API routes under `src/app/api/` remain small and pass trusted operations such as Gemini requests, call-state changes, authentication, and rate limiting to `src/server/`.
 
 ---
 

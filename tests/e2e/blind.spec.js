@@ -34,4 +34,14 @@ test.describe('Blind Assistance Page (/blind)', () => {
         await assistantTab.click();
         await expect(assistantTab).toHaveAttribute('aria-selected', 'true');
     });
+
+    test('uses no live region for realtime TTS-owned updates', async ({ page }) => {
+        await page.goto('/blind');
+        await expect(page.locator('main').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
+        await expect(page.getByRole('tab', { name: /โหมดผู้ช่วย/i })).toBeVisible();
+
+        await page.goto('/call');
+        await expect(page.locator('main').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: /เรียกอาสาสมัคร/i })).toBeVisible();
+    });
 });

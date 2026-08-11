@@ -133,7 +133,7 @@ export default function ControlBar({
 
             {mode === 'currency' && (
                 <div className="mx-auto w-full max-w-md space-y-3" aria-label="การสแกนสกุลเงินอัตโนมัติ">
-                    <div className="flex items-center justify-center gap-2 text-sm font-semibold text-amber-200" aria-live="polite">
+                    <div className="flex items-center justify-center gap-2 text-sm font-semibold text-amber-200">
                         <span className={`h-2.5 w-2.5 rounded-full ${currencyMonitoring ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`} aria-hidden="true" />
                         {currencyMonitoring ? 'กำลังสแกนอัตโนมัติ' : 'รอกล้องพร้อม'}
                     </div>

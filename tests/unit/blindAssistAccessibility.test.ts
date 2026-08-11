@@ -4,14 +4,61 @@ import { describe, expect, it } from 'vitest';
 
 const readSource = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
-describe('Blind Assistant camera accessibility', () => {
-    it('keeps visual camera overlays hidden while exposing a polite status outside that subtree', () => {
+const TTS_OWNED_SURFACES = [
+    'src/features/blind-assistant/BlindAssistScreen.tsx',
+    'src/features/blind-assistant/components/ControlBar.tsx',
+    'src/features/calling/BlindCallScreen.tsx',
+    'src/features/calling/components/BlindChatOverlay.tsx',
+];
+
+describe('TTS and VoiceOver announcement ownership', () => {
+    it('does not give TTS-owned realtime surfaces a second live-announcement channel', () => {
+        for (const path of TTS_OWNED_SURFACES) {
+            const source = readSource(path);
+            expect(source).not.toMatch(/\baria-live\s*=/);
+            expect(source).not.toMatch(/\brole\s*=\s*["'](?:status|alert)["']/);
+        }
+    });
+
+    it('keeps TTS paths while removing their duplicate live regions', () => {
+        const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
+        const callScreen = readSource('src/features/calling/BlindCallScreen.tsx');
+        const chatOverlay = readSource('src/features/calling/components/BlindChatOverlay.tsx');
+        const currencyScanner = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
+
+        expect(screen).toContain("owner: 'object-detector'");
+        expect(screen).toContain("owner: 'ai-response'");
+        expect(screen).not.toContain("owner: 'mode-switch'");
+        expect(screen).not.toContain("owner: 'page-mount'");
+        expect(screen).not.toContain("owner: 'camera-ready'");
+        expect(screen).not.toContain('accessibilityStatus');
+        expect(screen).toContain('useAccessibilitySpeechNavigation(handleAccessibilityNavigation)');
+        expect(screen).toContain('pendingObjectAnnouncementRef.current = null;');
+        expect(screen).toContain('clearObjectSpeechRetry();');
+        expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
+        expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
+        expect(currencyScanner).toContain("speechManager?.speak('พร้อมสแกนใบถัดไป'");
+        expect(callScreen).toContain("owner: 'call-status'");
+        expect(callScreen).toContain('useAccessibilitySpeechNavigation()');
+        expect(callScreen).not.toMatch(/<h1[^>]*aria-hidden/);
+        expect(chatOverlay).toContain("owner: 'volunteer-message'");
+    });
+
+    it('preserves focus and navigation accessibility', () => {
         const cameraView = readSource('src/features/blind-assistant/components/CameraView.tsx');
+        const modeSwitcher = readSource('src/features/blind-assistant/components/ModeSwitcher.tsx');
+        const controlBar = readSource('src/features/blind-assistant/components/ControlBar.tsx');
+        const chatHistory = readSource('src/features/blind-assistant/components/ChatHistory.tsx');
         const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
 
         expect(cameraView).toContain('aria-hidden="true"');
-        expect(cameraView).not.toMatch(/aria-live=/);
-        expect(cameraView).not.toMatch(/role="status"/);
-        expect(screen).toContain('role="status" aria-live="polite" aria-atomic="true"');
+        expect(cameraView).not.toMatch(/<(?:button|a|input|select|textarea)\b/i);
+        expect(modeSwitcher).toContain('role="tablist"');
+        expect(modeSwitcher).toContain('role="tab"');
+        expect(modeSwitcher).toContain('aria-selected={mode === item.id}');
+        expect(controlBar).toContain('role="group" aria-label="ปุ่มควบคุม"');
+        expect(chatHistory).toContain('aria-label="ประวัติการสนทนา"');
+        expect(chatHistory).toContain('tabIndex={0}');
+        expect(screen).toContain('role="dialog" aria-modal="true"');
     });
 });

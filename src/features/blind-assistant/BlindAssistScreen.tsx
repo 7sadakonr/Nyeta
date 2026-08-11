@@ -13,6 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 import { isImportantTargetingEvent } from '@/features/blind-assistant/client/objectTargeting';
@@ -53,39 +54,6 @@ export default function BlindAssistScreen() {
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
-
-    // Immediate auditory cue when arriving at blind page
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            const savedMode = typeof window !== 'undefined' ? (localStorage.getItem('nyeta_blind_mode') as AssistantMode | null) : null;
-            const currentMode = savedMode || 'assistant';
-            if (currentMode === 'currency') return;
-            const modeName = currentMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-            speechManager?.speak(`โหมด${modeName} กำลังเปิดกล้องครับ`, {
-                priority: Priority.NORMAL,
-                owner: 'page-mount',
-                rate: 1.1,
-            });
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
-
-    // Initial camera ready announcement (Auditory cue for blind users on initial entry)
-    const hasAnnouncedReadyRef = useRef<boolean>(false);
-    useEffect(() => {
-        if (aiReady && !hasAnnouncedReadyRef.current) {
-            hasAnnouncedReadyRef.current = true;
-            if (mode === 'currency') return;
-            const modeName = mode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-            const instruction = '';
-            speechManager?.speak(`กล้องโหมด${modeName}พร้อมใช้งานแล้วครับ${instruction}`, {
-                priority: Priority.HIGH,
-                owner: 'camera-ready',
-                rate: 1.1,
-            });
-        }
-    }, [aiReady, mode]);
-
     // Announce camera access error if any
     useEffect(() => {
         if (cameraError) {
@@ -197,6 +165,12 @@ export default function BlindAssistScreen() {
         speechManager?.stopByOwner('object-detector');
     }, [clearObjectSpeechRetry]);
 
+    const handleAccessibilityNavigation = useCallback(() => {
+        pendingObjectAnnouncementRef.current = null;
+        clearObjectSpeechRetry();
+    }, [clearObjectSpeechRetry]);
+    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation(handleAccessibilityNavigation);
+
     // B. AI Assistant
     const {
         status: aiStatus,
@@ -270,16 +244,6 @@ export default function BlindAssistScreen() {
         if (typeof window !== 'undefined') {
             localStorage.setItem('nyeta_blind_mode', newMode);
         }
-        if (newMode !== 'currency') {
-            const modeName = newMode === 'reader' ? 'อ่านเอกสาร' : 'ผู้ช่วยเอไอ';
-        const instruction = '';
-        speechManager?.speak(`เปลี่ยนเป็นโหมด${modeName}${instruction}`, {
-            priority: Priority.CRITICAL,
-            owner: 'mode-switch',
-            rate: 1.1,
-        });
-        }
-
         // Reset state
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
@@ -328,8 +292,6 @@ export default function BlindAssistScreen() {
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
 
-    const accessibilityStatus = mode === 'assistant' ? guidanceText : mode === 'reader' ? readerGuidance : currencyHint;
-
     const cameraHeightClass = showCapturedText ? 'h-[38%]' : 'flex-1 min-h-0';
 
     return (
@@ -377,10 +339,6 @@ export default function BlindAssistScreen() {
                     showCapturedText={showCapturedText}
                     detectedObjects={detectedObjects}
                 />
-                <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-                    {accessibilityStatus}
-                </div>
-
                 <ModeSwitcher mode={mode} switchMode={switchMode} />
 
                 {mode === 'assistant' && showCapturedText && (
@@ -392,7 +350,7 @@ export default function BlindAssistScreen() {
                         <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-700">
                             <p className="text-lg leading-relaxed whitespace-pre-wrap text-white">{docText}</p>
                             {isReading && (
-                                <p className="text-violet-400 text-sm mt-4 animate-pulse" aria-live="polite">กำลังอ่านออกเสียง...</p>
+                                <p className="text-violet-400 text-sm mt-4 animate-pulse">กำลังอ่านออกเสียง...</p>
                             )}
                         </div>
                     </section>

@@ -9,6 +9,7 @@ import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { playEarcon } from '@/shared/accessibility/audio';
 
 const STATUS_SPEECH: Record<string, string> = {
@@ -33,6 +34,7 @@ export default function BlindCallScreen() {
         dataChannel
     });
     const [latestMessage, setLatestMessage] = useState<{ from?: string; text?: string } | null>(null);
+    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation();
 
     useEffect(() => {
         if (!dataChannel) return;
@@ -108,18 +110,12 @@ export default function BlindCallScreen() {
         'พร้อมเรียกอาสาสมัคร';
 
     return (
-        <div className="flex flex-col h-screen bg-slate-900 text-white relative overflow-hidden font-sans">
+        <div {...accessibilitySpeechNavigation} className="flex flex-col h-screen bg-slate-900 text-white relative overflow-hidden font-sans">
             <HapticFeedback ref={hapticRef} />
 
             {/* Hidden media elements */}
             <video ref={localVideoRef} autoPlay muted playsInline className="sr-only" aria-hidden="true" />
             <audio ref={remoteAudioRef} autoPlay className="sr-only" aria-hidden="true" />
-
-            {/* Live status for screen readers */}
-            <div className="sr-only" role="status" aria-live="assertive" aria-atomic="true">
-                {statusLabel}
-            </div>
-
             {/* Capture Flash Overlay */}
             {captureState === 'flash-on' && (
                 <div className="absolute inset-0 z-[60] bg-white pointer-events-none transition-opacity duration-75" />
@@ -161,9 +157,9 @@ export default function BlindCallScreen() {
                     </svg>
                 </div>
 
-                <h1 className="text-3xl font-black mb-3" aria-hidden="true">{statusLabel}</h1>
+                <h1 className="text-3xl font-black mb-3">{statusLabel}</h1>
                 {!isActive && !isFinished && (
-                    <p className="text-lg text-slate-400 mb-2" aria-hidden="true">
+                    <p className="text-lg text-slate-400 mb-2">
                         กดปุ่มด้านล่างเพื่อโทรขอความช่วยเหลือจากอาสาสมัคร
                     </p>
                 )}

@@ -256,7 +256,6 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
             if (!readyAnnouncedRef.current) {
                 readyAnnouncedRef.current = true;
                 setHintIfChanged('กำลังค้นหาเงินอัตโนมัติ');
-                speechManager?.speak('โหมดดูสกุลเงินพร้อมแล้ว นำธนบัตรเข้ากล้องได้เลย', { priority: Priority.HIGH, owner: 'currency', rate: 1.1 });
             }
         };
 

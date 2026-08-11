@@ -96,10 +96,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
     if (!latestMessage) return null;
 
     return (
-        <div 
-            className="absolute top-20 left-4 right-4 z-40"
-            aria-live="assertive"
-        >
+        <div className="absolute top-20 left-4 right-4 z-40">
             {latestMessage.from === 'volunteer' && (
                 <div className="bg-black/80 backdrop-blur-md rounded-2xl p-4 shadow-2xl border-2 border-yellow-400/50">
                     <p className="text-2xl font-bold text-yellow-400 mb-1">อาสาสมัคร:</p>

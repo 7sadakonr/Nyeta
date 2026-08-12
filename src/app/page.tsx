@@ -1,45 +1,24 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import speechManager from '@/shared/accessibility/speechManager';
 
 export default function Home() {
   const router = useRouter();
   const hapticRef = useRef<HapticFeedbackHandle | null>(null);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      speechManager?.speak('ยินดีต้อนรับสู่ Nyeta แตะผู้ช่วย AI หรือแตะโทรหาอาสาสมัคร', {
-        priority: Priority.NORMAL,
-        owner: 'home-welcome',
-        rate: 1.1,
-      });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
-
   const handleStart = async () => {
     speechManager?.unlock();
-    speechManager?.speak('กำลังเปิดโหมดผู้ช่วยเอไอ', {
-      priority: Priority.CRITICAL,
-      owner: 'home-action',
-      rate: 1.1,
-    });
     await hapticRef.current?.trigger(5, 100);
     router.push('/blind');
   };
 
   const handleCall = async () => {
     speechManager?.unlock();
-    speechManager?.speak('กำลังเปิดหน้าโทรหาอาสาสมัคร', {
-      priority: Priority.CRITICAL,
-      owner: 'home-action',
-      rate: 1.1,
-    });
     await hapticRef.current?.trigger(3, 100);
     router.push('/call');
   };
@@ -57,7 +36,7 @@ export default function Home() {
       <div className="flex flex-col items-center text-center max-w-lg">
         <div className="w-24 h-24 rounded-full bg-sky-500/20 border-2 border-sky-500/40 flex items-center justify-center mb-8">
           <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-sky-400">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8z" />
             <circle cx="12" cy="12" r="3" />
           </svg>
         </div>

@@ -575,6 +575,9 @@ export class SpeechManager {
         }
         return;
       }
+      try {
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      } catch {}
       const utterance = new SpeechSynthesisUtterance(chunks[index]);
       utterance.lang = lang;
       utterance.rate = rate;

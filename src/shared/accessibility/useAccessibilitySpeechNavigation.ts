@@ -43,23 +43,33 @@ export function useAccessibilitySpeechNavigation(
 ) {
   const lastInteractionRef = useRef<{ element: Element; at: number } | null>(null);
 
-  const interruptForInteraction = useCallback((target: EventTarget | null) => {
+  const interruptForInteraction = useCallback((target: EventTarget | null, type?: string) => {
     if (!(target instanceof Element)) return;
+    const element = target.closest(INTERACTIVE_ACCESSIBILITY_SELECTOR);
+    if (!element) return;
 
     const now = Date.now();
     const previous = lastInteractionRef.current;
-    if (previous?.element === target && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
+    
+    // Ignore duplicate focus events on the exact same element (e.g., from React re-renders)
+    if (type === 'focus' && previous?.element === element) {
+        // Just update the timestamp, but don't interrupt
+        lastInteractionRef.current!.at = now;
+        return;
+    }
 
-    lastInteractionRef.current = { element: target, at: now };
+    if (previous?.element === element && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
+
+    lastInteractionRef.current = { element, at: now };
     speechManager?.interruptForAccessibilityNavigation();
     onNavigation?.();
   }, [onNavigation]);
 
   return {
-    onFocusCapture: (event: React.FocusEvent<HTMLElement>) => interruptForInteraction(event.target),
-    onPointerDownCapture: (event: React.PointerEvent<HTMLElement>) => interruptForInteraction(event.target),
-    onTouchStartCapture: (event: React.TouchEvent<HTMLElement>) => interruptForInteraction(event.target),
-    onClickCapture: (event: React.MouseEvent<HTMLElement>) => interruptForInteraction(event.target),
-    onKeyDownCapture: (event: React.KeyboardEvent<HTMLElement>) => interruptForInteraction(event.target),
+    onFocusCapture: (event: React.FocusEvent<HTMLElement>) => interruptForInteraction(event.target, 'focus'),
+    onPointerDownCapture: (event: React.PointerEvent<HTMLElement>) => interruptForInteraction(event.target, 'pointerdown'),
+    onTouchStartCapture: (event: React.TouchEvent<HTMLElement>) => interruptForInteraction(event.target, 'touchstart'),
+    onClickCapture: (event: React.MouseEvent<HTMLElement>) => interruptForInteraction(event.target, 'click'),
+    onKeyDownCapture: (event: React.KeyboardEvent<HTMLElement>) => interruptForInteraction(event.target, 'keydown'),
   };
 }

@@ -87,7 +87,7 @@ export default function CameraView({
             <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-b from-black/30 via-transparent to-black/35" />
 
             {mode === 'assistant' && objectDetectorEnabled && guidanceText && !voiceTranscript && (
-                <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-none border px-4 py-3 text-center shadow-lg backdrop-blur-md ${guidanceText.includes('✅')
+                <div aria-hidden="true" className={`absolute bottom-3 left-3 right-3 z-20 rounded-none border px-4 py-3 text-center shadow-lg backdrop-blur-md ${guidanceText.includes('✅')
                     ? 'border-green-200 bg-white/[0.94]'
                     : guidanceText.includes('ไม่เจอ')
                         ? 'border-slate-200 bg-white/[0.94]'
@@ -104,7 +104,7 @@ export default function CameraView({
             )}
 
             {mode === 'reader' && readerGuidance && !voiceTranscript && aiStatus !== 'thinking' && (
-                <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-none border px-4 py-3 text-center shadow-lg backdrop-blur-md ${readerAligned
+                <div aria-hidden="true" className={`absolute bottom-3 left-3 right-3 z-20 rounded-none border px-4 py-3 text-center shadow-lg backdrop-blur-md ${readerAligned
                     ? 'border-green-200 bg-white/[0.94]'
                     : readerGuidance.includes('ยังไม่เจอ')
                         ? 'border-slate-200 bg-white/[0.94]'
@@ -119,6 +119,7 @@ export default function CameraView({
                 <>
                     {(isBlocked || !currencyResult) && (
                         <div
+                            aria-hidden="true"
                             className={`pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center p-6 ${isBlocked ? 'bg-red-950/35' : ''}`}
                         >
                             {isBlocked ? (
@@ -159,7 +160,7 @@ export default function CameraView({
             )}
 
             {mode === 'assistant' && !showCapturedText && objectDetectorEnabled && !guidanceText && !voiceTranscript && (
-                <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 rounded-none border border-white/50 bg-white/[0.92] p-3 text-center shadow-lg backdrop-blur-md">
+                <div aria-hidden="true" className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 rounded-none border border-white/50 bg-white/[0.92] p-3 text-center shadow-lg backdrop-blur-md">
                     <p className="text-sm font-semibold text-[#475569]">บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง</p>
                 </div>
             )}

@@ -45,14 +45,12 @@ export function useAccessibilitySpeechNavigation(
 
   const interruptForInteraction = useCallback((target: EventTarget | null) => {
     if (!(target instanceof Element)) return;
-    const element = target.closest(INTERACTIVE_ACCESSIBILITY_SELECTOR);
-    if (!element) return;
 
     const now = Date.now();
     const previous = lastInteractionRef.current;
-    if (previous?.element === element && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
+    if (previous?.element === target && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
 
-    lastInteractionRef.current = { element, at: now };
+    lastInteractionRef.current = { element: target, at: now };
     speechManager?.interruptForAccessibilityNavigation();
     onNavigation?.();
   }, [onNavigation]);

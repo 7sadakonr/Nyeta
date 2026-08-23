@@ -8,7 +8,7 @@ import { CancelSpeechOptions, Priority, PriorityLevel, SpeechCategory, SpeechCat
 
 export { Priority };
 
-const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 1500;
+const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 3500;
 const MAX_DEDUPE_HISTORY_ENTRIES = 128;
 const DEFAULT_REALTIME_MAX_AGE_MS = 1500;
 

@@ -31,27 +31,39 @@ export interface ControlBarProps {
     onStopReading: () => void;
 }
 
-interface ActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ActionButtonProps extends React.HTMLAttributes<HTMLDivElement> {
     tone?: 'primary' | 'secondary' | 'danger';
     wide?: boolean;
+    disabled?: boolean;
 }
 
-const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, className = '', children, ...props }, ref) {
+const ActionButton = React.forwardRef<HTMLDivElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, className = '', children, onClick, ...props }, ref) {
     const toneClass = tone === 'primary'
         ? 'bg-[#2563EB] text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)] hover:bg-[#1D4ED8]'
         : tone === 'danger'
             ? 'border border-[#FECACA] bg-[#FFF1F2] text-[#B91C1C] hover:bg-[#FFE4E6]'
             : 'border border-[#DBE7F5] bg-[#F8FBFF] text-[#0F172A] hover:bg-[#EFF6FF]';
 
+    const disabled = props.disabled;
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            onClick?.(e as any);
+        }
+    };
+
     return (
-        <button
+        <div
             ref={ref}
-            type="button"
-            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-none px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${toneClass} ${className}`}
+            role="button"
+            tabIndex={disabled ? -1 : 0}
+            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-none px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] cursor-pointer active:scale-[0.985] ${disabled ? 'cursor-not-allowed opacity-45' : ''} ${toneClass} ${className}`}
+            onClick={disabled ? undefined : onClick}
+            onKeyDown={handleKeyDown}
             {...props}
         >
             {children}
-        </button>
+        </div>
     );
 });
 
@@ -84,7 +96,7 @@ export default function ControlBar({
     const isBusy = aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
     const canRead = aiReady && !isProcessingDoc && !isBusy;
-    const describeSceneRef = React.useRef<HTMLButtonElement | null>(null);
+    const describeSceneRef = React.useRef<HTMLDivElement | null>(null);
     const hasFocusedDescribeSceneRef = React.useRef(false);
 
     React.useEffect(() => {

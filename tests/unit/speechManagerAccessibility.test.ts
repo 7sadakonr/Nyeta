@@ -44,7 +44,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
     expect(manager.isSpeaking).toBe(false);
     oldUtterance.onend?.();
-    vi.advanceTimersByTime(1500);
+    vi.advanceTimersByTime(3500);
     expect(utterances).toHaveLength(1);
     expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
   });
@@ -58,7 +58,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(manager.speak('คำตอบใหม่', { priority: Priority.HIGH, owner: 'ai' })).toBe(true);
     vi.advanceTimersByTime(700);
     manager.interruptForAccessibilityNavigation();
-    vi.advanceTimersByTime(900);
+    vi.advanceTimersByTime(2900);
     expect(utterances).toHaveLength(0);
     expect(manager.speak('คำตอบหลัง swipe', { priority: Priority.HIGH, owner: 'ai' })).toBe(true);
     vi.advanceTimersByTime(700);
@@ -73,14 +73,14 @@ describe('SpeechManager accessibility navigation coordination', () => {
     manager.speak('กล้องมีปัญหา', { priority: Priority.CRITICAL, owner: 'camera-error' });
     manager.interruptForAccessibilityNavigation();
     expect(normalEnd).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1600);
+    vi.advanceTimersByTime(3600);
     expect(utterances.map(utterance => utterance.text)).toEqual(['กล้องมีปัญหา']);
   });
 
   it('remains usable after an accessibility interruption', () => {
     const manager = new SpeechManager();
     manager.interruptForAccessibilityNavigation();
-    vi.advanceTimersByTime(1600);
+    vi.advanceTimersByTime(3600);
     expect(manager.speak('เหตุการณ์ใหม่', { priority: Priority.LOW })).toBe(true);
     expect(utterances.map(utterance => utterance.text)).toEqual(['เหตุการณ์ใหม่']);
   });
@@ -314,7 +314,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(manager.hasPausedSpeech).toBe(true);
     
     // Idle
-    vi.advanceTimersByTime(1600);
+    vi.advanceTimersByTime(3600);
     expect(manager.hasPausedSpeech).toBe(false);
     expect(utterances.length).toBeGreaterThan(1); // Resumed chunks
   });

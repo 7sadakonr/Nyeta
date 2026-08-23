@@ -259,8 +259,8 @@ export class SpeechManager {
         if (this._currentCategory === SpeechCategory.REALTIME) {
           this._interruptCurrent();
         } else {
-          this._queue.push(item);
-          return true;
+          onEnd?.(false);
+          return false;
         }
       }
       this._doSpeak(cleanText, item);

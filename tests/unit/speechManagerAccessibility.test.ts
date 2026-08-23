@@ -154,6 +154,26 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(utterances.map(utterance => utterance.text)).toEqual(['ขยับซ้าย', 'ขยับขวา']);
   });
 
+  it('drops object guidance while an AI task response is speaking', () => {
+    const manager = new SpeechManager();
+    const guidanceEnd = vi.fn();
+
+    expect(manager.speak('ด้านหน้ามีโต๊ะ', {
+      category: SpeechCategory.TASK,
+      owner: 'ai-response',
+    })).toBe(true);
+    expect(manager.speak('ขยับไปทางซ้าย', {
+      category: SpeechCategory.REALTIME,
+      owner: 'object-detector',
+      realtimeKey: 'object-guidance',
+      onEnd: guidanceEnd,
+    })).toBe(false);
+
+    utterances[0].onend?.();
+    expect(utterances.map(utterance => utterance.text)).toEqual(['ด้านหน้ามีโต๊ะ']);
+    expect(guidanceEnd).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
   it('drops non-critical speech while listening and drains a critical message after the microphone ends', () => {
     const manager = new SpeechManager();
     const abortRecognition = vi.fn();

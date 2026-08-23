@@ -566,19 +566,13 @@ export class SpeechManager {
       return;
     }
 
-    let index = 0;
-    const speakNext = () => {
-      if (this._cancelled || this._currentSpeechId !== speechId || index >= chunks.length) {
-        if (this._currentSpeechId === speechId) {
-          this._finishCurrent(true);
-          this._processQueue();
-        }
-        return;
-      }
-      try {
-        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      } catch {}
-      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+    let remainingChunks = chunks.length;
+    try {
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+    } catch {}
+
+    for (const chunkText of chunks) {
+      const utterance = new SpeechSynthesisUtterance(chunkText);
       utterance.lang = lang;
       utterance.rate = rate;
       const voice = this._getBestVoice(lang);
@@ -591,33 +585,33 @@ export class SpeechManager {
         this._currentOnStart = null;
         callback?.();
       };
-      const handleNext = () => {
+      utterance.onend = () => {
         this._activeUtterances.delete(utterance);
         window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
         if (this._cancelled || this._currentSpeechId !== speechId) return;
-        index += 1;
-        this._timeoutId = setTimeout(speakNext, 200);
+        remainingChunks -= 1;
+        if (remainingChunks === 0) {
+          this._finishCurrent(true);
+          this._processQueue();
+        }
       };
-      const handleFailure = () => {
-        this._activeUtterances.delete(utterance);
-        window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
-        if (this._currentSpeechId !== speechId) return;
-        this._finishCurrent(false);
-        this._processQueue();
-      };
-      utterance.onend = handleNext;
       utterance.onerror = event => {
         if (event?.error !== 'interrupted' && event?.error !== 'canceled') console.warn('Chunked Speech error:', event?.error);
-        handleFailure();
+        if (this._currentSpeechId !== speechId) return;
+        this._cancelCurrent();
+        this._processQueue();
       };
       try {
         window.speechSynthesis.speak(utterance);
       } catch (error) {
         console.error('SpeechSynthesis chunk speak failed:', error);
-        handleFailure();
+        if (this._currentSpeechId === speechId) {
+          this._cancelCurrent();
+          this._processQueue();
+        }
+        return;
       }
-    };
-    speakNext();
+    }
   }
 
   private _processQueue(): void {

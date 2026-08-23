@@ -218,7 +218,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     })).toBe(true);
   });
 
-  it('continues every chunk of an exclusive AI response after each utterance ends', () => {
+  it('queues every chunk of an exclusive AI response before the first chunk ends', () => {
     const manager = new SpeechManager();
     const response = `${'คำตอบ '.repeat(40)}จบคำตอบ`;
 
@@ -228,18 +228,17 @@ describe('SpeechManager accessibility navigation coordination', () => {
       chunk: true,
       exclusive: true,
     })).toBe(true);
-    expect(utterances).toHaveLength(1);
-
-    utterances[0].onend?.();
-    vi.advanceTimersByTime(200);
     expect(utterances).toHaveLength(2);
 
+    utterances[0].onend?.();
+    expect(utterances).toHaveLength(2);
+    expect(manager.isSpeaking).toBe(true);
+
     utterances[1].onend?.();
-    vi.advanceTimersByTime(200);
     expect(manager.isSpeaking).toBe(false);
   });
 
-  it('resumes a paused speech engine before every AI response chunk', () => {
+  it('resumes a paused speech engine before queueing an AI response', () => {
     const manager = new SpeechManager();
     const synthesis = window.speechSynthesis as unknown as { paused: boolean; resume: ReturnType<typeof vi.fn> };
     synthesis.paused = true;
@@ -253,9 +252,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(synthesis.resume).toHaveBeenCalledTimes(1);
 
     utterances[0].onend?.();
-    synthesis.paused = true;
-    vi.advanceTimersByTime(200);
-    expect(synthesis.resume).toHaveBeenCalledTimes(2);
+    expect(synthesis.resume).toHaveBeenCalledTimes(1);
   });
 
   it('drops non-critical speech while listening and drains a critical message after the microphone ends', () => {

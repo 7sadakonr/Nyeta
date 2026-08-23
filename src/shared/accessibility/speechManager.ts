@@ -4,16 +4,23 @@
  * ทุกการพูดในแอปต้องผ่านที่นี่ ห้ามเรียก speechSynthesis ตรง
  */
 
-import { Priority, PriorityLevel, SpeechOptions } from '@/shared/types/speech';
+import { CancelSpeechOptions, Priority, PriorityLevel, SpeechCategory, SpeechCategoryValue, SpeechOptions } from '@/shared/types/speech';
 
 export { Priority };
 
 const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 1000;
+const MAX_DEDUPE_HISTORY_ENTRIES = 128;
+const DEFAULT_REALTIME_MAX_AGE_MS = 1500;
 
 export interface QueueItem extends SpeechOptions {
   text: string;
   priority: PriorityLevel;
   owner: string;
+  category: SpeechCategoryValue;
+  scope?: string;
+  realtimeKey?: string;
+  createdAt: number;
+  speechKey?: string;
 }
 
 declare global {
@@ -26,6 +33,10 @@ export class SpeechManager {
   private _speaking = false;
   private _currentPriority = -1;
   private _currentOwner: string | null = null;
+  private _currentCategory: SpeechCategoryValue | null = null;
+  private _currentScope: string | null = null;
+  private _currentRealtimeKey: string | null = null;
+  private _currentExclusive = false;
   private _queue: QueueItem[] = [];
   private _cancelled = false;
   private _timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -33,12 +44,19 @@ export class SpeechManager {
   private _keepAliveIntervalId: ReturnType<typeof setInterval> | null = null;
   private _accessibilityCooldownTimerId: ReturnType<typeof setTimeout> | null = null;
   private _accessibilityNavigationUntil = 0;
+  private _currentOnStart: (() => void) | null = null;
   private _currentOnEnd: ((completed?: boolean) => void) | null = null;
+  private _currentSpeechKey: string | null = null;
+  private _spokenAt = new Map<string, number>();
   private _listeners = new Set<() => void>();
   private _activeUtterances = new Set<SpeechSynthesisUtterance>();
   private _speechCounter = 0;
   private _currentSpeechId = 0;
   private _voices: SpeechSynthesisVoice[] = [];
+  private _audioActivationState: 'idle' | 'pending' | 'active' = 'idle';
+  private _listeningExclusive = false;
+  private _abortRecognition: (() => void) | null = null;
+  private _criticalAbortRequested = false;
 
   constructor() {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -75,7 +93,7 @@ export class SpeechManager {
     return this._voices.find(v => v.lang && v.lang.toLowerCase().startsWith(langPrefix)) || null;
   }
 
-  /** Unlock speech synthesis after a user gesture when the browser requires it. */
+  /** Resume an already-active speech session. */
   public unlock(): void {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
@@ -83,6 +101,54 @@ export class SpeechManager {
     } catch (error) {
       console.warn('SpeechManager unlock error:', error);
     }
+  }
+
+  /** Starts a short audible utterance inside a user gesture for iOS Safari. */
+  public activateFromUserGesture(text: string, options: SpeechOptions = {}): boolean {
+    if (this._audioActivationState === 'active' || this._audioActivationState === 'pending' || this._speaking) return true;
+
+    this._audioActivationState = 'pending';
+    const accepted = this.speak(text, {
+      ...options,
+      category: SpeechCategory.TASK,
+      priority: Priority.ACTION,
+      owner: options.owner || 'audio-activation',
+      onStart: () => {
+        this._audioActivationState = 'active';
+        options.onStart?.();
+      },
+      onEnd: (completed) => {
+        if (!completed) this._audioActivationState = 'idle';
+        options.onEnd?.(completed);
+      },
+    });
+
+    if (!accepted) this._audioActivationState = 'idle';
+    return accepted;
+  }
+
+  /** Makes microphone capture exclusive over every non-critical speech request. */
+  public beginListeningSession({ abortRecognition }: { abortRecognition: () => void }): boolean {
+    if (this._listeningExclusive) return false;
+    if (this._currentCategory === SpeechCategory.CRITICAL || this._queue.some(item => item.category === SpeechCategory.CRITICAL)) return false;
+
+    this._listeningExclusive = true;
+    this._abortRecognition = abortRecognition;
+    this._criticalAbortRequested = false;
+    this._discardQueued(item => item.category !== SpeechCategory.CRITICAL);
+    if (this._speaking) this._cancelCurrent();
+    this._notify();
+    return true;
+  }
+
+  /** Releases microphone exclusivity and drains any deferred critical warning. */
+  public endListeningSession(): void {
+    if (!this._listeningExclusive) return;
+    this._listeningExclusive = false;
+    this._abortRecognition = null;
+    this._criticalAbortRequested = false;
+    this._notify();
+    this._processQueue();
   }
 
   public subscribe(listener: () => void): () => void {
@@ -109,20 +175,28 @@ export class SpeechManager {
     this._accessibilityNavigationUntil = Date.now() + ACCESSIBILITY_NAVIGATION_COOLDOWN_MS;
     this._scheduleAccessibilityCooldownDrain();
 
-    // Navigation makes queued realtime guidance stale. Retain CRITICAL events, but
-    // defer them until navigation has been quiet for the full cooldown.
-    this._discardQueued(item => item.priority < Priority.CRITICAL);
-    this._cancelCurrent();
+    // Legacy behavior for callers outside the blind assistant: only realtime
+    // guidance yields to navigation. The blind screen opts out of this policy.
+    this._discardQueued(item => item.category === SpeechCategory.REALTIME);
+    if (this._speaking && this._currentCategory === SpeechCategory.REALTIME) this._cancelCurrent();
   }
 
   public speak(
     text: string | null | undefined,
     {
-      priority = Priority.NORMAL,
+      category,
+      priority: suppliedPriority,
       owner = 'unknown',
+      scope,
+      realtimeKey,
+      maxAgeMs,
       rate = 1.1,
       lang = 'th-TH',
       chunk = false,
+      interrupt = false,
+      exclusive = false,
+      dedupe = false,
+      cooldown = 0,
       onEnd,
     }: SpeechOptions = {}
   ): boolean {
@@ -137,26 +211,82 @@ export class SpeechManager {
       return false;
     }
 
-    const item: QueueItem = { text: cleanText, priority, owner, rate, lang, chunk, onEnd };
-    if (this._isAccessibilityNavigationCoolingDown()) {
-      if (priority === Priority.LOW) {
+    const resolvedCategory = this._resolveCategory(category, suppliedPriority);
+    const priority = this._priorityForCategory(resolvedCategory, suppliedPriority);
+    const speechKey = this._getSpeechKey(cleanText, owner, dedupe, cooldown);
+    if (speechKey && this._isDuplicate(speechKey, cooldown)) {
+      onEnd?.(false);
+      return false;
+    }
+
+    const item: QueueItem = {
+      text: cleanText,
+      priority,
+      owner,
+      category: resolvedCategory,
+      scope,
+      realtimeKey: resolvedCategory === SpeechCategory.REALTIME ? (realtimeKey || owner) : undefined,
+      maxAgeMs: resolvedCategory === SpeechCategory.REALTIME ? (maxAgeMs ?? DEFAULT_REALTIME_MAX_AGE_MS) : maxAgeMs,
+      createdAt: Date.now(),
+      rate,
+      lang,
+      chunk,
+      interrupt,
+      exclusive,
+      dedupe,
+      cooldown,
+      onEnd,
+      speechKey: speechKey || undefined,
+    };
+
+    if (this._speaking && this._currentExclusive && owner !== this._currentOwner) {
+      onEnd?.(false);
+      return false;
+    }
+
+    if (this._listeningExclusive) {
+      if (resolvedCategory !== SpeechCategory.CRITICAL) {
         onEnd?.(false);
         return false;
       }
+      this._queue.push(item);
+      if (!this._criticalAbortRequested) {
+        this._criticalAbortRequested = true;
+        this._abortRecognition?.();
+      }
+      return true;
+    }
+
+    if (resolvedCategory === SpeechCategory.REALTIME) {
+      if (this._isAccessibilityNavigationCoolingDown()) {
+        onEnd?.(false);
+        return false;
+      }
+      this._discardQueued(queued => queued.category === SpeechCategory.REALTIME && queued.realtimeKey === item.realtimeKey);
+      if (this._speaking) {
+        if (this._currentCategory === SpeechCategory.REALTIME) {
+          this._interruptCurrent();
+        } else {
+          onEnd?.(false);
+          return false;
+        }
+      }
+      this._doSpeak(cleanText, item);
+      return true;
+    }
+
+    if (this._isAccessibilityNavigationCoolingDown()) {
       this._queue.push(item);
       this._scheduleAccessibilityCooldownDrain();
       return true;
     }
 
-    if (priority === Priority.LOW && this._speaking) {
-      onEnd?.(false);
-      return false;
-    }
-
     if (this._speaking) {
       if (priority > this._currentPriority) {
         this._interruptCurrent();
-      } else if (priority === this._currentPriority && priority >= Priority.NORMAL) {
+      } else if (interrupt && priority === this._currentPriority) {
+        this._interruptCurrent();
+      } else if (priority === this._currentPriority && priority >= Priority.ACTION) {
         this._queue.push(item);
         return true;
       } else {
@@ -177,8 +307,23 @@ export class SpeechManager {
 
   /** Stop speech owned by one feature only. */
   public stopByOwner(owner: string): void {
-    this._discardQueued(item => item.owner === owner);
-    if (this._currentOwner === owner) {
+    this.cancel({ owner });
+  }
+
+  /** Cancel selected speech without exposing the Web Speech API to components. */
+  public cancel({ owner, scope, categories, atOrBelow }: CancelSpeechOptions = {}): void {
+    const matches = (item: { owner: string; scope?: string; category?: SpeechCategoryValue; priority: number }) =>
+      (owner === undefined || item.owner === owner)
+      && (scope === undefined || item.scope === scope)
+      && (categories === undefined || (!!item.category && categories.includes(item.category)))
+      && (atOrBelow === undefined || item.priority <= atOrBelow);
+    this._discardQueued(matches);
+    if (this._speaking && this._currentOwner && matches({
+      owner: this._currentOwner,
+      scope: this._currentScope || undefined,
+      category: this._currentCategory || undefined,
+      priority: this._currentPriority,
+    })) {
       this._cancelCurrent();
       this._processQueue();
     }
@@ -187,6 +332,28 @@ export class SpeechManager {
   public get isSpeaking(): boolean { return this._speaking; }
   public get currentOwner(): string | null { return this._currentOwner; }
   public get currentPriority(): number { return this._currentPriority; }
+  public get currentCategory(): SpeechCategoryValue | null { return this._currentCategory; }
+  public get currentScope(): string | null { return this._currentScope; }
+  public get isListeningExclusive(): boolean { return this._listeningExclusive; }
+
+  private _resolveCategory(category: SpeechCategoryValue | undefined, priority: PriorityLevel | undefined): SpeechCategoryValue {
+    if (category) return category;
+    if (priority === Priority.CRITICAL) return SpeechCategory.CRITICAL;
+    if (priority !== undefined && priority <= Priority.GUIDANCE) return SpeechCategory.REALTIME;
+    return SpeechCategory.TASK;
+  }
+
+  private _priorityForCategory(category: SpeechCategoryValue, legacyPriority: PriorityLevel | undefined): PriorityLevel {
+    if (category === SpeechCategory.CRITICAL) return Priority.CRITICAL;
+    if (category === SpeechCategory.REALTIME) return Priority.GUIDANCE;
+    return legacyPriority ?? Priority.ACTION;
+  }
+
+  private _isRealtimeExpired(item: QueueItem): boolean {
+    return item.category === SpeechCategory.REALTIME
+      && typeof item.maxAgeMs === 'number'
+      && Date.now() - item.createdAt > item.maxAgeMs;
+  }
 
   private _isAccessibilityNavigationCoolingDown(): boolean {
     return Date.now() < this._accessibilityNavigationUntil;
@@ -210,6 +377,32 @@ export class SpeechManager {
     this._queue = retained;
   }
 
+  private _getSpeechKey(text: string, owner: string, dedupe: SpeechOptions['dedupe'], cooldown: number): string | null {
+    if (!dedupe && cooldown <= 0) return null;
+    if (typeof dedupe === 'string') return dedupe;
+    return `${owner}:${text.replace(/\s+/g, ' ').trim().toLocaleLowerCase()}`;
+  }
+
+  private _isDuplicate(speechKey: string, cooldown: number): boolean {
+    if (this._currentSpeechKey === speechKey || this._queue.some(item => item.speechKey === speechKey)) return true;
+    const lastSpokenAt = this._spokenAt.get(speechKey);
+    return lastSpokenAt !== undefined && cooldown > 0 && Date.now() - lastSpokenAt < cooldown;
+  }
+
+  private _markSpeechKey(item: QueueItem): void {
+    if (!item.speechKey || !item.cooldown || item.cooldown <= 0) return;
+    const now = Date.now();
+    this._spokenAt.set(item.speechKey, now);
+    for (const [key, spokenAt] of this._spokenAt) {
+      if (now - spokenAt > 60_000) this._spokenAt.delete(key);
+    }
+    while (this._spokenAt.size > MAX_DEDUPE_HISTORY_ENTRIES) {
+      const oldestKey = this._spokenAt.keys().next().value;
+      if (oldestKey === undefined) break;
+      this._spokenAt.delete(oldestKey);
+    }
+  }
+
   private _clearTimers(): void {
     if (this._timeoutId) clearTimeout(this._timeoutId);
     if (this._safetyTimeoutId) clearTimeout(this._safetyTimeoutId);
@@ -223,6 +416,12 @@ export class SpeechManager {
     this._speaking = false;
     this._currentPriority = -1;
     this._currentOwner = null;
+    this._currentCategory = null;
+    this._currentScope = null;
+    this._currentRealtimeKey = null;
+    this._currentExclusive = false;
+    this._currentSpeechKey = null;
+    this._currentOnStart = null;
     const callback = this._currentOnEnd;
     this._currentOnEnd = null;
     this._activeUtterances.clear();
@@ -272,20 +471,28 @@ export class SpeechManager {
     this._safetyTimeoutId = setTimeout(() => {
       if (this._currentSpeechId !== speechId || !this._speaking) return;
       console.warn(`SpeechManager: Safety timeout triggered for speechId ${speechId}`);
-      this._finishCurrent(true);
+      this._cancelCurrent();
       this._processQueue();
     }, maxDurationMs);
   }
 
   private _doSpeak(text: string, options: QueueItem): void {
-    const { priority, owner, rate = 1.1, lang = 'th-TH', chunk = false, onEnd } = options;
+    const { priority, owner, category, scope, realtimeKey, exclusive = false, rate = 1.1, lang = 'th-TH', chunk = false, onStart, onEnd, speechKey } = options;
     const speechId = ++this._speechCounter;
     this._currentSpeechId = speechId;
     this._speaking = true;
     this._currentPriority = priority;
     this._currentOwner = owner;
+    this._currentCategory = category;
+    this._currentScope = scope || null;
+    this._currentRealtimeKey = realtimeKey || null;
+    this._currentExclusive = exclusive;
+    this._currentSpeechKey = speechKey || null;
     this._cancelled = false;
+    this._currentOnStart = onStart || null;
     this._currentOnEnd = onEnd || null;
+    if (exclusive) this._discardQueued(item => item.owner !== owner);
+    this._markSpeechKey(options);
     this._notify();
     this._startKeepAlive();
     this._setSafetyWatchdog(speechId, text.length, rate);
@@ -307,24 +514,30 @@ export class SpeechManager {
     this._activeUtterances.add(utterance);
     window.__tts_utterances = [...(window.__tts_utterances || []), utterance];
 
-    const handleEnd = () => {
+    const handleEnd = (completed = true) => {
       this._activeUtterances.delete(utterance);
       window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
       if (this._currentSpeechId !== speechId) return;
-      this._finishCurrent(true);
+      this._finishCurrent(completed);
       this._processQueue();
     };
-    utterance.onend = handleEnd;
+    utterance.onstart = () => {
+      if (this._currentSpeechId !== speechId) return;
+      const callback = this._currentOnStart;
+      this._currentOnStart = null;
+      callback?.();
+    };
+    utterance.onend = () => handleEnd(true);
     utterance.onerror = event => {
       if (event?.error !== 'interrupted' && event?.error !== 'canceled') console.warn('SpeechSynthesis error:', event?.error);
-      handleEnd();
+      handleEnd(false);
     };
 
     try {
       window.speechSynthesis.speak(utterance);
     } catch (error) {
       console.error('SpeechSynthesis.speak failed:', error);
-      handleEnd();
+      handleEnd(false);
     }
   }
 
@@ -353,51 +566,63 @@ export class SpeechManager {
       return;
     }
 
-    let index = 0;
-    const speakNext = () => {
-      if (this._cancelled || this._currentSpeechId !== speechId || index >= chunks.length) {
-        if (this._currentSpeechId === speechId) {
-          this._finishCurrent(true);
-          this._processQueue();
-        }
-        return;
-      }
-      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+    let remainingChunks = chunks.length;
+    try {
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+    } catch {}
+
+    for (const chunkText of chunks) {
+      const utterance = new SpeechSynthesisUtterance(chunkText);
       utterance.lang = lang;
       utterance.rate = rate;
       const voice = this._getBestVoice(lang);
       if (voice) utterance.voice = voice;
       this._activeUtterances.add(utterance);
       window.__tts_utterances = [...(window.__tts_utterances || []), utterance];
-      const handleNext = () => {
+      utterance.onstart = () => {
+        if (this._currentSpeechId !== speechId) return;
+        const callback = this._currentOnStart;
+        this._currentOnStart = null;
+        callback?.();
+      };
+      utterance.onend = () => {
         this._activeUtterances.delete(utterance);
         window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
         if (this._cancelled || this._currentSpeechId !== speechId) return;
-        index += 1;
-        this._timeoutId = setTimeout(speakNext, 200);
+        remainingChunks -= 1;
+        if (remainingChunks === 0) {
+          this._finishCurrent(true);
+          this._processQueue();
+        }
       };
-      utterance.onend = handleNext;
       utterance.onerror = event => {
         if (event?.error !== 'interrupted' && event?.error !== 'canceled') console.warn('Chunked Speech error:', event?.error);
-        handleNext();
+        if (this._currentSpeechId !== speechId) return;
+        this._cancelCurrent();
+        this._processQueue();
       };
       try {
         window.speechSynthesis.speak(utterance);
       } catch (error) {
         console.error('SpeechSynthesis chunk speak failed:', error);
-        handleNext();
+        if (this._currentSpeechId === speechId) {
+          this._cancelCurrent();
+          this._processQueue();
+        }
+        return;
       }
-    };
-    speakNext();
+    }
   }
 
   private _processQueue(): void {
-    if (this._speaking || this._queue.length === 0) return;
+    if (this._speaking || this._listeningExclusive || this._queue.length === 0) return;
     if (this._isAccessibilityNavigationCoolingDown()) {
       this._scheduleAccessibilityCooldownDrain();
       return;
     }
-    this._queue.sort((a, b) => b.priority - a.priority);
+    this._discardQueued(item => this._isRealtimeExpired(item));
+    if (this._queue.length === 0) return;
+    this._queue.sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
     const next = this._queue.shift();
     if (next) this._doSpeak(next.text, next);
   }

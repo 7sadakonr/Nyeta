@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, RefObject } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/features/blind-assistant/client/pageEdgeDetection';
 import { callGeminiVision, captureFrameFromVideo } from '@/features/blind-assistant/client/geminiVision';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { SpeechCategory } from '@/shared/types/speech';
 import { AssistantStatus, BoundingBox, QuadCorners } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
 
@@ -59,8 +60,10 @@ export function useDocumentReader(
         if (!isReady || !videoRef.current) {
             feedback?.('error');
             speechManager?.speak('กล้องกำลังเริ่มต้น กรุณารอสักครู่ครับ', {
-                priority: Priority.HIGH,
+                priority: Priority.CRITICAL,
+                category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
+                scope: 'blind:reader',
             });
             return;
         }
@@ -71,15 +74,17 @@ export function useDocumentReader(
             if (!imageDataUrl) {
                 feedback?.('error');
                 speechManager?.speak('ยังจับภาพเอกสารไม่ได้ กรุณาถือกล้องให้นิ่งแล้วลองใหม่ครับ', {
-                    priority: Priority.HIGH,
+                    priority: Priority.CRITICAL,
+                    category: SpeechCategory.CRITICAL,
                     owner: 'document-reader',
+                    scope: 'blind:reader',
                 });
                 setIsProcessing(false);
                 return;
             }
 
             autoCaptureFiredRef.current = true;
-            speechManager?.stopAll();
+            speechManager?.cancel({ owner: 'page-guidance' });
             setIsReading(false);
             feedback?.('capture');
             addLog?.('Capturing document...');
@@ -98,8 +103,10 @@ export function useDocumentReader(
 
             setIsReading(true);
             speechManager?.speak(text, {
-                priority: Priority.NORMAL,
+                priority: Priority.RESULT,
+                category: SpeechCategory.TASK,
                 owner: 'document-reader',
+                scope: 'blind:reader',
                 rate: 1.0,
                 chunk: true,
                 onEnd: () => setIsReading(false),
@@ -110,8 +117,10 @@ export function useDocumentReader(
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
             speechManager?.speak('เกิดข้อผิดพลาดในการอ่านเอกสาร กรุณาลองใหม่อีกครั้งครับ', {
-                priority: Priority.HIGH,
+                priority: Priority.CRITICAL,
+                category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
+                scope: 'blind:reader',
             });
         } finally {
             setIsProcessing(false);
@@ -152,10 +161,16 @@ export function useDocumentReader(
                 return;
             }
 
+            if (text.includes('ตรงแล้ว')) return;
             speechManager?.speak(text, {
-                priority: Priority.LOW,
+                priority: Priority.GUIDANCE,
+                category: SpeechCategory.REALTIME,
                 owner: 'page-guidance',
+                scope: 'blind:reader',
+                realtimeKey: 'page-guidance',
                 rate: 1.1,
+                dedupe: true,
+                cooldown: 1200,
             });
             lastSpokenPageRef.current = text;
         };
@@ -165,6 +180,7 @@ export function useDocumentReader(
             pageOverlayActiveRef.current = false;
             consecutiveGuidanceRef.current = 0;
             guidanceCandidateRef.current = '';
+            lastSpokenPageRef.current = '';
             setPageBounds(null);
             setPageCorners(null);
             setReaderGuidance('');
@@ -212,10 +228,15 @@ export function useDocumentReader(
                         autoCaptureFiredRef.current = true;
                         alignedCountRef.current = 0;
                         feedback?.('success');
+                        speechManager?.cancel({ owner: 'page-guidance' });
                         speechManager?.speak('ตรงแล้ว กำลังถ่ายเอกสาร', {
-                            priority: Priority.HIGH,
+                            priority: Priority.ACTION,
+                            category: SpeechCategory.TASK,
                             owner: 'document-reader',
+                            scope: 'blind:reader',
                             rate: 1.1,
+                            interrupt: true,
+                            dedupe: true,
                         });
                         readDocumentRef.current?.();
                     }
@@ -236,6 +257,7 @@ export function useDocumentReader(
             scanBusyRef.current = false;
             consecutiveGuidanceRef.current = 0;
             guidanceCandidateRef.current = '';
+            lastSpokenPageRef.current = '';
             setPageBounds(null);
             setPageCorners(null);
             setReaderGuidance('');
@@ -247,11 +269,13 @@ export function useDocumentReader(
 
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
-        speechManager?.stopAll();
+        speechManager?.cancel({ owner: 'document-reader' });
         setIsReading(true);
         speechManager?.speak(docText, {
-            priority: Priority.HIGH,
+            priority: Priority.RESULT,
+            category: SpeechCategory.TASK,
             owner: 'document-reader',
+            scope: 'blind:reader',
             rate: 1.0,
             chunk: true,
             onEnd: () => setIsReading(false),

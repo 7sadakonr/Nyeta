@@ -1,26 +1,71 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --nyeta-bg: #08111f;
+  --nyeta-surface: #0f1b2d;
+  --nyeta-surface-elevated: #16243a;
+  --nyeta-blue: #3ba7ff;
+  --nyeta-blue-hover: #2a96ee;
+  --nyeta-blue-soft: #143a59;
+  --nyeta-cyan: #6fe8ff;
+  --nyeta-cyan-soft: #163e47;
+  --nyeta-text: #f8fafc;
+  --nyeta-text-muted: #a8b3c5;
+  --nyeta-border: #26364d;
+  --nyeta-success: #4ade80;
+  --nyeta-error: #ff5d6c;
+  --nyeta-volunteer: #f7c948;
+  --nyeta-volunteer-accent: #ffd76a;
+  --background: var(--nyeta-bg);
+  --foreground: var(--nyeta-text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-nyeta-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.nyeta-surface {
+  font-family: var(--font-nyeta-sans), system-ui, sans-serif;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.nyeta-surface * {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.nyeta-surface img,
+.nyeta-surface svg {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+.nyeta-surface :focus-visible {
+  outline: 3px solid var(--nyeta-cyan);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nyeta-surface,
+  .nyeta-surface *,
+  .nyeta-surface *::before,
+  .nyeta-surface *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -80,13 +80,13 @@ export function useObjectDetector(
     }, [enabled]);
 
     useEffect(() => {
-        if (!enabled || isLoading || !modelRef.current || !videoRef.current) return;
+        if (!enabled || isLoading || !modelRef.current) return;
 
-        const video = videoRef.current;
         let isActive = true;
         const detect = async () => {
             if (!isActive) return;
-            if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+            const video = videoRef.current;
+            if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
                 try {
                     const rawPredictions: DetectedObject[] = await modelRef.current.detect(video);
                     if (!isActive) return;

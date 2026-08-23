@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import React from "react";
 
@@ -13,12 +13,15 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const notoSansThai = Noto_Sans_Thai({
+  variable: "--font-nyeta-sans",
+  subsets: ["thai", "latin"],
+});
+
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: "#000000",
+  themeColor: "#08111F",
 };
 
 export const metadata: Metadata = {
@@ -37,9 +40,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="th">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased h-dvh w-full overscroll-none overflow-hidden`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} h-dvh w-full overflow-hidden overscroll-none antialiased`}
       >
         {children}
       </body>

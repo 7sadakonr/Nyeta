@@ -19,26 +19,18 @@ export default function TopNavBar({
     currencyMonitoring,
     statusLabel,
 }: TopNavBarProps) {
-    return (
-        <div className="absolute top-0 inset-x-0 z-50 p-4 flex justify-between items-center pointer-events-none">
-            {/* Back Button */}
-            <Link href="/" className="pointer-events-auto flex items-center gap-2 bg-black/60 hover:bg-black/80 text-white px-5 py-3 rounded-full backdrop-blur-md transition-all border border-white/20 shadow-lg" aria-label="กลับหน้าหลัก">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-            </Link>
+    const isWorking = aiStatus === 'thinking' || (mode === 'currency' && (currencyScanning || currencyMonitoring));
+    const statusColor = !aiReady ? 'bg-[#A8B3C5]' : isWorking ? 'bg-[#6FE8FF]' : 'bg-[#4ADE80]';
 
-            {/* Status Indicator */}
-            <div className="pointer-events-none" aria-hidden="true">
-                <span className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold backdrop-blur-md shadow-lg border transition-colors ${!aiReady ? 'bg-zinc-800/80 text-zinc-400 border-zinc-700' :
-                    aiStatus === 'thinking' || (mode === 'currency' && (currencyScanning || currencyMonitoring)) ? 'bg-amber-500/90 text-black border-amber-400 animate-pulse' :
-                        'bg-emerald-500/90 text-black border-emerald-400'
-                    }`}>
-                    <span className={`w-2 h-2 rounded-full ${!aiReady ? 'bg-zinc-500' :
-                        aiStatus === 'thinking' || (mode === 'currency' && (currencyScanning || currencyMonitoring)) ? 'bg-black animate-ping' :
-                            'bg-black'
-                        }`}></span>
-                    {statusLabel}
-                </span>
-            </div>
-        </div>
+    return (
+        <header className="grid shrink-0 grid-cols-[3rem_1fr_3rem] items-center gap-2 px-4 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
+            <Link href="/" className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-[#F8FAFC] transition-colors hover:bg-[#16243A]" aria-label="กลับหน้าหลัก">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+            </Link>
+            <h1 aria-hidden="true" className="text-center text-xl font-semibold tracking-[-0.02em] text-[#F8FAFC]">Nyeta</h1>
+            <span className="flex justify-end" aria-hidden="true" title={statusLabel}>
+                <span className={`size-2.5 rounded-full ${statusColor}`} />
+            </span>
+        </header>
     );
 }

@@ -1,69 +1,52 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import { AssistantMessage } from '@/features/blind-assistant/types/assistant';
 
 export interface ChatHistoryProps {
     aiMessages: AssistantMessage[];
 }
 
-export default function ChatHistory({ aiMessages }: ChatHistoryProps) {
-    const scrollRef = useRef<HTMLElement | null>(null);
-    const prevMessagesLengthRef = useRef<number>(0);
+function MessageContent({ message }: { message: AssistantMessage }) {
+    const isError = message.content.startsWith('Error') || message.content.startsWith('ขอโทษ') || message.content.startsWith('เกิดข้อผิดพลาด');
 
-    useEffect(() => {
-        const el = scrollRef.current;
-        if (!el) return;
-
-        if (aiMessages.length > prevMessagesLengthRef.current) {
-            const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-            if (isNearBottom || prevMessagesLengthRef.current === 0) {
-                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-            }
-        }
-        prevMessagesLengthRef.current = aiMessages.length;
-    }, [aiMessages]);
+    if (message.role === 'user' && message.image) {
+        return <p className="text-sm text-[#A8B3C5]">คุณส่งภาพเพื่อให้บรรยาย</p>;
+    }
 
     return (
-        <section
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto p-4 space-y-4 bg-zinc-950 min-h-0"
-            aria-label="ประวัติการสนทนา"
-            tabIndex={0}
-        >
-            <ul className="space-y-4">
-                {aiMessages.map((msg, i) => (
-                    <li key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                        {msg.role === 'user' && msg.image && (
-                            <div className="bg-zinc-800 rounded-2xl rounded-br-sm p-1 max-w-[80%] border border-zinc-700">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                    src={msg.image}
-                                    alt={`ภาพที่ถ่ายครั้งที่ ${Math.floor(i / 2) + 1}`}
-                                    className="rounded-xl max-h-40 w-auto object-contain bg-black"
-                                />
-                                <p className="sr-only">คุณส่งภาพถ่าย</p>
-                            </div>
-                        )}
-                        {msg.role === 'user' && !msg.image && (
-                            <div className="bg-sky-900/50 rounded-2xl rounded-br-sm px-5 py-3 max-w-[85%] border border-sky-700/50">
-                                <p className="text-base text-sky-100">{msg.content}</p>
-                            </div>
-                        )}
-                        {(msg.role === 'ai' || msg.role === 'model') && (
-                            <div
-                                className={`mt-2 rounded-2xl rounded-bl-sm p-5 max-w-[95%] shadow-lg ${msg.content.startsWith('Error') || msg.content.startsWith('ขอโทษ') || msg.content.startsWith('เกิดข้อผิดพลาด')
-                                    ? 'bg-red-900/60 text-white border border-red-700/50'
-                                    : 'bg-zinc-800 text-white border border-zinc-700'
-                                    }`}
-                            >
-                                <p className="text-lg leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                                <p className="sr-only">จบคำตอบ</p>
-                            </div>
-                        )}
-                    </li>
-                ))}
-            </ul>
+        <p className={`whitespace-pre-wrap text-base leading-7 ${isError ? 'text-[#FFB2BA]' : 'text-[#F8FAFC]'}`}>
+            {message.content}
+        </p>
+    );
+}
+
+export default function ChatHistory({ aiMessages }: ChatHistoryProps) {
+    const latestMessage = aiMessages[aiMessages.length - 1];
+    const previousMessages = aiMessages.slice(0, -1);
+
+    if (!latestMessage) return null;
+
+    return (
+        <section className="space-y-4" aria-hidden="true">
+            <div className="bg-[#0F1B2D] px-5 py-6">
+                <h2 className="text-lg font-semibold text-[#6FE8FF]">คำตอบล่าสุด</h2>
+                <div className="mt-3">
+                    <MessageContent message={latestMessage} />
+                </div>
+            </div>
+
+            {previousMessages.length > 0 && (
+                <details className="bg-[#0F1B2D] px-5 py-4">
+                    <summary tabIndex={-1} className="min-h-8 cursor-pointer text-sm font-semibold text-[#A8B3C5]">ดูประวัติการสนทนา</summary>
+                    <ul className="mt-4 space-y-3 pt-1" aria-label="ประวัติการสนทนา">
+                        {previousMessages.map((message, index) => (
+                            <li key={`${message.role}-${index}`} className="pb-3 last:pb-0">
+                                <MessageContent message={message} />
+                            </li>
+                        ))}
+                    </ul>
+                </details>
+            )}
         </section>
     );
 }

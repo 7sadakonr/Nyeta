@@ -5,9 +5,9 @@ import { DetectedObject } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 
 const COCO_COLORS: Record<string, string> = {
-    book: '#a78bfa',
-    person: '#38bdf8',
-    default: '#22d3ee',
+    book: '#6fe8ff',
+    person: '#3ba7ff',
+    default: '#6fe8ff',
 };
 
 function getCocoColor(className: string): string {

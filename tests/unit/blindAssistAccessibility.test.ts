@@ -90,6 +90,16 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).toContain('restoreDetailsFocusRef');
     });
 
+    it('keeps the action dock available while long results scroll in the content area', () => {
+        const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
+        const controlBar = readSource('src/features/blind-assistant/components/ControlBar.tsx');
+
+        expect(screen).toContain('h-dvh');
+        expect(screen).toContain('min-h-0 flex-1 overflow-y-auto');
+        expect(controlBar).toContain('data-testid="blind-action-dock"');
+        expect(controlBar).toContain('shrink-0');
+    });
+
     it('keeps direct Web Speech API calls inside the shared coordinator', () => {
         const featureSources = [
             'src/features/blind-assistant',

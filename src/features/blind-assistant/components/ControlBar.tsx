@@ -83,7 +83,7 @@ export default function ControlBar({
     const canRead = aiReady && !isProcessingDoc && !isBusy;
 
     return (
-        <div className="bg-[#08111F] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" role="group" aria-label="ปุ่มควบคุม">
+        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#08111F] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
                     {isListening ? (

@@ -312,8 +312,8 @@ export default function BlindAssistScreen() {
         (mode === 'assistant' && aiMessages.length > 0);
 
     const cameraHeightClass = showCapturedText
-        ? 'h-[30dvh] min-h-52 max-h-80'
-        : 'h-[52dvh] min-h-80 max-h-[32rem]';
+        ? 'h-[clamp(8rem,28dvh,20rem)] min-h-0'
+        : 'h-[clamp(10rem,42dvh,30rem)] min-h-0';
 
     return (
         <div
@@ -321,7 +321,7 @@ export default function BlindAssistScreen() {
             onClick={activateBlindAudio}
             onTouchStart={activateBlindAudio}
             onContextMenu={(event) => event.preventDefault()}
-            className="nyeta-surface flex min-h-dvh flex-col bg-[#08111F] text-[#F8FAFC]"
+            className="nyeta-surface flex h-dvh min-h-dvh flex-col overflow-hidden bg-[#08111F] text-[#F8FAFC]"
         >
             <HapticFeedback ref={hapticRef} />
 
@@ -344,7 +344,7 @@ export default function BlindAssistScreen() {
                     id={`blind-mode-${mode}-panel`}
                     role="tabpanel"
                     aria-labelledby={`blind-mode-${mode}-tab`}
-                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2"
                 >
                     <div className="mx-auto w-full max-w-xl">
                         <CameraView

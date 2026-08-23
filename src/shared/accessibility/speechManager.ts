@@ -36,6 +36,7 @@ export class SpeechManager {
   private _currentCategory: SpeechCategoryValue | null = null;
   private _currentScope: string | null = null;
   private _currentRealtimeKey: string | null = null;
+  private _currentExclusive = false;
   private _queue: QueueItem[] = [];
   private _cancelled = false;
   private _timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -193,6 +194,7 @@ export class SpeechManager {
       lang = 'th-TH',
       chunk = false,
       interrupt = false,
+      exclusive = false,
       dedupe = false,
       cooldown = 0,
       onEnd,
@@ -230,11 +232,17 @@ export class SpeechManager {
       lang,
       chunk,
       interrupt,
+      exclusive,
       dedupe,
       cooldown,
       onEnd,
       speechKey: speechKey || undefined,
     };
+
+    if (this._speaking && this._currentExclusive && owner !== this._currentOwner) {
+      onEnd?.(false);
+      return false;
+    }
 
     if (this._listeningExclusive) {
       if (resolvedCategory !== SpeechCategory.CRITICAL) {
@@ -411,6 +419,7 @@ export class SpeechManager {
     this._currentCategory = null;
     this._currentScope = null;
     this._currentRealtimeKey = null;
+    this._currentExclusive = false;
     this._currentSpeechKey = null;
     this._currentOnStart = null;
     const callback = this._currentOnEnd;
@@ -468,7 +477,7 @@ export class SpeechManager {
   }
 
   private _doSpeak(text: string, options: QueueItem): void {
-    const { priority, owner, category, scope, realtimeKey, rate = 1.1, lang = 'th-TH', chunk = false, onStart, onEnd, speechKey } = options;
+    const { priority, owner, category, scope, realtimeKey, exclusive = false, rate = 1.1, lang = 'th-TH', chunk = false, onStart, onEnd, speechKey } = options;
     const speechId = ++this._speechCounter;
     this._currentSpeechId = speechId;
     this._speaking = true;
@@ -477,10 +486,12 @@ export class SpeechManager {
     this._currentCategory = category;
     this._currentScope = scope || null;
     this._currentRealtimeKey = realtimeKey || null;
+    this._currentExclusive = exclusive;
     this._currentSpeechKey = speechKey || null;
     this._cancelled = false;
     this._currentOnStart = onStart || null;
     this._currentOnEnd = onEnd || null;
+    if (exclusive) this._discardQueued(item => item.owner !== owner);
     this._markSpeechKey(options);
     this._notify();
     this._startKeepAlive();

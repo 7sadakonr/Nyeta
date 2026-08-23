@@ -41,6 +41,8 @@ export interface SpeechOptions {
   chunk?: boolean;
   /** Stop equal- or lower-priority speech so the newest meaningful event wins. */
   interrupt?: boolean;
+  /** While this item is speaking, reject all speech from other owners. */
+  exclusive?: boolean;
   /** Prevent the same owner/text (or supplied key) from being repeated. */
   dedupe?: boolean | string;
   /** Minimum interval before a deduplicated message may be spoken again. */

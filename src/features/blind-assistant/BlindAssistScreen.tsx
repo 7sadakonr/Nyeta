@@ -282,6 +282,7 @@ export default function BlindAssistScreen() {
                 rate: 1.0,
                 chunk: true,
                 interrupt: true,
+                exclusive: true,
                 dedupe: true,
             });
         }

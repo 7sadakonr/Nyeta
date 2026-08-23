@@ -174,6 +174,50 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(guidanceEnd).toHaveBeenCalledExactlyOnceWith(false);
   });
 
+  it('keeps an exclusive AI response as the only speech until it ends or is stopped', () => {
+    const manager = new SpeechManager();
+    const queuedEnd = vi.fn();
+    const blockedTaskEnd = vi.fn();
+    const blockedCriticalEnd = vi.fn();
+
+    expect(manager.speak('กำลังประมวลผล', {
+      category: SpeechCategory.TASK,
+      owner: 'camera',
+    })).toBe(true);
+    expect(manager.speak('ยอดรวมเงิน', {
+      category: SpeechCategory.TASK,
+      owner: 'currency',
+      onEnd: queuedEnd,
+    })).toBe(true);
+    expect(manager.speak('คำตอบจาก AI', {
+      category: SpeechCategory.TASK,
+      owner: 'ai-response',
+      exclusive: true,
+      interrupt: true,
+    })).toBe(true);
+    expect(manager.speak('อ่านเอกสาร', {
+      category: SpeechCategory.TASK,
+      owner: 'document-reader',
+      onEnd: blockedTaskEnd,
+    })).toBe(false);
+    expect(manager.speak('กล้องโดนบัง', {
+      category: SpeechCategory.CRITICAL,
+      owner: 'camera-error',
+      onEnd: blockedCriticalEnd,
+    })).toBe(false);
+
+    expect(utterances.map(utterance => utterance.text)).toEqual(['กำลังประมวลผล', 'คำตอบจาก AI']);
+    expect(queuedEnd).toHaveBeenCalledExactlyOnceWith(false);
+    expect(blockedTaskEnd).toHaveBeenCalledExactlyOnceWith(false);
+    expect(blockedCriticalEnd).toHaveBeenCalledExactlyOnceWith(false);
+
+    manager.stopByOwner('ai-response');
+    expect(manager.speak('กล้องโดนบัง', {
+      category: SpeechCategory.CRITICAL,
+      owner: 'camera-error',
+    })).toBe(true);
+  });
+
   it('drops non-critical speech while listening and drains a critical message after the microphone ends', () => {
     const manager = new SpeechManager();
     const abortRecognition = vi.fn();

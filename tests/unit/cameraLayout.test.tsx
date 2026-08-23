@@ -15,6 +15,8 @@ describe('AI camera layout', () => {
     it('keeps the camera large before a description and collapses it after one arrives', () => {
         expect(getCameraHeightClass(false)).toContain('52dvh');
         expect(getCameraHeightClass(true)).toContain('20dvh');
+        expect(getCameraHeightClass(false, true)).toContain('flex-1');
+        expect(getCameraHeightClass(false, true)).toContain('h-full');
     });
 
     it('uses an edge-to-edge square camera frame in assistant mode', () => {
@@ -33,6 +35,24 @@ describe('AI camera layout', () => {
 
         expect(container.firstElementChild?.className).toContain('w-full');
         expect(container.firstElementChild?.className).toContain('rounded-none');
+    });
+
+    it('fills the expanded assistant preview without side letterboxing', () => {
+        const videoRef = createRef<HTMLVideoElement>();
+        const cameraContainerRef = createRef<HTMLDivElement>();
+        const { container } = render(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="flex-1"
+                mode="assistant"
+                aiReady
+                objectDetectorEnabled
+                currencyResult={null}
+            />,
+        );
+
+        expect(container.querySelector('video')?.className).toContain('object-cover');
     });
 
     it('uses the same square camera frame for currency mode', () => {
@@ -80,5 +100,66 @@ describe('AI camera layout', () => {
         expect(screen.getByText('฿100')).toBeTruthy();
         expect(screen.getByText('ธนบัตร 100 × 1')).toBeTruthy();
         expect(screen.queryByText('ยอดรวม')).toBeNull();
+    });
+
+    it('keeps transient camera guidance out of the accessibility tree', () => {
+        const videoRef = createRef<HTMLVideoElement>();
+        const cameraContainerRef = createRef<HTMLDivElement>();
+        const { rerender } = render(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="h-80"
+                mode="assistant"
+                aiReady
+                objectDetectorEnabled
+                guidanceText="ขยับกล้องไปทางซ้าย"
+                currencyResult={null}
+            />,
+        );
+
+        expect(screen.getByText('ขยับกล้องไปทางซ้าย').closest('[aria-hidden="true"]')).not.toBeNull();
+
+        rerender(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="h-80"
+                mode="reader"
+                aiReady
+                readerGuidance="ขยับเข้าใกล้เอกสารอีกหน่อย"
+                currencyResult={null}
+            />,
+        );
+
+        expect(screen.getByText('ขยับเข้าใกล้เอกสารอีกหน่อย').closest('[aria-hidden="true"]')).not.toBeNull();
+
+        rerender(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="h-80"
+                mode="currency"
+                aiReady
+                currencyScanning
+                currencyResult={null}
+            />,
+        );
+
+        expect(screen.getByText('กำลังตรวจเงิน...').closest('[aria-hidden="true"]')).not.toBeNull();
+
+        rerender(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="h-80"
+                mode="assistant"
+                aiReady
+                objectDetectorEnabled
+                currencyResult={null}
+            />,
+        );
+
+        expect(screen.getByText('บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง').closest('[aria-hidden="true"]')).not.toBeNull();
     });
 });

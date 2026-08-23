@@ -4,6 +4,42 @@ import { describe, expect, it, vi } from 'vitest';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
 describe('ControlBar', () => {
+    it('offers a clear-chat action when assistant messages exist', () => {
+        const onClearMessages = vi.fn();
+        const { getByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onClearMessages={onClearMessages}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(getByRole('button', { name: 'ล้างแชท' }));
+
+        expect(onClearMessages).toHaveBeenCalledOnce();
+    });
+
     it('focuses the describe-scene action when the assistant becomes ready', () => {
         const { getByRole } = render(
             <ControlBar

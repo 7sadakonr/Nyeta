@@ -12,6 +12,11 @@ describe('ModeSwitcher', () => {
 
         expect(getByRole('tablist').className).toContain('rounded-none');
         expect(getByRole('tablist').parentElement?.className).toContain('bg-[#F4F8FF]');
+        expect(getByRole('tablist').parentElement?.className).toContain('px-0');
+        expect(getByRole('tablist').parentElement?.className).not.toContain('pt-2');
+        expect(getByRole('tablist').parentElement?.className).not.toContain('pb-4');
+        expect(getByRole('tablist').className).toContain('w-full');
+        expect(getByRole('tablist').className).not.toContain('shadow-');
         expect(assistant.className).toContain('rounded-none');
 
         assistant.focus();

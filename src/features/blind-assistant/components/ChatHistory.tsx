@@ -27,7 +27,7 @@ export default function ChatHistory({ aiMessages }: ChatHistoryProps) {
     if (!latestMessage) return null;
 
     return (
-        <section className="space-y-4" aria-label="คำตอบจากผู้ช่วย">
+        <section className="space-y-4" aria-hidden="true">
             <div className="bg-[#0F1B2D] px-5 py-6">
                 <h2 className="text-lg font-semibold text-[#6FE8FF]">คำตอบล่าสุด</h2>
                 <div className="mt-3">
@@ -37,7 +37,7 @@ export default function ChatHistory({ aiMessages }: ChatHistoryProps) {
 
             {previousMessages.length > 0 && (
                 <details className="bg-[#0F1B2D] px-5 py-4">
-                    <summary className="min-h-8 cursor-pointer text-sm font-semibold text-[#A8B3C5]">ดูประวัติการสนทนา</summary>
+                    <summary tabIndex={-1} className="min-h-8 cursor-pointer text-sm font-semibold text-[#A8B3C5]">ดูประวัติการสนทนา</summary>
                     <ul className="mt-4 space-y-3 pt-1" aria-label="ประวัติการสนทนา">
                         {previousMessages.map((message, index) => (
                             <li key={`${message.role}-${index}`} className="pb-3 last:pb-0">

@@ -89,10 +89,10 @@ export default function CameraView({
 
             {mode === 'assistant' && objectDetectorEnabled && guidanceText && !voiceTranscript && (
                 <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-2xl border px-4 py-3 text-center shadow-lg backdrop-blur-md ${guidanceText.includes('✅')
-                    ? 'border-green-200 bg-white/94'
+                    ? 'border-green-200 bg-white/[0.94]'
                     : guidanceText.includes('ไม่เจอ')
-                        ? 'border-slate-200 bg-white/94'
-                        : 'border-blue-200 bg-white/94'}`}>
+                        ? 'border-slate-200 bg-white/[0.94]'
+                        : 'border-blue-200 bg-white/[0.94]'}`}>
                     <p className={`text-base font-bold ${guidanceText.includes('✅') ? 'text-[#15803D]' : guidanceText.includes('ไม่เจอ') ? 'text-[#475569]' : 'text-[#1D4ED8]'}`}>
                         {guidanceText}
                     </p>
@@ -106,10 +106,10 @@ export default function CameraView({
 
             {mode === 'reader' && readerGuidance && !voiceTranscript && aiStatus !== 'thinking' && (
                 <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-2xl border px-4 py-3 text-center shadow-lg backdrop-blur-md ${readerAligned
-                    ? 'border-green-200 bg-white/94'
+                    ? 'border-green-200 bg-white/[0.94]'
                     : readerGuidance.includes('ยังไม่เจอ')
-                        ? 'border-slate-200 bg-white/94'
-                        : 'border-blue-200 bg-white/94'}`}>
+                        ? 'border-slate-200 bg-white/[0.94]'
+                        : 'border-blue-200 bg-white/[0.94]'}`}>
                     <p className={`text-base font-bold ${readerAligned ? 'text-[#15803D]' : readerGuidance.includes('ยังไม่เจอ') ? 'text-[#475569]' : 'text-[#1D4ED8]'}`}>
                         {readerGuidance}
                     </p>
@@ -118,7 +118,7 @@ export default function CameraView({
 
             {mode === 'currency' && (
                 <div
-                    className={`absolute inset-0 z-20 flex flex-col items-center justify-center p-6 pointer-events-none ${isBlocked ? 'bg-red-950/35' : currencyResult ? 'bg-[#2563EB]/8' : ''}`}
+                    className={`absolute inset-0 z-20 flex flex-col items-center justify-center p-6 pointer-events-none ${isBlocked ? 'bg-red-950/35' : currencyResult ? 'bg-[#2563EB]/[0.08]' : ''}`}
                 >
                     {isBlocked ? (
                         <div className="rounded-3xl border border-red-200 bg-white/95 p-5 text-center shadow-xl backdrop-blur-md">
@@ -128,7 +128,7 @@ export default function CameraView({
                             </p>
                         </div>
                     ) : (
-                        <div className="rounded-3xl bg-white/92 px-5 py-4 text-center shadow-xl backdrop-blur-md">
+                        <div className="rounded-3xl bg-white/[0.92] px-5 py-4 text-center shadow-xl backdrop-blur-md">
                             <p className={`text-center font-bold ${currencyResult
                                 ? 'text-5xl text-[#1D4ED8]'
                                 : currencyScanning
@@ -152,7 +152,7 @@ export default function CameraView({
             )}
 
             {mode === 'assistant' && !showCapturedText && objectDetectorEnabled && !guidanceText && !voiceTranscript && (
-                <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 rounded-2xl border border-white/50 bg-white/92 p-3 text-center shadow-lg backdrop-blur-md">
+                <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 rounded-2xl border border-white/50 bg-white/[0.92] p-3 text-center shadow-lg backdrop-blur-md">
                     <p className="text-sm font-semibold text-[#475569]">บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง</p>
                 </div>
             )}

@@ -1,9 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const readSource = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+const readTypeScriptSources = (path: string): string[] => readdirSync(resolve(process.cwd(), path), { withFileTypes: true })
+    .flatMap((entry) => {
+        const relativePath = join(path, entry.name);
+        if (entry.isDirectory()) return readTypeScriptSources(relativePath);
+        return /\.tsx?$/.test(entry.name) ? [readSource(relativePath)] : [];
+    });
 
 const TTS_OWNED_SURFACES = [
     'src/features/blind-assistant/BlindAssistScreen.tsx',
@@ -90,8 +96,9 @@ describe('TTS and VoiceOver announcement ownership', () => {
             'src/features/calling',
         ];
         for (const path of featureSources) {
-            const result = spawnSync('rg', ['-l', 'speechSynthesis\\.(?:speak|cancel)', path], { cwd: process.cwd(), encoding: 'utf8' });
-            expect(result.status).toBe(1);
+            for (const source of readTypeScriptSources(path)) {
+                expect(source).not.toMatch(/speechSynthesis\.(?:speak|cancel)/);
+            }
         }
     });
 });

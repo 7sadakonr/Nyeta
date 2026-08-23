@@ -18,7 +18,7 @@ const MODES: ModeItem[] = [
 ];
 
 export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
-    const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+    const tabRefs = useRef<Array<HTMLDivElement | null>>([]);
 
     const activateAt = (index: number) => {
         const nextIndex = (index + MODES.length) % MODES.length;
@@ -27,7 +27,7 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
         switchMode(nextMode.id);
     };
 
-    const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>, index: number) => {
         switch (event.key) {
             case 'ArrowRight':
             case 'ArrowDown':
@@ -47,6 +47,11 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
                 event.preventDefault();
                 activateAt(MODES.length - 1);
                 break;
+            case 'Enter':
+            case ' ':
+                event.preventDefault();
+                switchMode(MODES[index].id);
+                break;
         }
     };
 
@@ -57,10 +62,9 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
                 role="tablist"
             >
                 {MODES.map((item, index) => (
-                    <button
+                    <div
                         key={item.id}
                         ref={(element) => { tabRefs.current[index] = element; }}
-                        type="button"
                         role="tab"
                         id={`blind-mode-${item.id}-tab`}
                         aria-controls={mode === item.id ? `blind-mode-${item.id}-panel` : undefined}
@@ -68,14 +72,14 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
                         tabIndex={mode === item.id ? 0 : -1}
                         onClick={() => switchMode(item.id)}
                         onKeyDown={(event) => handleKeyDown(event, index)}
-                        className={`min-h-12 rounded-none px-2 text-sm font-bold transition-[background-color,color,transform] active:scale-[0.98] ${mode === item.id
+                        className={`min-h-12 flex items-center justify-center rounded-none px-2 text-sm font-bold transition-[background-color,color,transform] cursor-pointer active:scale-[0.98] ${mode === item.id
                             ? 'bg-[#EAF4FF] text-[#1D4ED8] shadow-sm'
                             : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]'
                             }`}
                         aria-label={item.label}
                     >
                         {item.label}
-                    </button>
+                    </div>
                 ))}
             </div>
         </div>

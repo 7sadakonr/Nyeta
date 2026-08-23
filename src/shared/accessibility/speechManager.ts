@@ -8,7 +8,7 @@ import { CancelSpeechOptions, Priority, PriorityLevel, SpeechCategory, SpeechCat
 
 export { Priority };
 
-const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 1500;
+const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 3500;
 const MAX_DEDUPE_HISTORY_ENTRIES = 128;
 const DEFAULT_REALTIME_MAX_AGE_MS = 1500;
 
@@ -23,6 +23,7 @@ interface ChunkProgress {
   chunks: string[];
   lastStartedIndex: number;
   totalChunks: number;
+  currentCharacterIndex?: number;
 }
 
 export interface QueueItem extends SpeechOptions {
@@ -229,7 +230,14 @@ export class SpeechManager {
     if (!this._speaking || !this._chunkProgress || !this._currentOptions) return;
 
     const resumeFromIndex = Math.max(0, this._chunkProgress.lastStartedIndex);
-    const remainingChunks = this._chunkProgress.chunks.slice(resumeFromIndex);
+    const charIndex = this._chunkProgress.currentCharacterIndex || 0;
+    const currentChunkRest = this._chunkProgress.chunks[resumeFromIndex].slice(charIndex);
+    
+    const remainingChunks: string[] = [];
+    if (currentChunkRest.trim().length > 0) {
+        remainingChunks.push(currentChunkRest);
+    }
+    remainingChunks.push(...this._chunkProgress.chunks.slice(resumeFromIndex + 1));
 
     if (remainingChunks.length === 0) return;
 
@@ -756,6 +764,14 @@ export class SpeechManager {
         const callback = this._currentOnStart;
         this._currentOnStart = null;
         callback?.();
+      };
+      utterance.onboundary = (event) => {
+        if (this._currentSpeechId !== speechId) return;
+        if (this._chunkProgress && chunkIndex === this._chunkProgress.lastStartedIndex) {
+            if (event.charIndex !== undefined) {
+                this._chunkProgress.currentCharacterIndex = event.charIndex;
+            }
+        }
       };
       utterance.onend = () => {
         this._activeUtterances.delete(utterance);

@@ -38,15 +38,15 @@ interface ActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
 
 function ActionButton({ tone = 'secondary', wide = false, className = '', children, ...props }: ActionButtonProps) {
     const toneClass = tone === 'primary'
-        ? 'bg-[#3BA7FF] text-[#08111F] hover:bg-[#2A96EE]'
+        ? 'bg-[#2563EB] text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)] hover:bg-[#1D4ED8]'
         : tone === 'danger'
-            ? 'bg-[#3B1824] text-[#FFB2BA] hover:bg-[#54202D]'
-            : 'border border-[#26364D] bg-[#16243A] text-[#F8FAFC] hover:bg-[#1D304A]';
+            ? 'border border-[#FECACA] bg-[#FFF1F2] text-[#B91C1C] hover:bg-[#FFE4E6]'
+            : 'border border-[#DBE7F5] bg-[#F8FBFF] text-[#0F172A] hover:bg-[#EFF6FF]';
 
     return (
         <button
             type="button"
-            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-12 items-center justify-center rounded-xl px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${toneClass} ${className}`}
+            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-2xl px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${toneClass} ${className}`}
             {...props}
         >
             {children}
@@ -83,7 +83,7 @@ export default function ControlBar({
     const canRead = aiReady && !isProcessingDoc && !isBusy;
 
     return (
-        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#08111F] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3" role="group" aria-label="ปุ่มควบคุม">
+        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-[#E6EEF8] bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.05)]" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
                     {isListening ? (

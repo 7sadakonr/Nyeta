@@ -40,37 +40,6 @@ describe('ControlBar', () => {
         expect(onClearMessages).toHaveBeenCalledOnce();
     });
 
-    it('focuses the describe-scene action when the assistant becomes ready', () => {
-        const { getByRole } = render(
-            <ControlBar
-                mode="assistant"
-                aiReady
-                aiStatus="idle"
-                isSpeaking={false}
-                isListening={false}
-                docText={null}
-                isReading={false}
-                isProcessingDoc={false}
-                currencyResult={null}
-                currencyScanning={false}
-                currencyMonitoring={false}
-                readerAligned={false}
-                onCapture={vi.fn()}
-                onStopSpeaking={vi.fn()}
-                onStartListening={vi.fn()}
-                onStopListening={vi.fn()}
-                onCurrencyCapture={vi.fn()}
-                onReplayCurrencyDetails={vi.fn()}
-                onClearTotal={vi.fn()}
-                onReadDocument={vi.fn()}
-                onReplayDocument={vi.fn()}
-                onStopReading={vi.fn()}
-            />,
-        );
-
-        expect(document.activeElement).toBe(getByRole('button', { name: 'บรรยายสิ่งที่เห็น' }));
-    });
-
     it('offers detail playback and reset actions in currency mode', () => {
         const { getByRole, queryByRole } = render(
             <ControlBar

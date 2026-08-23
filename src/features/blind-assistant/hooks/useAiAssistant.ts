@@ -182,11 +182,13 @@ export function useAiAssistant(
 
     const clearMessages = useCallback(() => {
         setMessages([]);
+        speechManager?.clearPausedSpeech();
         speechManager?.cancel({ scope: 'blind:assistant' });
         feedback?.('button');
     }, [feedback]);
 
     const stopSpeaking = useCallback(() => {
+        speechManager?.clearPausedSpeech();
         speechManager?.cancel({ scope: 'blind:assistant', categories: [SpeechCategory.TASK, SpeechCategory.REALTIME] });
         feedback?.('button');
     }, [feedback]);

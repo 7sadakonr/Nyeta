@@ -33,8 +33,6 @@ export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
 const SAME_CONTROL_DEDUP_MS = 250;
 
 type NavigationCallback = () => void;
-export type AccessibilitySpeechNavigationPolicy = 'interrupt-realtime' | 'preserve';
-
 /**
  * Coordinates app TTS with keyboard, touch, and assistive-technology navigation.
  * Browsers do not expose VoiceOver speech state, so this deliberately reacts only
@@ -42,7 +40,6 @@ export type AccessibilitySpeechNavigationPolicy = 'interrupt-realtime' | 'preser
  */
 export function useAccessibilitySpeechNavigation(
   onNavigation?: NavigationCallback,
-  policy: AccessibilitySpeechNavigationPolicy = 'interrupt-realtime',
 ) {
   const lastInteractionRef = useRef<{ element: Element; at: number } | null>(null);
 
@@ -56,9 +53,9 @@ export function useAccessibilitySpeechNavigation(
     if (previous?.element === element && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
 
     lastInteractionRef.current = { element, at: now };
-    if (policy === 'interrupt-realtime') speechManager?.interruptForAccessibilityNavigation();
+    speechManager?.interruptForAccessibilityNavigation();
     onNavigation?.();
-  }, [onNavigation, policy]);
+  }, [onNavigation]);
 
   return {
     onFocusCapture: (event: React.FocusEvent<HTMLElement>) => interruptForInteraction(event.target),

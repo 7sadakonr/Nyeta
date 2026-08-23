@@ -47,6 +47,14 @@ export interface SpeechOptions {
   dedupe?: boolean | string;
   /** Minimum interval before a deduplicated message may be spoken again. */
   cooldown?: number;
+  /**
+   * How this speech reacts when the user starts assistive-technology navigation.
+   *
+   * - `'pause-resume'` — Pause and resume after navigation idle (for long narrations).
+   * - `'cancel'`        — Cancel immediately, no resume (for stale realtime guidance).
+   * - `'defer'`         — Cancel if active, but keep queued items for later (default for short messages).
+   */
+  navigationBehavior?: 'pause-resume' | 'cancel' | 'defer';
   /** Called when the browser has actually started the utterance. */
   onStart?: () => void;
   onEnd?: (completed?: boolean) => void;

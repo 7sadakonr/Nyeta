@@ -41,7 +41,10 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain("owner: 'page-mount'");
         expect(screen).not.toContain("owner: 'camera-ready'");
         expect(screen).not.toContain('accessibilityStatus');
-        expect(screen).toContain("useAccessibilitySpeechNavigation(undefined, 'preserve')");
+        expect(screen).toContain("const accessibilityNavHandlers = useAccessibilitySpeechNavigation();");
+        expect(screen).toContain("{...accessibilityNavHandlers}");
+        expect(screen).toContain("speechManager?.clearPausedSpeech();");
+        expect(screen).toContain("navigationBehavior: 'pause-resume'");
         expect(screen).not.toContain("owner: 'assistant-ready'");
         expect(screen).not.toContain('assistantReadyAnnouncedRef');
         expect(screen).not.toContain('ผู้ช่วย AI สำหรับผู้พิการทางสายตา');

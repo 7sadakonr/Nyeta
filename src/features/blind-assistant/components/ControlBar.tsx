@@ -93,8 +93,10 @@ export default function ControlBar({
             return;
         }
         if (canCapture && !hasFocusedDescribeSceneRef.current) {
-            describeSceneRef.current?.focus();
             hasFocusedDescribeSceneRef.current = true;
+            // Delay focus so it doesn't overlap with the audio-activation announcement.
+            const timerId = setTimeout(() => describeSceneRef.current?.focus(), 800);
+            return () => clearTimeout(timerId);
         }
     }, [canCapture, mode]);
 

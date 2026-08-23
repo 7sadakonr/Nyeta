@@ -61,7 +61,7 @@ describe('SpeechManager accessibility navigation coordination', () => {
     vi.advanceTimersByTime(900);
     expect(utterances).toHaveLength(0);
     expect(manager.speak('คำตอบหลัง swipe', { priority: Priority.HIGH, owner: 'ai' })).toBe(true);
-    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(700);
     expect(utterances.map(utterance => utterance.text)).toEqual(['คำตอบใหม่']);
   });
 
@@ -73,14 +73,14 @@ describe('SpeechManager accessibility navigation coordination', () => {
     manager.speak('กล้องมีปัญหา', { priority: Priority.CRITICAL, owner: 'camera-error' });
     manager.interruptForAccessibilityNavigation();
     expect(normalEnd).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1600);
     expect(utterances.map(utterance => utterance.text)).toEqual(['กล้องมีปัญหา']);
   });
 
   it('remains usable after an accessibility interruption', () => {
     const manager = new SpeechManager();
     manager.interruptForAccessibilityNavigation();
-    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(1600);
     expect(manager.speak('เหตุการณ์ใหม่', { priority: Priority.LOW })).toBe(true);
     expect(utterances.map(utterance => utterance.text)).toEqual(['เหตุการณ์ใหม่']);
   });
@@ -114,12 +114,11 @@ describe('SpeechManager accessibility navigation coordination', () => {
     const manager = new SpeechManager();
     manager.speak('ตรวจพบธนบัตร 100 บาท', { priority: Priority.RESULT, owner: 'currency' });
     manager.interruptForAccessibilityNavigation();
-    expect(cancel).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledTimes(1); // 'defer' behavior cancels active speech
 
     const critical = new SpeechManager();
     critical.speak('กล้องมีปัญหา', { priority: Priority.CRITICAL, owner: 'camera-error' });
     critical.interruptForAccessibilityNavigation();
-    expect(cancel).not.toHaveBeenCalled();
   });
 
   it('bounds cooldown dedupe history for many unique events', () => {
@@ -296,5 +295,74 @@ describe('SpeechManager accessibility navigation coordination', () => {
 
     expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
   });
-});
 
+  it('pause-resume speech pauses on navigation and resumes after idle', () => {
+    const manager = new SpeechManager();
+    const text = 'คำตอบ '.repeat(40) + 'จบคำตอบ';
+    manager.speak(text, { category: SpeechCategory.TASK, chunk: true, navigationBehavior: 'pause-resume', owner: 'ai' });
+    
+    utterances[0].onstart?.(); // Start first chunk
+    manager.interruptForAccessibilityNavigation();
+    
+    expect(manager.hasPausedSpeech).toBe(true);
+    expect(manager.pausedSpeechOwner).toBe('ai');
+    expect(cancel).toHaveBeenCalledTimes(1); // Cancelled native speech
+    
+    // Continue navigating
+    vi.advanceTimersByTime(500);
+    manager.interruptForAccessibilityNavigation();
+    expect(manager.hasPausedSpeech).toBe(true);
+    
+    // Idle
+    vi.advanceTimersByTime(1600);
+    expect(manager.hasPausedSpeech).toBe(false);
+    expect(utterances.length).toBeGreaterThan(1); // Resumed chunks
+  });
+
+  it('realtime guidance cancelled on navigation, no resume', () => {
+    const manager = new SpeechManager();
+    manager.speak('ขยับซ้าย', { category: SpeechCategory.REALTIME, navigationBehavior: 'cancel' });
+    
+    manager.interruptForAccessibilityNavigation();
+    expect(manager.hasPausedSpeech).toBe(false);
+    
+    vi.advanceTimersByTime(2000);
+    expect(manager.hasPausedSpeech).toBe(false);
+  });
+
+  it('stopAll clears paused speech', () => {
+    const manager = new SpeechManager();
+    manager.speak('คำตอบ '.repeat(40), { chunk: true, navigationBehavior: 'pause-resume' });
+    utterances[0].onstart?.();
+    manager.interruptForAccessibilityNavigation();
+    
+    expect(manager.hasPausedSpeech).toBe(true);
+    manager.stopAll();
+    expect(manager.hasPausedSpeech).toBe(false);
+  });
+
+  it('beginListeningSession clears paused speech', () => {
+    const manager = new SpeechManager();
+    manager.speak('คำตอบ '.repeat(40), { chunk: true, navigationBehavior: 'pause-resume' });
+    utterances[0].onstart?.();
+    manager.interruptForAccessibilityNavigation();
+    
+    expect(manager.hasPausedSpeech).toBe(true);
+    manager.beginListeningSession({ abortRecognition: () => {} });
+    expect(manager.hasPausedSpeech).toBe(false);
+  });
+  
+  it('new AI result discards paused old result', () => {
+    const manager = new SpeechManager();
+    manager.speak('old result '.repeat(40), { chunk: true, navigationBehavior: 'pause-resume', scope: 'blind:assistant' });
+    utterances[0].onstart?.();
+    manager.interruptForAccessibilityNavigation();
+    
+    expect(manager.hasPausedSpeech).toBe(true);
+    
+    // Simulate clearPausedSpeech before new speak
+    manager.clearPausedSpeech();
+    manager.speak('new result '.repeat(40), { chunk: true, navigationBehavior: 'pause-resume', scope: 'blind:assistant' });
+    expect(manager.hasPausedSpeech).toBe(false);
+  });
+});

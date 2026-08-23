@@ -284,7 +284,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     const replayCurrencyDetails = useCallback(() => {
         const result = resultRef.current;
         if (!result) return;
-        speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true });
+        speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true, navigationBehavior: 'pause-resume' });
         feedback?.('capture');
     }, [feedback]);
     const clearTotal = useCallback(() => { totalRef.current = 0; historyRef.current = []; setTotalAmount(0); setScannedHistory([]); }, []);

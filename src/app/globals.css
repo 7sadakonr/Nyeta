@@ -65,7 +65,6 @@ body {
   color: var(--nyeta-text) !important;
 }
 
-[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"],
 [data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] {
   margin: 0 1rem 1rem;
   border: 1px solid var(--nyeta-border);
@@ -74,12 +73,6 @@ body {
   box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
 }
 
-[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p {
-  color: var(--nyeta-text-muted) !important;
-}
-
-[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p:nth-of-type(2),
-[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p:nth-of-type(5),
 [data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] h2,
 [data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] [class*="text-[#6FE8FF]"] {
   color: var(--nyeta-blue) !important;

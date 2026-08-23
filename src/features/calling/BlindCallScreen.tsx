@@ -132,7 +132,7 @@ export default function BlindCallScreen() {
             {/* Top bar */}
             <div className="absolute top-0 inset-x-0 z-50 p-4 flex justify-start">
                 <Link
-                    href="/"
+                    href="/blind/select"
                     onClick={() => isActive && endCall(false)}
                     className="flex items-center gap-2 bg-black/50 hover:bg-black/70 text-white px-5 py-3 rounded-full backdrop-blur-md border border-white/20"
                     aria-label="กลับหน้าหลัก"

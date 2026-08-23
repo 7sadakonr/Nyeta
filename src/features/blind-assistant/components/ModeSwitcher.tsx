@@ -51,9 +51,9 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
     };
 
     return (
-        <div className="shrink-0 bg-[#F4F8FF] px-4 py-3">
+        <div className="shrink-0 bg-[#F4F8FF] px-4 pb-4 pt-2">
             <div
-                className="grid grid-cols-3 rounded-2xl border border-[#DBE7F5] bg-white p-1 shadow-[0_8px_24px_rgba(37,99,235,0.06)]"
+                className="grid grid-cols-3 rounded-none border border-[#DBE7F5] bg-white p-1 shadow-[0_8px_24px_rgba(37,99,235,0.06)]"
                 role="tablist"
             >
                 {MODES.map((item, index) => (
@@ -68,7 +68,7 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
                         tabIndex={mode === item.id ? 0 : -1}
                         onClick={() => switchMode(item.id)}
                         onKeyDown={(event) => handleKeyDown(event, index)}
-                        className={`min-h-12 rounded-xl px-2 text-sm font-bold transition-[background-color,color,transform] active:scale-[0.98] ${mode === item.id
+                        className={`min-h-12 rounded-none px-2 text-sm font-bold transition-[background-color,color,transform] active:scale-[0.98] ${mode === item.id
                             ? 'bg-[#EAF4FF] text-[#1D4ED8] shadow-sm'
                             : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]'
                             }`}

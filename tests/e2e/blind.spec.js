@@ -44,4 +44,20 @@ test.describe('Blind Assistance Page (/blind)', () => {
         await expect(page.locator('main').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
         await expect(page.getByRole('button', { name: /เรียกอาสาสมัคร/i })).toBeVisible();
     });
+
+    test('focuses the describe-scene action when AI mode becomes ready', async ({ page }) => {
+        await page.goto('/blind');
+
+        const describeScene = page.getByRole('button', { name: 'บรรยายสิ่งที่เห็น' });
+        await expect(describeScene).toBeEnabled();
+        await expect(describeScene).toBeFocused();
+    });
+
+    test('returns to the Blind mode selection page from both assistance flows', async ({ page }) => {
+        await page.goto('/blind');
+        await expect(page.getByRole('link', { name: /กลับหน้าหลัก/i })).toHaveAttribute('href', '/blind/select');
+
+        await page.goto('/call');
+        await expect(page.getByRole('link', { name: /กลับหน้าหลัก/i })).toHaveAttribute('href', '/blind/select');
+    });
 });

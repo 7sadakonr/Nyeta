@@ -28,7 +28,7 @@ export default function OverlayBox({ style, color, dashed, label, thick, pulse }
         >
             {label && (
                 <span
-                    className="absolute -top-6 left-0 px-2 py-0.5 text-xs font-bold rounded whitespace-nowrap"
+                    className="absolute -top-6 left-0 px-2 py-0.5 text-xs font-bold rounded-none whitespace-nowrap"
                     style={{ backgroundColor: `${color}cc`, color: '#000' }}
                 >
                     {label}

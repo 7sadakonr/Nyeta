@@ -15,7 +15,6 @@ export interface ControlBarProps {
     currencyScanning: boolean;
     currencyMonitoring: boolean;
     totalAmount?: number;
-    scannedCount?: number;
     isBlocked?: boolean;
     readerAligned: boolean;
     onCapture: () => void;
@@ -23,8 +22,7 @@ export interface ControlBarProps {
     onStartListening: () => void;
     onStopListening: () => void;
     onCurrencyCapture: () => void;
-    onShowCurrencyDetails: () => void;
-    onReplayTotal: () => void;
+    onReplayCurrencyDetails: () => void;
     onClearTotal: () => void;
     onReadDocument: () => void;
     onReplayDocument: () => void;
@@ -36,7 +34,7 @@ interface ActionButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement
     wide?: boolean;
 }
 
-function ActionButton({ tone = 'secondary', wide = false, className = '', children, ...props }: ActionButtonProps) {
+const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, className = '', children, ...props }, ref) {
     const toneClass = tone === 'primary'
         ? 'bg-[#2563EB] text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)] hover:bg-[#1D4ED8]'
         : tone === 'danger'
@@ -45,14 +43,15 @@ function ActionButton({ tone = 'secondary', wide = false, className = '', childr
 
     return (
         <button
+            ref={ref}
             type="button"
-            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-2xl px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${toneClass} ${className}`}
+            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-none px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-45 ${toneClass} ${className}`}
             {...props}
         >
             {children}
         </button>
     );
-}
+});
 
 export default function ControlBar({
     mode,
@@ -64,15 +63,15 @@ export default function ControlBar({
     isReading,
     isProcessingDoc,
     currencyResult,
+    currencyScanning,
     totalAmount = 0,
-    scannedCount = 0,
     readerAligned,
     onCapture,
     onStopSpeaking,
     onStartListening,
     onStopListening,
-    onShowCurrencyDetails,
-    onReplayTotal,
+    onCurrencyCapture,
+    onReplayCurrencyDetails,
     onClearTotal,
     onReadDocument,
     onReplayDocument,
@@ -81,28 +80,41 @@ export default function ControlBar({
     const isBusy = aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
     const canRead = aiReady && !isProcessingDoc && !isBusy;
+    const describeSceneRef = React.useRef<HTMLButtonElement | null>(null);
+    const hasFocusedDescribeSceneRef = React.useRef(false);
+
+    React.useEffect(() => {
+        if (mode !== 'assistant') {
+            hasFocusedDescribeSceneRef.current = false;
+            return;
+        }
+        if (canCapture && !hasFocusedDescribeSceneRef.current) {
+            describeSceneRef.current?.focus();
+            hasFocusedDescribeSceneRef.current = true;
+        }
+    }, [canCapture, mode]);
 
     return (
         <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-[#E6EEF8] bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.05)]" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
                     {isListening ? (
-                        <ActionButton wide tone="danger" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
+                        <ActionButton wide tone="danger" className="rounded-none" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
                     ) : (
-                        <ActionButton wide tone="primary" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
+                        <ActionButton ref={describeSceneRef} wide tone="primary" className="rounded-none" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
                     )}
                     <div className="grid grid-cols-2 gap-3">
-                        <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
-                        <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        <ActionButton className="rounded-none" onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
+                        <ActionButton tone="danger" className="rounded-none" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
                     </div>
                 </div>
             )}
 
             {mode === 'currency' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={totalAmount === 0} onClick={onReplayTotal} aria-label={`ฟังยอดรวม ${totalAmount} บาท มี ${scannedCount} รายการ`}>ฟังยอดรวม</ActionButton>
+                    <ActionButton wide tone="primary" disabled={!aiReady || currencyScanning} onClick={onCurrencyCapture} aria-label="ถ่ายเองเพื่อสแกนเงินตอนนี้">ถ่ายเอง</ActionButton>
                     <div className="grid grid-cols-2 gap-3">
-                        <ActionButton disabled={!currencyResult} onClick={onShowCurrencyDetails} aria-label="รายละเอียดเงินล่าสุด">รายละเอียด</ActionButton>
+                        <ActionButton disabled={!currencyResult} onClick={onReplayCurrencyDetails} aria-label="ฟังรายละเอียดเงินล่าสุด">ฟังรายละเอียด</ActionButton>
                         <ActionButton tone="danger" disabled={totalAmount === 0} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
                     </div>
                 </div>

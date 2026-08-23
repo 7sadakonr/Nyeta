@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --nyeta-bg: #08111f;
-  --nyeta-surface: #0f1b2d;
-  --nyeta-surface-elevated: #16243a;
-  --nyeta-blue: #3ba7ff;
-  --nyeta-blue-hover: #2a96ee;
-  --nyeta-blue-soft: #143a59;
-  --nyeta-cyan: #6fe8ff;
-  --nyeta-cyan-soft: #163e47;
-  --nyeta-text: #f8fafc;
-  --nyeta-text-muted: #a8b3c5;
-  --nyeta-border: #26364d;
-  --nyeta-success: #4ade80;
-  --nyeta-error: #ff5d6c;
-  --nyeta-volunteer: #f7c948;
-  --nyeta-volunteer-accent: #ffd76a;
+  --nyeta-bg: #f4f8ff;
+  --nyeta-surface: #ffffff;
+  --nyeta-surface-elevated: #f8fbff;
+  --nyeta-blue: #2563eb;
+  --nyeta-blue-hover: #1d4ed8;
+  --nyeta-blue-soft: #eaf4ff;
+  --nyeta-cyan: #38bdf8;
+  --nyeta-cyan-soft: #e0f5ff;
+  --nyeta-text: #0f172a;
+  --nyeta-text-muted: #64748b;
+  --nyeta-border: #dbe7f5;
+  --nyeta-success: #16a34a;
+  --nyeta-error: #dc2626;
+  --nyeta-volunteer: #f59e0b;
+  --nyeta-volunteer-accent: #fbbf24;
   --background: var(--nyeta-bg);
   --foreground: var(--nyeta-text);
 }
@@ -54,8 +54,61 @@ body {
 }
 
 .nyeta-surface :focus-visible {
-  outline: 3px solid var(--nyeta-cyan);
+  outline: 3px solid var(--nyeta-blue);
   outline-offset: 3px;
+}
+
+/* Blind-assistant screen is intentionally light-only. Camera content stays dark
+   inside CameraView so live video overlays remain legible. */
+[data-testid="blind-assistant-shell"] {
+  background: var(--nyeta-bg) !important;
+  color: var(--nyeta-text) !important;
+}
+
+[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"],
+[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] {
+  margin: 0 1rem 1rem;
+  border: 1px solid var(--nyeta-border);
+  border-radius: 1.5rem;
+  background: #ffffff !important;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
+}
+
+[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p {
+  color: var(--nyeta-text-muted) !important;
+}
+
+[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p:nth-of-type(2),
+[data-testid="blind-assistant-shell"] [aria-label="สรุปการตรวจเงิน"] p:nth-of-type(5),
+[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] h2,
+[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] [class*="text-[#6FE8FF]"] {
+  color: var(--nyeta-blue) !important;
+}
+
+[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] > p {
+  color: var(--nyeta-text) !important;
+}
+
+[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] {
+  border: 1px solid var(--nyeta-border);
+  background: #ffffff !important;
+  color: var(--nyeta-text) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16) !important;
+}
+
+[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] h2,
+[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] > p {
+  color: var(--nyeta-blue) !important;
+}
+
+[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] ul {
+  color: var(--nyeta-text) !important;
+}
+
+[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] button {
+  border-color: var(--nyeta-border) !important;
+  background: #f1f5f9 !important;
+  color: var(--nyeta-text) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -23,11 +23,9 @@ export function useAiAssistant(
     const [status, setStatus] = useState<AssistantStatus>('idle');
     const [messages, setMessages] = useState<AssistantMessage[]>([]);
 
-    const messagesRef = useRef<AssistantMessage[]>(messages);
     const statusRef = useRef<AssistantStatus>(status);
     const abortControllerRef = useRef<AbortController | null>(null);
 
-    useEffect(() => { messagesRef.current = messages; }, [messages]);
     useEffect(() => { statusRef.current = status; }, [status]);
 
     useEffect(() => {
@@ -37,25 +35,6 @@ export function useAiAssistant(
             }
         };
     }, []);
-
-    const formatMessagesForApi = (history: AssistantMessage[]) => {
-        return history.slice(-6).map(msg => {
-            const role = msg.role === 'ai' ? 'model' : 'user';
-            if (msg.image) {
-                const base64Data = msg.image.split(',')[1];
-                const mimeType = msg.image.split(';')[0].split(':')[1] || 'image/jpeg';
-                return {
-                    role: role,
-                    parts: [
-                        { text: msg.content || '' },
-                        { inlineData: { mimeType: mimeType, data: base64Data } },
-                    ],
-                };
-            } else {
-                return { role: role, parts: [{ text: msg.content }] };
-            }
-        });
-    };
 
     const captureAndAsk = useCallback(async (customPrompt: string | null = null) => {
         if (statusRef.current === 'thinking') return;
@@ -196,89 +175,10 @@ export function useAiAssistant(
     }, [videoRef, isReady, feedback, addLog]);
 
     const askTextOnly = useCallback(async (userText: string) => {
-        if (!isReady || statusRef.current === 'thinking') return;
-        if (!userText || userText.trim().length === 0) return;
-
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-        const signal = controller.signal;
-        const newUserMessage: AssistantMessage = { role: 'user', content: `🎤 ${userText}` };
-
-        setMessages(prev => [...prev, newUserMessage]);
-
-        let timedOut = false;
-        const timeoutId = setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-        }, 35000);
-
-        try {
-            setStatus('thinking');
-            feedback?.('capture');
-            addLog?.(`Text Chat: "${userText}"`);
-
-            const apiMessages = formatMessagesForApi([...messagesRef.current, newUserMessage]);
-
-            const response = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal,
-                body: JSON.stringify({
-                    mode: 'assistant',
-                    contents: apiMessages,
-                    maxTokens: 800,
-                    temperature: 0.5,
-                }),
-            });
-
-            if (!response.ok) {
-                if (response.status === 429) {
-                    const msg = 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี กรุณารอสักครู่นะครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
-                    feedback?.('error');
-                    setStatus('idle');
-                    return;
-                }
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.error) {
-                const msg = `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}`;
-                setMessages(current => [...current, { role: 'ai', content: msg }]);
-                feedback?.('error');
-            } else {
-                const replyText = extractGeminiText(data);
-                if (replyText) {
-                    setMessages(current => [...current, { role: 'ai', content: replyText }]);
-                    feedback?.('success');
-                } else {
-                    const msg = 'ขอโทษครับ ไม่ได้รับคำตอบ ลองใหม่อีกทีนะครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
-                    feedback?.('error');
-                }
-            }
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
-                if (timedOut) {
-                    const msg = 'การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
-                    feedback?.('error');
-                }
-                return;
-            }
-            console.error('Text Chat Error:', error);
-            const msg = 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ';
-            setMessages(current => [...current, { role: 'ai', content: msg }]);
-            feedback?.('error');
-        } finally {
-            clearTimeout(timeoutId);
-            setStatus('idle');
-        }
-    }, [isReady, feedback, addLog]);
+        const question = userText.trim();
+        if (!question) return;
+        await captureAndAsk(question);
+    }, [captureAndAsk]);
 
     const clearMessages = useCallback(() => {
         setMessages([]);

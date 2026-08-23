@@ -72,7 +72,12 @@ export function useCamera(): UseCameraResult {
         setError(null);
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    aspectRatio: { ideal: 16 / 9 },
+                }
             });
             setStream(mediaStream);
             requestWakeLock();

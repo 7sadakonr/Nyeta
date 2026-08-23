@@ -15,6 +15,7 @@ export interface ControlBarProps {
     currencyScanning: boolean;
     currencyMonitoring: boolean;
     totalAmount?: number;
+    hasAssistantMessages?: boolean;
     isBlocked?: boolean;
     readerAligned: boolean;
     onCapture: () => void;
@@ -24,6 +25,7 @@ export interface ControlBarProps {
     onCurrencyCapture: () => void;
     onReplayCurrencyDetails: () => void;
     onClearTotal: () => void;
+    onClearMessages?: () => void;
     onReadDocument: () => void;
     onReplayDocument: () => void;
     onStopReading: () => void;
@@ -65,6 +67,7 @@ export default function ControlBar({
     currencyResult,
     currencyScanning,
     totalAmount = 0,
+    hasAssistantMessages = false,
     readerAligned,
     onCapture,
     onStopSpeaking,
@@ -73,6 +76,7 @@ export default function ControlBar({
     onCurrencyCapture,
     onReplayCurrencyDetails,
     onClearTotal,
+    onClearMessages,
     onReadDocument,
     onReplayDocument,
     onStopReading,
@@ -103,9 +107,10 @@ export default function ControlBar({
                     ) : (
                         <ActionButton ref={describeSceneRef} wide tone="primary" className="rounded-none" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
                     )}
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                         <ActionButton className="rounded-none" onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
                         <ActionButton tone="danger" className="rounded-none" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
                     </div>
                 </div>
             )}

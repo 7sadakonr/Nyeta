@@ -23,7 +23,7 @@ export default function TopNavBar({
     const statusColor = !aiReady ? 'bg-[#94A3B8]' : isWorking ? 'bg-[#38BDF8]' : 'bg-[#22C55E]';
 
     return (
-        <header className="grid shrink-0 grid-cols-[3rem_1fr_auto] items-center gap-3 border-b border-[#E6EEF8] bg-white px-4 pb-4 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-[0_4px_14px_rgba(37,99,235,0.08)]">
+        <header className="grid shrink-0 grid-cols-[3rem_1fr_auto] items-center gap-3 border-b border-[#E6EEF8] bg-[#F4F8FF] px-4 pb-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] shadow-[0_4px_14px_rgba(37,99,235,0.08)]">
             <Link
                 href="/blind/select"
                 className="flex min-h-12 min-w-12 items-center justify-center rounded-none text-[#1D4ED8] transition-transform active:scale-95"

@@ -51,9 +51,9 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
     };
 
     return (
-        <div className="shrink-0 bg-[#F4F8FF] px-4 pb-4 pt-2">
+        <div className="shrink-0 bg-[#F4F8FF] px-0">
             <div
-                className="grid grid-cols-3 rounded-none border border-[#DBE7F5] bg-white p-1 shadow-[0_8px_24px_rgba(37,99,235,0.06)]"
+                className="grid w-full grid-cols-3 rounded-none border-b border-[#DBE7F5] bg-[#F4F8FF]"
                 role="tablist"
             >
                 {MODES.map((item, index) => (

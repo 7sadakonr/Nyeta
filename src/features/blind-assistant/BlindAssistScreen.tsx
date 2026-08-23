@@ -26,7 +26,9 @@ import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
-export function getCameraHeightClass(showCapturedText: boolean) {
+export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
+    if (expandCameraPreview) return 'h-full min-h-0 flex-1';
+
     return showCapturedText
         ? 'h-[clamp(7rem,20dvh,14rem)] min-h-0'
         : 'h-[clamp(14rem,52dvh,38rem)] min-h-0';
@@ -186,6 +188,7 @@ export default function BlindAssistScreen() {
         messages: aiMessages,
         captureAndAsk,
         askTextOnly,
+        clearMessages,
         stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog);
 
@@ -299,7 +302,8 @@ export default function BlindAssistScreen() {
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
 
-    const cameraHeightClass = getCameraHeightClass(showCapturedText);
+    const expandCameraPreview = !showCapturedText;
+    const cameraHeightClass = getCameraHeightClass(showCapturedText, expandCameraPreview);
 
     return (
         <div
@@ -330,9 +334,11 @@ export default function BlindAssistScreen() {
                     id={`blind-mode-${mode}-panel`}
                     role="tabpanel"
                     aria-labelledby={`blind-mode-${mode}-tab`}
-                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2"
+                    className={expandCameraPreview
+                        ? 'flex min-h-0 flex-1 overflow-hidden'
+                        : 'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2'}
                 >
-                    <div className="mx-auto w-full max-w-xl">
+                    <div className={`mx-auto w-full max-w-xl ${expandCameraPreview ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
                         <CameraView
                             videoRef={videoRef}
                             cameraContainerRef={cameraContainerRef}
@@ -384,6 +390,7 @@ export default function BlindAssistScreen() {
                     currencyScanning={currencyScanning}
                     currencyMonitoring={currencyMonitoring}
                     totalAmount={totalAmount}
+                    hasAssistantMessages={aiMessages.length > 0}
                     isBlocked={currencyBlocked}
                     readerAligned={readerAligned}
                     onCapture={captureAndAsk}
@@ -393,6 +400,7 @@ export default function BlindAssistScreen() {
                     onCurrencyCapture={captureCurrency}
                     onReplayCurrencyDetails={replayCurrencyDetails}
                     onClearTotal={clearTotal}
+                    onClearMessages={clearMessages}
                     onReadDocument={readDocument}
                     onReplayDocument={replayDocument}
                     onStopReading={stopReading}

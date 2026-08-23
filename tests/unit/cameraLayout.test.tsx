@@ -15,6 +15,8 @@ describe('AI camera layout', () => {
     it('keeps the camera large before a description and collapses it after one arrives', () => {
         expect(getCameraHeightClass(false)).toContain('52dvh');
         expect(getCameraHeightClass(true)).toContain('20dvh');
+        expect(getCameraHeightClass(false, true)).toContain('flex-1');
+        expect(getCameraHeightClass(false, true)).toContain('h-full');
     });
 
     it('uses an edge-to-edge square camera frame in assistant mode', () => {
@@ -33,6 +35,24 @@ describe('AI camera layout', () => {
 
         expect(container.firstElementChild?.className).toContain('w-full');
         expect(container.firstElementChild?.className).toContain('rounded-none');
+    });
+
+    it('fills the expanded assistant preview without side letterboxing', () => {
+        const videoRef = createRef<HTMLVideoElement>();
+        const cameraContainerRef = createRef<HTMLDivElement>();
+        const { container } = render(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="flex-1"
+                mode="assistant"
+                aiReady
+                objectDetectorEnabled
+                currencyResult={null}
+            />,
+        );
+
+        expect(container.querySelector('video')?.className).toContain('object-cover');
     });
 
     it('uses the same square camera frame for currency mode', () => {

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { analyzeCurrencyFrame, detectCurrencyWithGemini, hasCurrencySceneChanged } from '@/features/blind-assistant/client/currencyGemini';
-import { CurrencyBatch, formatCurrencySpeech, formatTotalSpeech } from '@/features/blind-assistant/client/currencyUtils';
+import { CurrencyBatch, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
 import { SpeechCategory } from '@/shared/types/speech';
 import { BoundingBox } from '@/features/blind-assistant/types/assistant';
@@ -11,9 +11,10 @@ export interface CurrencyHistoryItem extends CurrencyBatch { id: number; timesta
 export interface UseCurrencyScannerResult {
     currencyResult: CapturedCurrency | null; currencyScanning: boolean; currencyMonitoring: boolean;
     currencyHint: string; currencyBounds: BoundingBox | null; totalAmount: number; scannedHistory: CurrencyHistoryItem[];
-    scannedCount: number; isBlocked: boolean; detailsOpen: boolean;
-    captureCurrency: () => Promise<void>; showCurrencyDetails: () => void; closeCurrencyDetails: () => void;
-    replayTotal: () => void; clearTotal: () => void;
+    scannedCount: number; isBlocked: boolean;
+    captureCurrency: () => Promise<void>;
+    replayCurrencyDetails: () => void;
+    clearTotal: () => void;
 }
 
 type CurrencyScanPhase = 'idle' | 'searching' | 'checking' | 'waiting-removal' | 'paused';
@@ -32,7 +33,6 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     const [totalAmount, setTotalAmount] = useState(0);
     const [scannedHistory, setScannedHistory] = useState<CurrencyHistoryItem[]>([]);
     const [isBlocked, setIsBlocked] = useState(false);
-    const [detailsOpen, setDetailsOpen] = useState(false);
 
     const enabledRef = useRef(enabled);
     const readyRef = useRef(isReady);
@@ -112,7 +112,6 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         removalBaselineRef.current = null;
         lastProbeFingerprintRef.current = null;
         setResult(null);
-        setDetailsOpen(false);
         setHintIfChanged('พร้อมสแกนใบถัดไป');
         setPhaseIfChanged('searching');
         speechManager?.speak('พร้อมสแกนใบถัดไป', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'currency', scope: 'blind:currency', realtimeKey: 'currency-ready', rate: 1.1, dedupe: true, cooldown: 2000 });
@@ -154,7 +153,6 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
                 setResult(captured);
                 setTotalAmount(newTotal);
                 setScannedHistory(historyRef.current);
-                setDetailsOpen(false);
                 setHintIfChanged(`รวมยอด ${captured.total} บาทแล้ว`);
                 removalBaselineRef.current = fingerprint;
                 removalNotFoundCountRef.current = 0;
@@ -279,19 +277,14 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         setTotalAmount(0);
         setScannedHistory([]);
         setResult(null);
-        setDetailsOpen(false);
         feedback?.('capture');
         monitorFrame('manual');
     }, [feedback, monitorFrame, setResult]);
 
-    const showCurrencyDetails = useCallback(() => {
-        if (!resultRef.current) return;
-        setDetailsOpen(true);
-        speechManager?.speak(formatCurrencySpeech(resultRef.current, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true });
-    }, []);
-    const closeCurrencyDetails = useCallback(() => setDetailsOpen(false), []);
-    const replayTotal = useCallback(() => {
-        speechManager?.speak(formatTotalSpeech(totalRef.current, historyRef.current.reduce((count, item) => count + item.items.reduce((sum, currency) => sum + currency.quantity, 0), 0)), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-total', scope: 'blind:currency', rate: 1.1, interrupt: true });
+    const replayCurrencyDetails = useCallback(() => {
+        const result = resultRef.current;
+        if (!result) return;
+        speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true });
         feedback?.('capture');
     }, [feedback]);
     const clearTotal = useCallback(() => { totalRef.current = 0; historyRef.current = []; setTotalAmount(0); setScannedHistory([]); }, []);
@@ -299,5 +292,5 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     const scannedCount = scannedHistory.reduce((count, batch) => count + batch.items.reduce((sum, item) => sum + item.quantity, 0), 0);
     const currencyScanning = phase === 'checking';
     const currencyMonitoring = enabled && isReady && phase !== 'idle' && phase !== 'paused';
-    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, detailsOpen, captureCurrency, showCurrencyDetails, closeCurrencyDetails, replayTotal, clearTotal };
+    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, captureCurrency, replayCurrencyDetails, clearTotal };
 }

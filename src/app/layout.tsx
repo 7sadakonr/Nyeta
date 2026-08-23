@@ -21,6 +21,7 @@ const notoSansThai = Noto_Sans_Thai({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
   themeColor: "#08111F",
 };
 

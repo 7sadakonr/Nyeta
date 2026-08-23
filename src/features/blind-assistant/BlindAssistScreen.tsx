@@ -26,6 +26,12 @@ import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
+export function getCameraHeightClass(showCapturedText: boolean) {
+    return showCapturedText
+        ? 'h-[clamp(7rem,20dvh,14rem)] min-h-0'
+        : 'h-[clamp(14rem,52dvh,38rem)] min-h-0';
+}
+
 export default function BlindAssistScreen() {
     // Mode State
     const [mode, setMode] = useState<AssistantMode>(() => {
@@ -42,8 +48,6 @@ export default function BlindAssistScreen() {
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
-    const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
-    const restoreDetailsFocusRef = useRef<HTMLButtonElement | null>(null);
 
     const activateBlindAudio = useCallback(() => {
         speechManager?.activateFromUserGesture('ผู้ช่วยพร้อม', {
@@ -212,26 +216,11 @@ export default function BlindAssistScreen() {
         currencyHint,
         currencyBounds,
         totalAmount,
-        scannedHistory,
-        scannedCount,
-        detailsOpen,
         captureCurrency,
-        showCurrencyDetails,
-        closeCurrencyDetails,
         isBlocked: currencyBlocked,
-        replayTotal,
+        replayCurrencyDetails,
         clearTotal
     } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
-
-    const closeDetails = useCallback(() => {
-        closeCurrencyDetails();
-        requestAnimationFrame(() => restoreDetailsFocusRef.current?.focus());
-    }, [closeCurrencyDetails]);
-
-    useEffect(() => {
-        if (!detailsOpen) return;
-        detailsCloseRef.current?.focus();
-    }, [detailsOpen]);
 
     // E. Document Reader
     const {
@@ -255,7 +244,6 @@ export default function BlindAssistScreen() {
         cancelListening();
         speechManager?.cancel({ scope: `blind:${mode}` });
         speechManager?.interruptForAccessibilityNavigation();
-        if (mode === 'currency') closeCurrencyDetails();
         hapticRef.current?.trigger(1);
         setMode(newMode);
         if (typeof window !== 'undefined') {
@@ -264,7 +252,7 @@ export default function BlindAssistScreen() {
         // Reset state
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
-    }, [cancelListening, closeCurrencyDetails, mode, resetDocument, setVoiceTranscript]);
+    }, [cancelListening, mode, resetDocument, setVoiceTranscript]);
 
     // Auto-speak AI responses for blind users
     const prevMessagesLenRef = useRef<number>(0);
@@ -311,9 +299,7 @@ export default function BlindAssistScreen() {
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
 
-    const cameraHeightClass = showCapturedText
-        ? 'h-[clamp(8rem,28dvh,20rem)] min-h-0'
-        : 'h-[clamp(10rem,42dvh,30rem)] min-h-0';
+    const cameraHeightClass = getCameraHeightClass(showCapturedText);
 
     return (
         <div
@@ -363,7 +349,6 @@ export default function BlindAssistScreen() {
                             currencyResult={currencyResult}
                             currencyScanning={currencyScanning}
                             currencyHint={currencyHint}
-                            totalAmount={totalAmount}
                             isBlocked={currencyBlocked}
                             guidanceText={guidanceText}
                             voiceTranscript={voiceTranscript}
@@ -376,18 +361,6 @@ export default function BlindAssistScreen() {
 
                         {mode === 'assistant' && showCapturedText && <ChatHistory aiMessages={aiMessages} />}
 
-                        {mode === 'currency' && (
-                            <section className="bg-[#0F1B2D] px-5 py-6" aria-label="สรุปการตรวจเงิน">
-                                <p className="text-sm font-semibold text-[#A8B3C5]">ตรวจพบล่าสุด</p>
-                                <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] text-[#6FE8FF]">{currencyResult ? `฿${currencyResult.total.toLocaleString()}` : '—'}</p>
-                                <p className="mt-2 text-base text-[#A8B3C5]">{currencyResult ? 'เงินล่าสุดที่ตรวจพบ' : currencyMonitoring ? 'กำลังสแกนอัตโนมัติ' : 'รอกล้องพร้อม'}</p>
-                                <div className="my-7" />
-                                <p className="text-sm font-semibold text-[#A8B3C5]">ยอดรวม</p>
-                                <p className="mt-1 text-3xl font-semibold text-[#F8FAFC]">฿{totalAmount.toLocaleString()}</p>
-                                <p className="mt-1 text-sm text-[#A8B3C5]">{scannedCount} รายการ</p>
-                            </section>
-                        )}
-
                         {mode === 'reader' && showCapturedText && (
                             <section className="bg-[#0F1B2D] px-5 py-6" aria-label="เนื้อหาเอกสาร">
                                 <h2 className="text-lg font-semibold text-[#6FE8FF]">เอกสารพร้อมแล้ว</h2>
@@ -398,34 +371,6 @@ export default function BlindAssistScreen() {
                     </div>
                 </section>
 
-                {mode === 'currency' && detailsOpen && currencyResult && (
-                    <section
-                        className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-xl rounded-2xl bg-[#0F1B2D] p-5 shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="currency-details-title"
-                        onKeyDown={(event) => {
-                            if (event.key === 'Escape') closeDetails();
-                            if (event.key === 'Tab') {
-                                event.preventDefault();
-                                detailsCloseRef.current?.focus();
-                            }
-                        }}
-                    >
-                        <div className="flex items-center justify-between gap-4">
-                            <h2 id="currency-details-title" className="text-xl font-semibold text-[#6FE8FF]">รายละเอียดเงิน</h2>
-                            <button ref={detailsCloseRef} type="button" onClick={closeDetails} className="min-h-12 min-w-12 rounded-xl border border-[#26364D] bg-[#16243A] text-white" aria-label="ปิดรายละเอียด">ปิด</button>
-                        </div>
-                        <ul className="mt-3 space-y-2 text-base text-[#F8FAFC]">
-                            {currencyResult.items.map(item => (
-                                <li key={`${item.type}-${item.value}`}>
-                                    {item.type === 'note' ? 'ธนบัตร' : 'เหรียญ'} {item.value} บาท จำนวน {item.quantity} {item.type === 'note' ? 'ใบ' : 'เหรียญ'}{item.locations.length ? ` อยู่${item.locations.map(location => ({ top_left: 'ด้านซ้ายบน', top_center: 'ด้านบน', top_right: 'ด้านขวาบน', middle_left: 'ด้านซ้าย', center: 'กลางภาพ', middle_right: 'ด้านขวา', bottom_left: 'ด้านซ้ายล่าง', bottom_center: 'ด้านล่าง', bottom_right: 'ด้านขวาล่าง' }[location])).join(' และ ')}` : ''}
-                                </li>
-                            ))}
-                        </ul>
-                        <p className="mt-3 text-lg font-semibold text-[#6FE8FF]">รวมชุดนี้ ฿{currencyResult.total.toLocaleString()}</p>
-                    </section>
-                )}
                 <ControlBar
                     mode={mode}
                     aiReady={aiReady}
@@ -439,7 +384,6 @@ export default function BlindAssistScreen() {
                     currencyScanning={currencyScanning}
                     currencyMonitoring={currencyMonitoring}
                     totalAmount={totalAmount}
-                    scannedCount={scannedCount}
                     isBlocked={currencyBlocked}
                     readerAligned={readerAligned}
                     onCapture={captureAndAsk}
@@ -447,11 +391,7 @@ export default function BlindAssistScreen() {
                     onStartListening={toggleListening}
                     onStopListening={toggleListening}
                     onCurrencyCapture={captureCurrency}
-                    onShowCurrencyDetails={() => {
-                        restoreDetailsFocusRef.current = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
-                        showCurrencyDetails();
-                    }}
-                    onReplayTotal={replayTotal}
+                    onReplayCurrencyDetails={replayCurrencyDetails}
                     onClearTotal={clearTotal}
                     onReadDocument={readDocument}
                     onReplayDocument={replayDocument}

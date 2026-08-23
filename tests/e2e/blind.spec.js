@@ -44,4 +44,12 @@ test.describe('Blind Assistance Page (/blind)', () => {
         await expect(page.locator('main').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
         await expect(page.getByRole('button', { name: /เรียกอาสาสมัคร/i })).toBeVisible();
     });
+
+    test('returns to the Blind mode selection page from both assistance flows', async ({ page }) => {
+        await page.goto('/blind');
+        await expect(page.getByRole('link', { name: /กลับหน้าหลัก/i })).toHaveAttribute('href', '/blind/select');
+
+        await page.goto('/call');
+        await expect(page.getByRole('link', { name: /กลับหน้าหลัก/i })).toHaveAttribute('href', '/blind/select');
+    });
 });

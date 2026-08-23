@@ -51,31 +51,33 @@ export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
     };
 
     return (
-        <div
-            className="grid shrink-0 grid-cols-3 bg-[#0F1B2D] px-4 py-2"
-            role="tablist"
-        >
-            {MODES.map((item, index) => (
-                <button
-                    key={item.id}
-                    ref={(element) => { tabRefs.current[index] = element; }}
-                    type="button"
-                    role="tab"
-                    id={`blind-mode-${item.id}-tab`}
-                    aria-controls={mode === item.id ? `blind-mode-${item.id}-panel` : undefined}
-                    aria-selected={mode === item.id}
-                    tabIndex={mode === item.id ? 0 : -1}
-                    onClick={() => switchMode(item.id)}
-                    onKeyDown={(event) => handleKeyDown(event, index)}
-                    className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors ${mode === item.id
-                        ? 'bg-[#143A59] text-[#6FE8FF]'
-                        : 'text-[#A8B3C5] hover:bg-[#16243A] hover:text-[#F8FAFC]'
-                        }`}
-                    aria-label={item.label}
-                >
-                    {item.label}
-                </button>
-            ))}
+        <div className="shrink-0 bg-[#F4F8FF] px-4 pb-4 pt-2">
+            <div
+                className="grid grid-cols-3 rounded-none border border-[#DBE7F5] bg-white p-1 shadow-[0_8px_24px_rgba(37,99,235,0.06)]"
+                role="tablist"
+            >
+                {MODES.map((item, index) => (
+                    <button
+                        key={item.id}
+                        ref={(element) => { tabRefs.current[index] = element; }}
+                        type="button"
+                        role="tab"
+                        id={`blind-mode-${item.id}-tab`}
+                        aria-controls={mode === item.id ? `blind-mode-${item.id}-panel` : undefined}
+                        aria-selected={mode === item.id}
+                        tabIndex={mode === item.id ? 0 : -1}
+                        onClick={() => switchMode(item.id)}
+                        onKeyDown={(event) => handleKeyDown(event, index)}
+                        className={`min-h-12 rounded-none px-2 text-sm font-bold transition-[background-color,color,transform] active:scale-[0.98] ${mode === item.id
+                            ? 'bg-[#EAF4FF] text-[#1D4ED8] shadow-sm'
+                            : 'text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]'
+                            }`}
+                        aria-label={item.label}
+                    >
+                        {item.label}
+                    </button>
+                ))}
+            </div>
         </div>
     );
 }

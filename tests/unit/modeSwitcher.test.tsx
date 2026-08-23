@@ -10,6 +10,10 @@ describe('ModeSwitcher', () => {
         const assistant = getByRole('tab', { name: 'ผู้ช่วย' });
         const currency = getByRole('tab', { name: 'เงิน' });
 
+        expect(getByRole('tablist').className).toContain('rounded-none');
+        expect(getByRole('tablist').parentElement?.className).toContain('bg-[#F4F8FF]');
+        expect(assistant.className).toContain('rounded-none');
+
         assistant.focus();
         fireEvent.keyDown(assistant, { key: 'ArrowRight' });
 

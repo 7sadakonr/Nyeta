@@ -40,7 +40,7 @@ export default function ReaderOverlay({ pageCorners, pageBounds, pageAligned, vi
             {!pageCorners && pageStyle && (
                 <OverlayBox
                     style={pageStyle}
-                    color="#c084fc"
+                    color="#6FE8FF"
                     dashed
                     thick
                     label="ขอบกระดาษ"
@@ -71,14 +71,14 @@ function PagePolygon({
 
     if (!tl || !tr || !br || !bl) return null;
 
-    const color = aligned ? '#4ade80' : '#c084fc';
+    const color = aligned ? '#4ade80' : '#6FE8FF';
     const points = `${tl.x},${tl.y} ${tr.x},${tr.y} ${br.x},${br.y} ${bl.x},${bl.y}`;
 
     return (
         <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
             <polygon
                 points={points}
-                fill={aligned ? 'rgba(74,222,128,0.12)' : 'rgba(192,132,252,0.08)'}
+                fill={aligned ? 'rgba(74,222,128,0.12)' : 'rgba(111,232,255,0.08)'}
                 stroke={color}
                 strokeWidth="0.6"
                 strokeDasharray={aligned ? 'none' : '1.5 1'}

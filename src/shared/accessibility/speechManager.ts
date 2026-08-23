@@ -43,6 +43,7 @@ export class SpeechManager {
   private _keepAliveIntervalId: ReturnType<typeof setInterval> | null = null;
   private _accessibilityCooldownTimerId: ReturnType<typeof setTimeout> | null = null;
   private _accessibilityNavigationUntil = 0;
+  private _currentOnStart: (() => void) | null = null;
   private _currentOnEnd: ((completed?: boolean) => void) | null = null;
   private _currentSpeechKey: string | null = null;
   private _spokenAt = new Map<string, number>();
@@ -51,7 +52,7 @@ export class SpeechManager {
   private _speechCounter = 0;
   private _currentSpeechId = 0;
   private _voices: SpeechSynthesisVoice[] = [];
-  private _audioPrimed = false;
+  private _audioActivationState: 'idle' | 'pending' | 'active' = 'idle';
   private _listeningExclusive = false;
   private _abortRecognition: (() => void) | null = null;
   private _criticalAbortRequested = false;
@@ -91,24 +92,38 @@ export class SpeechManager {
     return this._voices.find(v => v.lang && v.lang.toLowerCase().startsWith(langPrefix)) || null;
   }
 
-  /** Unlock speech synthesis after a user gesture when the browser requires it. */
+  /** Resume an already-active speech session. */
   public unlock(): void {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      if (this._audioPrimed || this._speaking) return;
-
-      // Mobile Safari only accepts an utterance created synchronously from a
-      // user gesture. This silent prime authorizes later async guidance without
-      // adding another audible announcement.
-      const prime = new SpeechSynthesisUtterance(' ');
-      prime.volume = 0;
-      prime.rate = 10;
-      window.speechSynthesis.speak(prime);
-      this._audioPrimed = true;
     } catch (error) {
       console.warn('SpeechManager unlock error:', error);
     }
+  }
+
+  /** Starts a short audible utterance inside a user gesture for iOS Safari. */
+  public activateFromUserGesture(text: string, options: SpeechOptions = {}): boolean {
+    if (this._audioActivationState === 'active' || this._audioActivationState === 'pending' || this._speaking) return true;
+
+    this._audioActivationState = 'pending';
+    const accepted = this.speak(text, {
+      ...options,
+      category: SpeechCategory.TASK,
+      priority: Priority.ACTION,
+      owner: options.owner || 'audio-activation',
+      onStart: () => {
+        this._audioActivationState = 'active';
+        options.onStart?.();
+      },
+      onEnd: (completed) => {
+        if (!completed) this._audioActivationState = 'idle';
+        options.onEnd?.(completed);
+      },
+    });
+
+    if (!accepted) this._audioActivationState = 'idle';
+    return accepted;
   }
 
   /** Makes microphone capture exclusive over every non-critical speech request. */
@@ -397,6 +412,7 @@ export class SpeechManager {
     this._currentScope = null;
     this._currentRealtimeKey = null;
     this._currentSpeechKey = null;
+    this._currentOnStart = null;
     const callback = this._currentOnEnd;
     this._currentOnEnd = null;
     this._activeUtterances.clear();
@@ -452,7 +468,7 @@ export class SpeechManager {
   }
 
   private _doSpeak(text: string, options: QueueItem): void {
-    const { priority, owner, category, scope, realtimeKey, rate = 1.1, lang = 'th-TH', chunk = false, onEnd, speechKey } = options;
+    const { priority, owner, category, scope, realtimeKey, rate = 1.1, lang = 'th-TH', chunk = false, onStart, onEnd, speechKey } = options;
     const speechId = ++this._speechCounter;
     this._currentSpeechId = speechId;
     this._speaking = true;
@@ -463,6 +479,7 @@ export class SpeechManager {
     this._currentRealtimeKey = realtimeKey || null;
     this._currentSpeechKey = speechKey || null;
     this._cancelled = false;
+    this._currentOnStart = onStart || null;
     this._currentOnEnd = onEnd || null;
     this._markSpeechKey(options);
     this._notify();
@@ -486,24 +503,30 @@ export class SpeechManager {
     this._activeUtterances.add(utterance);
     window.__tts_utterances = [...(window.__tts_utterances || []), utterance];
 
-    const handleEnd = () => {
+    const handleEnd = (completed = true) => {
       this._activeUtterances.delete(utterance);
       window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
       if (this._currentSpeechId !== speechId) return;
-      this._finishCurrent(true);
+      this._finishCurrent(completed);
       this._processQueue();
     };
-    utterance.onend = handleEnd;
+    utterance.onstart = () => {
+      if (this._currentSpeechId !== speechId) return;
+      const callback = this._currentOnStart;
+      this._currentOnStart = null;
+      callback?.();
+    };
+    utterance.onend = () => handleEnd(true);
     utterance.onerror = event => {
       if (event?.error !== 'interrupted' && event?.error !== 'canceled') console.warn('SpeechSynthesis error:', event?.error);
-      handleEnd();
+      handleEnd(false);
     };
 
     try {
       window.speechSynthesis.speak(utterance);
     } catch (error) {
       console.error('SpeechSynthesis.speak failed:', error);
-      handleEnd();
+      handleEnd(false);
     }
   }
 
@@ -548,6 +571,12 @@ export class SpeechManager {
       if (voice) utterance.voice = voice;
       this._activeUtterances.add(utterance);
       window.__tts_utterances = [...(window.__tts_utterances || []), utterance];
+      utterance.onstart = () => {
+        if (this._currentSpeechId !== speechId) return;
+        const callback = this._currentOnStart;
+        this._currentOnStart = null;
+        callback?.();
+      };
       const handleNext = () => {
         this._activeUtterances.delete(utterance);
         window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
@@ -555,16 +584,23 @@ export class SpeechManager {
         index += 1;
         this._timeoutId = setTimeout(speakNext, 200);
       };
+      const handleFailure = () => {
+        this._activeUtterances.delete(utterance);
+        window.__tts_utterances = (window.__tts_utterances || []).filter(item => item !== utterance);
+        if (this._currentSpeechId !== speechId) return;
+        this._finishCurrent(false);
+        this._processQueue();
+      };
       utterance.onend = handleNext;
       utterance.onerror = event => {
         if (event?.error !== 'interrupted' && event?.error !== 'canceled') console.warn('Chunked Speech error:', event?.error);
-        handleNext();
+        handleFailure();
       };
       try {
         window.speechSynthesis.speak(utterance);
       } catch (error) {
         console.error('SpeechSynthesis chunk speak failed:', error);
-        handleNext();
+        handleFailure();
       }
     };
     speakNext();

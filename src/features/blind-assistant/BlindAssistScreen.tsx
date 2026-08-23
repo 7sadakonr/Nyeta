@@ -44,7 +44,17 @@ export default function BlindAssistScreen() {
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
     const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
     const restoreDetailsFocusRef = useRef<HTMLButtonElement | null>(null);
-    const assistantReadyAnnouncedRef = useRef(false);
+
+    const activateBlindAudio = useCallback(() => {
+        speechManager?.activateFromUserGesture('ผู้ช่วยพร้อม', {
+            priority: Priority.ACTION,
+            category: SpeechCategory.TASK,
+            owner: 'blind-entry',
+            scope: 'blind:shared',
+            rate: 1.1,
+            dedupe: 'blind-entry',
+        });
+    }, []);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -166,25 +176,6 @@ export default function BlindAssistScreen() {
     // does not cancel task/realtime audio while the user navigates between them.
     useAccessibilitySpeechNavigation(undefined, 'preserve');
 
-    useEffect(() => {
-        if (mode !== 'assistant') {
-            assistantReadyAnnouncedRef.current = false;
-            return;
-        }
-        if (!aiReady || assistantReadyAnnouncedRef.current) return;
-
-        assistantReadyAnnouncedRef.current = true;
-        speechManager?.speak('ผู้ช่วย AI พร้อมแล้ว หันกล้องไปยังสิ่งที่ต้องการให้ช่วยบรรยาย หรือกดปุ่มบรรยายสิ่งที่เห็น', {
-            priority: Priority.ACTION,
-            category: SpeechCategory.TASK,
-            owner: 'assistant-ready',
-            scope: 'blind:assistant',
-            rate: 1.05,
-            dedupe: 'assistant-ready',
-            cooldown: 15_000,
-        });
-    }, [aiReady, mode]);
-
     // B. AI Assistant
     const {
         status: aiStatus,
@@ -263,6 +254,8 @@ export default function BlindAssistScreen() {
 
         cancelListening();
         speechManager?.cancel({ scope: `blind:${mode}` });
+        speechManager?.interruptForAccessibilityNavigation();
+        if (mode === 'currency') closeCurrencyDetails();
         hapticRef.current?.trigger(1);
         setMode(newMode);
         if (typeof window !== 'undefined') {
@@ -271,7 +264,7 @@ export default function BlindAssistScreen() {
         // Reset state
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
-    }, [cancelListening, mode, resetDocument, setVoiceTranscript]);
+    }, [cancelListening, closeCurrencyDetails, mode, resetDocument, setVoiceTranscript]);
 
     // Auto-speak AI responses for blind users
     const prevMessagesLenRef = useRef<number>(0);
@@ -317,13 +310,16 @@ export default function BlindAssistScreen() {
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
 
-    const cameraHeightClass = showCapturedText ? 'h-[38%]' : 'flex-1 min-h-0';
+    const cameraHeightClass = showCapturedText
+        ? 'h-[30dvh] min-h-52 max-h-80'
+        : 'h-[52dvh] min-h-80 max-h-[32rem]';
 
     return (
         <div
-            onClick={() => speechManager?.unlock()}
-            onTouchStart={() => speechManager?.unlock()}
-            className="flex min-h-dvh flex-col bg-black text-white relative overflow-hidden font-sans"
+            onClick={activateBlindAudio}
+            onTouchStart={activateBlindAudio}
+            onContextMenu={(event) => event.preventDefault()}
+            className="nyeta-surface flex min-h-dvh flex-col bg-[#08111F] text-[#F8FAFC]"
         >
             <HapticFeedback ref={hapticRef} />
 
@@ -336,57 +332,73 @@ export default function BlindAssistScreen() {
                 statusLabel={statusLabel}
             />
 
-            <main className="w-full h-full flex flex-col relative min-h-0 overflow-hidden" aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา">
+            <div className="flex min-h-0 flex-1 flex-col">
 
                 {cameraError && <p className="sr-only">ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์</p>}
 
-                <CameraView
-                    videoRef={videoRef}
-                    cameraContainerRef={cameraContainerRef}
-                    cameraHeightClass={cameraHeightClass}
-                    cocoBoxes={cocoBoxes}
-                    targetObject={targetObject}
-                    pageBounds={pageBounds}
-                    pageCorners={pageCorners}
-                    readerAligned={readerAligned}
-                    currencyBounds={currencyBounds}
-                    mode={mode}
-                    objectDetectorEnabled={true}
-                    aiReady={aiReady}
-                    currencyResult={currencyResult}
-                    currencyScanning={currencyScanning}
-                    currencyHint={currencyHint}
-                    totalAmount={totalAmount}
-                    isBlocked={currencyBlocked}
-                    guidanceText={guidanceText}
-                    voiceTranscript={voiceTranscript}
-                    isListening={isListening}
-                    aiStatus={aiStatus}
-                    readerGuidance={readerGuidance}
-                    showCapturedText={showCapturedText}
-                    detectedObjects={detectedObjects}
-                />
                 <ModeSwitcher mode={mode} switchMode={switchMode} />
 
-                {mode === 'assistant' && showCapturedText && (
-                    <ChatHistory aiMessages={aiMessages} />
-                )}
+                <section
+                    id={`blind-mode-${mode}-panel`}
+                    role="tabpanel"
+                    aria-labelledby={`blind-mode-${mode}-tab`}
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                >
+                    <div className="mx-auto w-full max-w-xl">
+                        <CameraView
+                            videoRef={videoRef}
+                            cameraContainerRef={cameraContainerRef}
+                            cameraHeightClass={cameraHeightClass}
+                            cocoBoxes={cocoBoxes}
+                            targetObject={targetObject}
+                            pageBounds={pageBounds}
+                            pageCorners={pageCorners}
+                            readerAligned={readerAligned}
+                            currencyBounds={currencyBounds}
+                            mode={mode}
+                            objectDetectorEnabled={true}
+                            aiReady={aiReady}
+                            currencyResult={currencyResult}
+                            currencyScanning={currencyScanning}
+                            currencyHint={currencyHint}
+                            totalAmount={totalAmount}
+                            isBlocked={currencyBlocked}
+                            guidanceText={guidanceText}
+                            voiceTranscript={voiceTranscript}
+                            isListening={isListening}
+                            aiStatus={aiStatus}
+                            readerGuidance={readerGuidance}
+                            showCapturedText={showCapturedText}
+                            detectedObjects={detectedObjects}
+                        />
 
-                {mode === 'reader' && showCapturedText && (
-                    <section className="flex-1 overflow-y-auto p-4 bg-zinc-950 min-h-0" aria-label="เนื้อหาเอกสาร" tabIndex={0}>
-                        <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-700">
-                            <p className="text-lg leading-relaxed whitespace-pre-wrap text-white">{docText}</p>
-                            {isReading && (
-                                <p className="text-violet-400 text-sm mt-4 animate-pulse">กำลังอ่านออกเสียง...</p>
-                            )}
-                        </div>
-                    </section>
-                )}
+                        {mode === 'assistant' && showCapturedText && <ChatHistory aiMessages={aiMessages} />}
 
+                        {mode === 'currency' && (
+                            <section className="bg-[#0F1B2D] px-5 py-6" aria-label="สรุปการตรวจเงิน">
+                                <p className="text-sm font-semibold text-[#A8B3C5]">ตรวจพบล่าสุด</p>
+                                <p className="mt-2 text-5xl font-semibold tracking-[-0.04em] text-[#6FE8FF]">{currencyResult ? `฿${currencyResult.total.toLocaleString()}` : '—'}</p>
+                                <p className="mt-2 text-base text-[#A8B3C5]">{currencyResult ? 'เงินล่าสุดที่ตรวจพบ' : currencyMonitoring ? 'กำลังสแกนอัตโนมัติ' : 'รอกล้องพร้อม'}</p>
+                                <div className="my-7" />
+                                <p className="text-sm font-semibold text-[#A8B3C5]">ยอดรวม</p>
+                                <p className="mt-1 text-3xl font-semibold text-[#F8FAFC]">฿{totalAmount.toLocaleString()}</p>
+                                <p className="mt-1 text-sm text-[#A8B3C5]">{scannedCount} รายการ</p>
+                            </section>
+                        )}
+
+                        {mode === 'reader' && showCapturedText && (
+                            <section className="bg-[#0F1B2D] px-5 py-6" aria-label="เนื้อหาเอกสาร">
+                                <h2 className="text-lg font-semibold text-[#6FE8FF]">เอกสารพร้อมแล้ว</h2>
+                                <p className="mt-3 whitespace-pre-wrap text-lg leading-8 text-[#F8FAFC]">{docText}</p>
+                                {isReading && <p className="mt-4 text-sm font-medium text-[#6FE8FF]">กำลังอ่านออกเสียง...</p>}
+                            </section>
+                        )}
+                    </div>
+                </section>
 
                 {mode === 'currency' && detailsOpen && currencyResult && (
                     <section
-                        className="absolute inset-x-4 bottom-28 z-30 rounded-2xl bg-zinc-950 border-2 border-amber-500 p-5 shadow-2xl"
+                        className="fixed inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 mx-auto max-w-xl rounded-2xl bg-[#0F1B2D] p-5 shadow-[0_20px_44px_rgba(0,0,0,0.42)]"
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="currency-details-title"
@@ -399,17 +411,17 @@ export default function BlindAssistScreen() {
                         }}
                     >
                         <div className="flex items-center justify-between gap-4">
-                            <h2 id="currency-details-title" className="text-xl font-bold text-amber-200">รายละเอียดเงิน</h2>
-                            <button ref={detailsCloseRef} type="button" onClick={closeDetails} className="min-h-12 min-w-12 rounded-full bg-zinc-800 text-white border border-zinc-600 focus:ring-2 focus:ring-white focus:outline-none" aria-label="ปิดรายละเอียด">×</button>
+                            <h2 id="currency-details-title" className="text-xl font-semibold text-[#6FE8FF]">รายละเอียดเงิน</h2>
+                            <button ref={detailsCloseRef} type="button" onClick={closeDetails} className="min-h-12 min-w-12 rounded-xl border border-[#26364D] bg-[#16243A] text-white" aria-label="ปิดรายละเอียด">ปิด</button>
                         </div>
-                        <ul className="mt-3 space-y-2 text-base text-white">
+                        <ul className="mt-3 space-y-2 text-base text-[#F8FAFC]">
                             {currencyResult.items.map(item => (
                                 <li key={`${item.type}-${item.value}`}>
                                     {item.type === 'note' ? 'ธนบัตร' : 'เหรียญ'} {item.value} บาท จำนวน {item.quantity} {item.type === 'note' ? 'ใบ' : 'เหรียญ'}{item.locations.length ? ` อยู่${item.locations.map(location => ({ top_left: 'ด้านซ้ายบน', top_center: 'ด้านบน', top_right: 'ด้านขวาบน', middle_left: 'ด้านซ้าย', center: 'กลางภาพ', middle_right: 'ด้านขวา', bottom_left: 'ด้านซ้ายล่าง', bottom_center: 'ด้านล่าง', bottom_right: 'ด้านขวาล่าง' }[location])).join(' และ ')}` : ''}
                                 </li>
                             ))}
                         </ul>
-                        <p className="mt-3 text-lg font-bold text-amber-300">รวมชุดนี้ ฿{currencyResult.total.toLocaleString()}</p>
+                        <p className="mt-3 text-lg font-semibold text-[#6FE8FF]">รวมชุดนี้ ฿{currencyResult.total.toLocaleString()}</p>
                     </section>
                 )}
                 <ControlBar
@@ -443,7 +455,7 @@ export default function BlindAssistScreen() {
                     onReplayDocument={replayDocument}
                     onStopReading={stopReading}
                 />
-            </main>
+            </div>
         </div>
     );
 }

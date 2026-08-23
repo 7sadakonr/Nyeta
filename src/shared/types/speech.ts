@@ -45,6 +45,8 @@ export interface SpeechOptions {
   dedupe?: boolean | string;
   /** Minimum interval before a deduplicated message may be spoken again. */
   cooldown?: number;
+  /** Called when the browser has actually started the utterance. */
+  onStart?: () => void;
   onEnd?: (completed?: boolean) => void;
 }
 

@@ -5,8 +5,8 @@ import { BoundingBox } from '@/features/blind-assistant/types/assistant';
 
 const CURRENCY_COLORS: Record<string, string> = {
     note: '#4ade80',
-    coin: '#38bdf8',
-    default: '#fbbf24',
+    coin: '#3ba7ff',
+    default: '#6fe8ff',
 };
 
 function getCurrencyColor(type: string): string {
@@ -78,7 +78,7 @@ export default function CurrencyOverlay({
             {currencyScanStyle && (
                 <OverlayBox
                     style={currencyScanStyle}
-                    color={isBlocked ? '#ef4444' : currencyDetected ? '#4ade80' : '#fbbf24'}
+                    color={isBlocked ? '#FF5D6C' : currencyDetected ? '#4ADE80' : '#6FE8FF'}
                     dashed={!currencyDetected && !isBlocked}
                     thick
                     label={isBlocked ? '⚠️ กล้องโดนบัง' : currencyDetected ? 'ตรวจพบเงิน' : 'โซนสแกนเงิน'}

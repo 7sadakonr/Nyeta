@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
         description: 'AI visual assistant for blind users',
         start_url: '/',
         display: 'standalone',
-        background_color: '#000000',
-        theme_color: '#000000',
+        background_color: '#08111F',
+        theme_color: '#08111F',
         icons: [
             {
                 src: '/favicon.ico',

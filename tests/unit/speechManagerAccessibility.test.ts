@@ -9,6 +9,7 @@ class MockUtterance {
   public rate = 1;
   public volume = 1;
   public voice: SpeechSynthesisVoice | null = null;
+  public onstart: (() => void) | null = null;
   public onend: (() => void) | null = null;
   public onerror: ((event: SpeechSynthesisErrorEvent) => void) | null = null;
   constructor(public text: string) {}
@@ -168,15 +169,31 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(utterances.map(utterance => utterance.text)).toEqual(['กล้องโดนบัง']);
   });
 
-  it('primes a silent utterance once from the first user gesture so later async guidance can speak', () => {
+  it('activates iOS playback with a short spoken phrase only once', () => {
     const manager = new SpeechManager();
 
-    manager.unlock();
-    manager.unlock();
+    expect(manager.activateFromUserGesture('ผู้ช่วยพร้อม', {
+      owner: 'blind-entry',
+      scope: 'blind:shared',
+    })).toBe(true);
 
     expect(utterances).toHaveLength(1);
-    expect(utterances[0]).toMatchObject({ text: ' ', volume: 0 });
-    expect(window.speechSynthesis.resume).not.toHaveBeenCalled();
+    expect(utterances[0]).toMatchObject({ text: 'ผู้ช่วยพร้อม', volume: 1 });
+    expect(cancel).not.toHaveBeenCalled();
+
+    utterances[0].onstart?.();
+    expect(manager.activateFromUserGesture('ผู้ช่วยพร้อม')).toBe(true);
+    expect(utterances).toHaveLength(1);
+  });
+
+  it('reports a native speech error as incomplete', () => {
+    const manager = new SpeechManager();
+    const onEnd = vi.fn();
+
+    manager.speak('ขยับซ้าย', { onEnd });
+    utterances[0].onerror?.({ error: 'not-allowed' } as SpeechSynthesisErrorEvent);
+
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
   });
 });
 

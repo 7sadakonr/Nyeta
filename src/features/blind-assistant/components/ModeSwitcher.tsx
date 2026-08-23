@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { KeyboardEvent, useRef } from 'react';
 import { BlindMode } from '@/features/blind-assistant/types/assistant';
 
 export interface ModeSwitcherProps {
@@ -12,34 +12,66 @@ interface ModeItem {
 }
 
 const MODES: ModeItem[] = [
-    { id: 'assistant', label: 'ผู้ช่วย AI' },
-    { id: 'currency', label: 'ดูสกุลเงิน' },
-    { id: 'reader', label: 'อ่านเอกสาร' },
+    { id: 'assistant', label: 'ผู้ช่วย' },
+    { id: 'currency', label: 'เงิน' },
+    { id: 'reader', label: 'เอกสาร' },
 ];
 
 export default function ModeSwitcher({ mode, switchMode }: ModeSwitcherProps) {
+    const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+    const activateAt = (index: number) => {
+        const nextIndex = (index + MODES.length) % MODES.length;
+        const nextMode = MODES[nextIndex];
+        tabRefs.current[nextIndex]?.focus();
+        switchMode(nextMode.id);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+        switch (event.key) {
+            case 'ArrowRight':
+            case 'ArrowDown':
+                event.preventDefault();
+                activateAt(index + 1);
+                break;
+            case 'ArrowLeft':
+            case 'ArrowUp':
+                event.preventDefault();
+                activateAt(index - 1);
+                break;
+            case 'Home':
+                event.preventDefault();
+                activateAt(0);
+                break;
+            case 'End':
+                event.preventDefault();
+                activateAt(MODES.length - 1);
+                break;
+        }
+    };
+
     return (
         <div
-            className="flex-shrink-0 px-3 py-2 bg-black border-b border-zinc-800 flex gap-2"
+            className="grid grid-cols-3 bg-[#0F1B2D] px-4 py-2"
             role="tablist"
-            aria-label="เลือกโหมดการใช้งาน"
         >
-            {MODES.map((item) => (
+            {MODES.map((item, index) => (
                 <button
                     key={item.id}
+                    ref={(element) => { tabRefs.current[index] = element; }}
                     type="button"
                     role="tab"
+                    id={`blind-mode-${item.id}-tab`}
+                    aria-controls={mode === item.id ? `blind-mode-${item.id}-panel` : undefined}
                     aria-selected={mode === item.id}
+                    tabIndex={mode === item.id ? 0 : -1}
                     onClick={() => switchMode(item.id)}
-                    className={`flex-1 min-h-12 py-3 px-2 rounded-xl text-sm font-bold border-2 transition-all focus:outline-none focus:ring-2 focus:ring-white ${mode === item.id
-                        ? item.id === 'currency'
-                            ? 'bg-amber-500 text-black border-amber-300'
-                            : item.id === 'reader'
-                                ? 'bg-violet-500 text-white border-violet-300'
-                                : 'bg-sky-500 text-black border-sky-300'
-                        : 'bg-zinc-900 text-zinc-400 border-zinc-700 active:bg-zinc-800'
+                    onKeyDown={(event) => handleKeyDown(event, index)}
+                    className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors ${mode === item.id
+                        ? 'bg-[#143A59] text-[#6FE8FF]'
+                        : 'text-[#A8B3C5] hover:bg-[#16243A] hover:text-[#F8FAFC]'
                         }`}
-                    aria-label={`โหมด${item.label}`}
+                    aria-label={item.label}
                 >
                     {item.label}
                 </button>

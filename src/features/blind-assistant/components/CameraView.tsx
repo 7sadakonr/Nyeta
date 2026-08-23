@@ -47,7 +47,6 @@ export default function CameraView({
     currencyResult,
     currencyScanning = false,
     currencyHint = '',
-    totalAmount = 0,
     isBlocked = false,
     guidanceText = '',
     voiceTranscript = '',
@@ -58,7 +57,7 @@ export default function CameraView({
     detectedObjects = '',
 }: CameraViewProps) {
     return (
-        <div ref={cameraContainerRef} className={`relative bg-black flex-shrink-0 transition-all duration-300 ${cameraHeightClass}`} aria-hidden="true">
+        <div ref={cameraContainerRef} className={`relative w-full overflow-hidden bg-black transition-[height] duration-300 motion-reduce:transition-none ${cameraHeightClass}`} aria-hidden="true">
             <video
                 ref={videoRef}
                 autoPlay
@@ -82,32 +81,20 @@ export default function CameraView({
                 currencyDetected={!!currencyResult}
                 currencyBlocked={isBlocked}
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/30 pointer-events-none z-[5]"></div>
-
-            {/* Currency Running Total Badge (Top Center) */}
-            {mode === 'currency' && totalAmount > 0 && (
-                <div className="absolute top-4 left-4 right-4 flex justify-center z-20 pointer-events-none">
-                    <div className="bg-amber-950/85 border-2 border-amber-400/80 rounded-2xl px-5 py-2.5 backdrop-blur-md shadow-2xl flex items-center gap-3">
-                        <span className="text-sm font-semibold text-amber-200">ยอดรวมสะสม:</span>
-                        <span className="text-3xl font-black text-amber-300 tracking-wide">฿{totalAmount.toLocaleString()}</span>
-                    </div>
-                </div>
-            )}
+            <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-b from-black/45 via-transparent to-black/50" />
 
             {/* Guidance overlay: assistant uses COCO, reader uses page alignment */}
             {mode === 'assistant' && objectDetectorEnabled && guidanceText && !voiceTranscript && (
-                <div
-                    className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 z-20 ${guidanceText.includes('✅')
-                        ? 'bg-green-500/80 border-green-300 animate-pulse'
-                        : guidanceText.includes('ไม่เจอ')
-                            ? 'bg-zinc-800/80 border-zinc-600'
-                            : 'bg-amber-500/80 border-amber-300'}`}
-                >
-                    <p className="text-xl font-bold text-white drop-shadow-lg">
+                <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-xl border px-4 py-3 text-center ${guidanceText.includes('✅')
+                    ? 'border-green-300 bg-green-700/85'
+                    : guidanceText.includes('ไม่เจอ')
+                        ? 'border-[#26364D] bg-[#0F1B2D]/90'
+                        : 'border-[#6FE8FF]/60 bg-[#143A59]/90'}`}>
+                    <p className="text-base font-semibold text-white">
                         {guidanceText}
                     </p>
                     {detectedObjects && (
-                        <p className="text-base text-white/80 mt-1">
+                        <p className="mt-1 text-sm text-white/80">
                             {detectedObjects}
                         </p>
                     )}
@@ -115,14 +102,12 @@ export default function CameraView({
             )}
 
             {mode === 'reader' && readerGuidance && !voiceTranscript && aiStatus !== 'thinking' && (
-                <div
-                    className={`absolute bottom-4 left-4 right-4 p-4 rounded-2xl text-center border-2 backdrop-blur-md transition-all duration-300 z-20 ${readerAligned
-                        ? 'bg-green-500/80 border-green-300 animate-pulse'
-                        : readerGuidance.includes('ยังไม่เจอ')
-                            ? 'bg-zinc-800/80 border-zinc-600'
-                            : 'bg-violet-500/80 border-violet-300'}`}
-                >
-                    <p className="text-xl font-bold text-white drop-shadow-lg">
+                <div className={`absolute bottom-3 left-3 right-3 z-20 rounded-xl border px-4 py-3 text-center ${readerAligned
+                    ? 'border-green-300 bg-green-700/85'
+                    : readerGuidance.includes('ยังไม่เจอ')
+                        ? 'border-[#26364D] bg-[#0F1B2D]/90'
+                        : 'border-[#6FE8FF]/60 bg-[#143A59]/90'}`}>
+                    <p className="text-base font-semibold text-white">
                         {readerGuidance}
                     </p>
                 </div>
@@ -131,26 +116,24 @@ export default function CameraView({
             {/* Currency Result / Blocked Overlay */}
             {mode === 'currency' && (
                 <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center p-6 z-20 pointer-events-none ${isBlocked ? 'bg-red-950/60' : currencyResult ? 'bg-amber-500/10' : ''}`}
+                    className={`absolute inset-0 z-20 flex flex-col items-center justify-center p-6 pointer-events-none ${isBlocked ? 'bg-red-950/60' : currencyResult ? 'bg-[#3BA7FF]/10' : ''}`}
                 >
                     {isBlocked ? (
-                        <div className="text-center p-6 rounded-3xl bg-red-900/80 border-4 border-red-500 animate-pulse shadow-2xl">
-                            <p className="text-4xl md:text-5xl font-black text-white drop-shadow-lg">
-                                ⚠️ กล้องโดนบัง
-                            </p>
+                        <div className="rounded-2xl border border-[#FF5D6C] bg-red-950/85 p-5 text-center shadow-[0_16px_32px_rgba(0,0,0,0.3)]">
+                            <p className="text-2xl font-bold text-white">กล้องโดนบัง</p>
                             <p className="text-lg text-red-200 mt-2 font-medium">
                                 กรุณาเปิดหน้ากล้องหรือขยับมือ
                             </p>
                         </div>
                     ) : (
                         <>
-                            <p className={`font-black text-center drop-shadow-lg px-4 ${currencyResult
-                                ? 'text-6xl text-amber-300'
+                            <p className={`px-4 text-center font-bold ${currencyResult
+                                ? 'text-6xl text-[#6FE8FF]'
                                 : currencyScanning
-                                    ? 'text-2xl text-amber-200 animate-pulse'
+                                    ? 'text-xl text-[#6FE8FF]'
                                     : currencyHint
-                                        ? 'text-xl text-amber-200'
-                                        : 'text-2xl text-zinc-400'
+                                        ? 'text-xl text-[#A8B3C5]'
+                                        : 'text-xl text-[#A8B3C5]'
                                 }`}>
                                 {currencyResult
                                     ? formatCurrencyDisplay(currencyResult)
@@ -159,7 +142,7 @@ export default function CameraView({
                                         : currencyHint || 'กำลังค้นหาเงินอัตโนมัติ'}
                             </p>
                             {currencyResult && (
-                                <p className="text-lg text-amber-100/80 mt-3 font-medium">
+                                <p className="mt-3 text-base font-medium text-[#F8FAFC]/85">
                                     {formatCurrencySpeech(currencyResult)}
                                 </p>
                             )}
@@ -169,15 +152,15 @@ export default function CameraView({
             )}
 
             {mode === 'assistant' && !showCapturedText && objectDetectorEnabled && !guidanceText && !voiceTranscript && (
-                <div className="absolute bottom-24 left-4 right-4 p-3 rounded-xl text-center bg-black/50 backdrop-blur-sm border border-white/10 z-20 pointer-events-none">
-                    <p className="text-sm text-zinc-300">กดปุ่มถ่ายภาพหรือกดค้างไมค์เพื่อถาม</p>
+                <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-20 rounded-xl border border-[#26364D] bg-[#0F1B2D]/85 p-3 text-center">
+                    <p className="text-sm text-[#A8B3C5]">บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง</p>
                 </div>
             )}
 
             {/* Voice Transcript Overlay */}
             {voiceTranscript && (
-                <div className="absolute bottom-4 left-4 right-4 bg-black/80 backdrop-blur-md p-4 rounded-2xl text-center border-2 border-white/20 z-20">
-                    <p className={`text-xl font-bold ${isListening ? 'text-red-400 animate-pulse' : 'text-white'}`}>
+                <div className="absolute bottom-3 left-3 right-3 z-20 rounded-xl border border-[#26364D] bg-[#0F1B2D]/90 p-3 text-center">
+                    <p className={`text-base font-semibold ${isListening ? 'text-[#FFB2BA]' : 'text-white'}`}>
                         {voiceTranscript}
                     </p>
                 </div>

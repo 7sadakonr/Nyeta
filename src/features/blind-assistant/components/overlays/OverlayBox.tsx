@@ -15,7 +15,7 @@ export default function OverlayBox({ style, color, dashed, label, thick, pulse }
     
     return (
         <div
-            className={`absolute pointer-events-none box-border ${pulse ? 'animate-pulse' : ''}`}
+            className={`absolute box-border pointer-events-none ${pulse ? 'motion-safe:animate-pulse motion-reduce:animate-none' : ''}`}
             style={{
                 left: `${style.left}%`,
                 top: `${style.top}%`,
@@ -23,7 +23,7 @@ export default function OverlayBox({ style, color, dashed, label, thick, pulse }
                 height: `${style.height}%`,
                 border: `${thick ? 3 : 2}px ${dashed ? 'dashed' : 'solid'} ${color}`,
                 borderRadius: dashed ? 4 : 2,
-                boxShadow: `0 0 8px ${color}66`,
+                boxShadow: `0 4px 12px ${color}55`,
             }}
         >
             {label && (

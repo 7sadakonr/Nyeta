@@ -16,7 +16,8 @@ export function useSpeechSpeaking(owner: string | null = null): boolean {
         () => {
             if (!speechManager) return false;
             if (owner) {
-                return speechManager.isSpeaking && speechManager.currentOwner === owner;
+                return (speechManager.isSpeaking && speechManager.currentOwner === owner) ||
+                    speechManager.pausedSpeechOwner === owner;
             }
             return speechManager.isSpeaking;
         },

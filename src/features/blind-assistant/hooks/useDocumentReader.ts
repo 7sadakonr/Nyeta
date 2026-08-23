@@ -278,6 +278,7 @@ export function useDocumentReader(
             scope: 'blind:reader',
             rate: 1.0,
             chunk: true,
+            navigationBehavior: 'pause-resume',
             onEnd: () => setIsReading(false),
         });
         feedback?.('success');
@@ -287,11 +288,13 @@ export function useDocumentReader(
         setDocText('');
         setIsReading(false);
         autoCaptureFiredRef.current = false;
+        speechManager?.clearPausedSpeech();
         speechManager?.stopByOwner('document-reader');
         speechManager?.stopByOwner('page-guidance');
     }, []);
 
     const stopReading = useCallback(() => {
+        speechManager?.clearPausedSpeech();
         speechManager?.stopByOwner('document-reader');
         speechManager?.stopByOwner('page-guidance');
         setIsReading(false);

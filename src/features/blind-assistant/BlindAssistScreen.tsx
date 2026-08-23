@@ -175,12 +175,13 @@ export default function BlindAssistScreen() {
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
+        speechManager?.clearPausedSpeech();
         speechManager?.stopByOwner('object-detector');
     }, []);
 
     // The blind surface is TTS-first: assistive-tech focus reads controls, but
     // does not cancel task/realtime audio while the user navigates between them.
-    useAccessibilitySpeechNavigation(undefined, 'preserve');
+    const accessibilityNavHandlers = useAccessibilitySpeechNavigation();
 
     // B. AI Assistant
     const {
@@ -245,6 +246,7 @@ export default function BlindAssistScreen() {
         if (newMode === mode) return;
 
         cancelListening();
+        speechManager?.clearPausedSpeech();
         speechManager?.cancel({ scope: `blind:${mode}` });
         speechManager?.interruptForAccessibilityNavigation();
         hapticRef.current?.trigger(1);
@@ -265,6 +267,7 @@ export default function BlindAssistScreen() {
         if (mode !== 'assistant' || !hasNewMessage) return;
         const lastMsg = aiMessages[aiMessages.length - 1];
         if (lastMsg?.role === 'ai' && lastMsg.content) {
+            speechManager?.clearPausedSpeech();
             speechManager?.speak(lastMsg.content, {
                 priority: Priority.RESULT,
                 category: SpeechCategory.TASK,
@@ -275,6 +278,7 @@ export default function BlindAssistScreen() {
                 interrupt: true,
                 exclusive: true,
                 dedupe: true,
+                navigationBehavior: 'pause-resume',
             });
         }
     }, [aiMessages, mode]);
@@ -308,6 +312,7 @@ export default function BlindAssistScreen() {
     return (
         <div
             data-testid="blind-assistant-shell"
+            {...accessibilityNavHandlers}
             onClick={activateBlindAudio}
             onTouchStart={activateBlindAudio}
             onContextMenu={(event) => event.preventDefault()}

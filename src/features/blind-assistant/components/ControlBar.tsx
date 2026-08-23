@@ -18,7 +18,6 @@ export interface ControlBarProps {
     scannedCount?: number;
     isBlocked?: boolean;
     readerAligned: boolean;
-    onClearChat: () => void;
     onCapture: () => void;
     onStopSpeaking: () => void;
     onStartListening: () => void;
@@ -48,7 +47,6 @@ export default function ControlBar({
     scannedCount = 0,
     isBlocked = false,
     readerAligned,
-    onClearChat,
     onCapture,
     onStopSpeaking,
     onStartListening,
@@ -67,15 +65,6 @@ export default function ControlBar({
         <div className="bg-black border-t-2 border-zinc-800 px-6 py-5 pb-10" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="flex items-center justify-center gap-6">
-                    <button
-                        type="button"
-                        onClick={onClearChat}
-                        className="w-14 h-14 rounded-full bg-zinc-900 text-zinc-500 border border-zinc-800 active:bg-zinc-700 focus:ring-2 focus:ring-white focus:outline-none flex items-center justify-center"
-                        aria-label="ล้างแชทเก่า"
-                    >
-                        <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-                    </button>
-
                     {isSpeaking ? (
                         <button
                             type="button"
@@ -111,16 +100,13 @@ export default function ControlBar({
 
                     <button
                         type="button"
-                        onMouseDown={onStartListening}
-                        onMouseUp={onStopListening}
-                        onMouseLeave={onStopListening}
-                        onTouchStart={onStartListening}
-                        onTouchEnd={onStopListening}
+                        onClick={isListening ? onStopListening : onStartListening}
                         className={`w-16 h-16 rounded-full border-2 flex items-center justify-center focus:ring-2 focus:ring-white focus:outline-none transition-all duration-150 ${isListening
                             ? 'bg-red-600 text-white border-red-400 scale-110 shadow-[0_0_20px_rgba(220,38,38,0.7)]'
                             : 'bg-zinc-900 text-zinc-400 border-zinc-700 active:bg-zinc-700'
                             }`}
-                        aria-label={isListening ? "กำลังฟังเสียง ปล่อยเพื่อส่งคำถาม" : "กดค้างเพื่อพูดคำถาม ปล่อยเพื่อส่ง"}
+                        aria-label={isListening ? "กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม" : "ถามด้วยเสียง"}
+                        aria-pressed={isListening}
                     >
                         {isListening ? (
                             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse"><line x1="1" y1="1" x2="23" y2="23"></line><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>

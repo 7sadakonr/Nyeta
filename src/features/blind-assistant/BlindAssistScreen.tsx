@@ -13,6 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { SpeechCategory } from '@/shared/types/speech';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
@@ -41,6 +42,9 @@ export default function BlindAssistScreen() {
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
+    const detailsCloseRef = useRef<HTMLButtonElement | null>(null);
+    const restoreDetailsFocusRef = useRef<HTMLButtonElement | null>(null);
+    const assistantReadyAnnouncedRef = useRef(false);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -59,7 +63,9 @@ export default function BlindAssistScreen() {
         if (cameraError) {
             speechManager?.speak('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์ครับ', {
                 priority: Priority.CRITICAL,
+                category: SpeechCategory.CRITICAL,
                 owner: 'camera-error',
+                scope: 'blind:shared',
                 rate: 1.1,
             });
         }
@@ -81,15 +87,7 @@ export default function BlindAssistScreen() {
         ? targetPhase === 'locked' ? `เจอ ${getObjectLabel(targetObject.class)}` : 'พบวัตถุ'
         : '';
     const lastHapticEventIdRef = useRef(0);
-    const lastCandidateSpeechAtRef = useRef(0);
-    const speechRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [speechRetryTick, setSpeechRetryTick] = useState(0);
     const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string; important: boolean; candidate: boolean } | null>(null);
-
-    const clearObjectSpeechRetry = useCallback(() => {
-        if (speechRetryTimerRef.current) clearTimeout(speechRetryTimerRef.current);
-        speechRetryTimerRef.current = null;
-    }, []);
 
     useEffect(() => {
         if (mode !== 'assistant' || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
@@ -105,7 +103,6 @@ export default function BlindAssistScreen() {
         const eventGuidance = targetingEvent.guidance;
         const important = isImportantTargetingEvent(targetingEvent.type);
         if (!important && pendingObjectAnnouncementRef.current?.important) return;
-        clearObjectSpeechRetry();
         const label = target ? getObjectLabel(target.class) : '';
         const text = targetingEvent.type === 'target-lost'
             ? `ไม่พบ${label}แล้ว`
@@ -127,7 +124,7 @@ export default function BlindAssistScreen() {
         } else if (targetingEvent.type === 'locked') {
             hapticRef.current?.trigger(1);
         }
-    }, [clearObjectSpeechRetry, mode, targetingEvent]);
+    }, [mode, targetingEvent]);
 
     useEffect(() => {
         const pending = pendingObjectAnnouncementRef.current;
@@ -137,39 +134,56 @@ export default function BlindAssistScreen() {
             : pending?.candidate ? targetPhase === 'candidate' : targetPhase === 'locked';
         if (mode !== 'assistant' || !pending || !eventIsCurrent || !phaseMatches) {
             if (!phaseMatches) pendingObjectAnnouncementRef.current = null;
-            clearObjectSpeechRetry();
             return;
         }
 
         const didSpeak = speechManager?.speak(pending.text, {
-            priority: Priority.LOW,
+            priority: pending.important ? Priority.RESULT : Priority.GUIDANCE,
+            category: pending.important ? SpeechCategory.TASK : SpeechCategory.REALTIME,
             owner: 'object-detector',
+            scope: 'blind:assistant',
+            realtimeKey: 'object-guidance',
             rate: 1.2,
+            interrupt: pending.important,
+            dedupe: true,
+            cooldown: pending.important ? 0 : 1200,
         }) ?? false;
         if (didSpeak) {
 
             if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
-            clearObjectSpeechRetry();
             return;
         }
 
-        // Retry only this still-current state. A newer candidate, lock, or loss event
-        // clears this timer and replaces it, so delayed speech cannot become stale.
-        clearObjectSpeechRetry();
-        speechRetryTimerRef.current = setTimeout(() => setSpeechRetryTick((tick) => tick + 1), 500);
-    }, [clearObjectSpeechRetry, mode, speechRetryTick, targetPhase, targetingEvent]);
+        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
+    }, [mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
-        clearObjectSpeechRetry();
         speechManager?.stopByOwner('object-detector');
-    }, [clearObjectSpeechRetry]);
+    }, []);
 
-    const handleAccessibilityNavigation = useCallback(() => {
-        pendingObjectAnnouncementRef.current = null;
-        clearObjectSpeechRetry();
-    }, [clearObjectSpeechRetry]);
-    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation(handleAccessibilityNavigation);
+    // The blind surface is TTS-first: assistive-tech focus reads controls, but
+    // does not cancel task/realtime audio while the user navigates between them.
+    useAccessibilitySpeechNavigation(undefined, 'preserve');
+
+    useEffect(() => {
+        if (mode !== 'assistant') {
+            assistantReadyAnnouncedRef.current = false;
+            return;
+        }
+        if (!aiReady || assistantReadyAnnouncedRef.current) return;
+
+        assistantReadyAnnouncedRef.current = true;
+        speechManager?.speak('ผู้ช่วย AI พร้อมแล้ว หันกล้องไปยังสิ่งที่ต้องการให้ช่วยบรรยาย หรือกดปุ่มบรรยายสิ่งที่เห็น', {
+            priority: Priority.ACTION,
+            category: SpeechCategory.TASK,
+            owner: 'assistant-ready',
+            scope: 'blind:assistant',
+            rate: 1.05,
+            dedupe: 'assistant-ready',
+            cooldown: 15_000,
+        });
+    }, [aiReady, mode]);
 
     // B. AI Assistant
     const {
@@ -177,7 +191,6 @@ export default function BlindAssistScreen() {
         messages: aiMessages,
         captureAndAsk,
         askTextOnly,
-        clearMessages,
         stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog);
 
@@ -187,8 +200,8 @@ export default function BlindAssistScreen() {
     const {
         isListening,
         transcript: voiceTranscript,
-        startListening,
-        stopListening,
+        toggleListening,
+        cancelListening,
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
         useCallback((text: string) => {
@@ -219,6 +232,16 @@ export default function BlindAssistScreen() {
         clearTotal
     } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
 
+    const closeDetails = useCallback(() => {
+        closeCurrencyDetails();
+        requestAnimationFrame(() => restoreDetailsFocusRef.current?.focus());
+    }, [closeCurrencyDetails]);
+
+    useEffect(() => {
+        if (!detailsOpen) return;
+        detailsCloseRef.current?.focus();
+    }, [detailsOpen]);
+
     // E. Document Reader
     const {
         docText,
@@ -238,7 +261,8 @@ export default function BlindAssistScreen() {
     const switchMode = useCallback((newMode: AssistantMode) => {
         if (newMode === mode) return;
 
-        speechManager?.stopAll();
+        cancelListening();
+        speechManager?.cancel({ scope: `blind:${mode}` });
         hapticRef.current?.trigger(1);
         setMode(newMode);
         if (typeof window !== 'undefined') {
@@ -247,24 +271,25 @@ export default function BlindAssistScreen() {
         // Reset state
         if (newMode !== 'reader') resetDocument();
         if (newMode !== 'assistant') setVoiceTranscript('');
-    }, [mode, resetDocument, setVoiceTranscript]);
+    }, [cancelListening, mode, resetDocument, setVoiceTranscript]);
 
     // Auto-speak AI responses for blind users
     const prevMessagesLenRef = useRef<number>(0);
     useEffect(() => {
-        if (mode !== 'assistant') return;
-        if (aiMessages.length <= prevMessagesLenRef.current) {
-            prevMessagesLenRef.current = aiMessages.length;
-            return;
-        }
+        const hasNewMessage = aiMessages.length > prevMessagesLenRef.current;
         prevMessagesLenRef.current = aiMessages.length;
+        if (mode !== 'assistant' || !hasNewMessage) return;
         const lastMsg = aiMessages[aiMessages.length - 1];
         if (lastMsg?.role === 'ai' && lastMsg.content) {
             speechManager?.speak(lastMsg.content, {
-                priority: Priority.HIGH,
+                priority: Priority.RESULT,
+                category: SpeechCategory.TASK,
                 owner: 'ai-response',
+                scope: 'blind:assistant',
                 rate: 1.0,
                 chunk: true,
+                interrupt: true,
+                dedupe: true,
             });
         }
     }, [aiMessages, mode]);
@@ -298,7 +323,7 @@ export default function BlindAssistScreen() {
         <div
             onClick={() => speechManager?.unlock()}
             onTouchStart={() => speechManager?.unlock()}
-            className="flex flex-col h-screen bg-black text-white relative overflow-hidden font-sans"
+            className="flex min-h-dvh flex-col bg-black text-white relative overflow-hidden font-sans"
         >
             <HapticFeedback ref={hapticRef} />
 
@@ -312,6 +337,8 @@ export default function BlindAssistScreen() {
             />
 
             <main className="w-full h-full flex flex-col relative min-h-0 overflow-hidden" aria-label="ผู้ช่วย AI สำหรับผู้พิการทางสายตา">
+
+                {cameraError && <p className="sr-only">ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์</p>}
 
                 <CameraView
                     videoRef={videoRef}
@@ -358,10 +385,22 @@ export default function BlindAssistScreen() {
 
 
                 {mode === 'currency' && detailsOpen && currencyResult && (
-                    <section className="absolute inset-x-4 bottom-28 z-30 rounded-2xl bg-zinc-950 border-2 border-amber-500 p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="รายละเอียดเงินที่ตรวจพบ">
+                    <section
+                        className="absolute inset-x-4 bottom-28 z-30 rounded-2xl bg-zinc-950 border-2 border-amber-500 p-5 shadow-2xl"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="currency-details-title"
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape') closeDetails();
+                            if (event.key === 'Tab') {
+                                event.preventDefault();
+                                detailsCloseRef.current?.focus();
+                            }
+                        }}
+                    >
                         <div className="flex items-center justify-between gap-4">
-                            <h2 className="text-xl font-bold text-amber-200">รายละเอียดเงิน</h2>
-                            <button type="button" onClick={closeCurrencyDetails} className="min-h-11 min-w-11 rounded-full bg-zinc-800 text-white border border-zinc-600 focus:ring-2 focus:ring-white focus:outline-none" aria-label="ปิดรายละเอียด">×</button>
+                            <h2 id="currency-details-title" className="text-xl font-bold text-amber-200">รายละเอียดเงิน</h2>
+                            <button ref={detailsCloseRef} type="button" onClick={closeDetails} className="min-h-12 min-w-12 rounded-full bg-zinc-800 text-white border border-zinc-600 focus:ring-2 focus:ring-white focus:outline-none" aria-label="ปิดรายละเอียด">×</button>
                         </div>
                         <ul className="mt-3 space-y-2 text-base text-white">
                             {currencyResult.items.map(item => (
@@ -389,13 +428,15 @@ export default function BlindAssistScreen() {
                     scannedCount={scannedCount}
                     isBlocked={currencyBlocked}
                     readerAligned={readerAligned}
-                    onClearChat={clearMessages}
                     onCapture={captureAndAsk}
                     onStopSpeaking={stopSpeaking}
-                    onStartListening={startListening}
-                    onStopListening={stopListening}
+                    onStartListening={toggleListening}
+                    onStopListening={toggleListening}
                     onCurrencyCapture={captureCurrency}
-                    onShowCurrencyDetails={showCurrencyDetails}
+                    onShowCurrencyDetails={() => {
+                        restoreDetailsFocusRef.current = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+                        showCurrencyDetails();
+                    }}
                     onReplayTotal={replayTotal}
                     onClearTotal={clearTotal}
                     onReadDocument={readDocument}

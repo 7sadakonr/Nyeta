@@ -1,33 +1,27 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { SpeechCategory } from '@/shared/types/speech';
 
 export default function Home() {
   const router = useRouter();
   const hapticRef = useRef<HapticFeedbackHandle | null>(null);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      speechManager?.speak('ยินดีต้อนรับสู่ Nyeta แตะผู้ช่วย AI หรือแตะโทรหาอาสาสมัคร', {
-        priority: Priority.NORMAL,
-        owner: 'home-welcome',
-        rate: 1.1,
-      });
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
-
   const handleStart = async () => {
     speechManager?.unlock();
-    speechManager?.speak('กำลังเปิดโหมดผู้ช่วยเอไอ', {
-      priority: Priority.CRITICAL,
-      owner: 'home-action',
-      rate: 1.1,
+    speechManager?.speak('ผู้ช่วย AI พร้อมแล้ว หันกล้องไปยังสิ่งที่ต้องการให้ช่วยบรรยาย หรือกดปุ่มบรรยายสิ่งที่เห็น', {
+      priority: Priority.ACTION,
+      category: SpeechCategory.TASK,
+      owner: 'assistant-ready',
+      scope: 'blind:assistant',
+      rate: 1.05,
+      dedupe: 'assistant-ready',
+      cooldown: 15_000,
     });
     await hapticRef.current?.trigger(5, 100);
     router.push('/blind');
@@ -35,11 +29,6 @@ export default function Home() {
 
   const handleCall = async () => {
     speechManager?.unlock();
-    speechManager?.speak('กำลังเปิดหน้าโทรหาอาสาสมัคร', {
-      priority: Priority.CRITICAL,
-      owner: 'home-action',
-      rate: 1.1,
-    });
     await hapticRef.current?.trigger(3, 100);
     router.push('/call');
   };

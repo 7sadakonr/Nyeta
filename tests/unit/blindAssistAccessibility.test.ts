@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 
 const readSource = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -22,6 +23,7 @@ describe('TTS and VoiceOver announcement ownership', () => {
 
     it('keeps TTS paths while removing their duplicate live regions', () => {
         const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
+        const home = readSource('src/app/page.tsx');
         const callScreen = readSource('src/features/calling/BlindCallScreen.tsx');
         const chatOverlay = readSource('src/features/calling/components/BlindChatOverlay.tsx');
         const currencyScanner = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
@@ -32,9 +34,11 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain("owner: 'page-mount'");
         expect(screen).not.toContain("owner: 'camera-ready'");
         expect(screen).not.toContain('accessibilityStatus');
-        expect(screen).toContain('useAccessibilitySpeechNavigation(handleAccessibilityNavigation)');
+        expect(screen).toContain("useAccessibilitySpeechNavigation(undefined, 'preserve')");
+        expect(screen).toContain("owner: 'assistant-ready'");
+        expect(screen).toContain('assistantReadyAnnouncedRef');
+        expect(home).toContain("owner: 'assistant-ready'");
         expect(screen).toContain('pendingObjectAnnouncementRef.current = null;');
-        expect(screen).toContain('clearObjectSpeechRetry();');
         expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
         expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
         expect(currencyScanner).toContain("speechManager?.speak('พร้อมสแกนใบถัดไป'");
@@ -57,8 +61,23 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(modeSwitcher).toContain('role="tab"');
         expect(modeSwitcher).toContain('aria-selected={mode === item.id}');
         expect(controlBar).toContain('role="group" aria-label="ปุ่มควบคุม"');
+        expect(controlBar).toContain('aria-pressed={isListening}');
+        expect(controlBar).not.toMatch(/on(?:Mouse|Touch)(?:Down|Up|Start|End|Leave)=/);
         expect(chatHistory).toContain('aria-label="ประวัติการสนทนา"');
         expect(chatHistory).toContain('tabIndex={0}');
-        expect(screen).toContain('role="dialog" aria-modal="true"');
+        expect(screen).toContain('role="dialog"');
+        expect(screen).toContain('aria-modal="true"');
+        expect(screen).toContain('restoreDetailsFocusRef');
+    });
+
+    it('keeps direct Web Speech API calls inside the shared coordinator', () => {
+        const featureSources = [
+            'src/features/blind-assistant',
+            'src/features/calling',
+        ];
+        for (const path of featureSources) {
+            const result = spawnSync('rg', ['-l', 'speechSynthesis\\.(?:speak|cancel)', path], { cwd: process.cwd(), encoding: 'utf8' });
+            expect(result.status).toBe(1);
+        }
     });
 });

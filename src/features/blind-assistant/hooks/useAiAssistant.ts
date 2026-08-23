@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { SpeechCategory } from '@/shared/types/speech';
 import { captureFrameFromVideo, extractGeminiText } from '@/features/blind-assistant/client/geminiVision';
 import { AssistantMessage, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
@@ -61,8 +62,10 @@ export function useAiAssistant(
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
             speechManager?.speak('กล้องกำลังเริ่มทำงาน กรุณารอสักครู่แล้วกดใหม่ครับ', {
-                priority: Priority.HIGH,
+                priority: Priority.CRITICAL,
+                category: SpeechCategory.CRITICAL,
                 owner: 'ai-system',
+                scope: 'blind:assistant',
             });
             feedback?.('error');
             return;
@@ -103,8 +106,10 @@ export function useAiAssistant(
                 setStatus('idle');
                 feedback?.('error');
                 speechManager?.speak('กล้องยังไม่พร้อม กรุณาลองใหม่อีกครั้ง', {
-                    priority: Priority.HIGH,
+                    priority: Priority.CRITICAL,
+                    category: SpeechCategory.CRITICAL,
                     owner: 'ai-system',
+                    scope: 'blind:assistant',
                 });
                 return;
             }
@@ -277,12 +282,12 @@ export function useAiAssistant(
 
     const clearMessages = useCallback(() => {
         setMessages([]);
-        speechManager?.stopAll();
+        speechManager?.cancel({ scope: 'blind:assistant' });
         feedback?.('button');
     }, [feedback]);
 
     const stopSpeaking = useCallback(() => {
-        speechManager?.stopAll();
+        speechManager?.cancel({ scope: 'blind:assistant', categories: [SpeechCategory.TASK, SpeechCategory.REALTIME] });
         feedback?.('button');
     }, [feedback]);
 

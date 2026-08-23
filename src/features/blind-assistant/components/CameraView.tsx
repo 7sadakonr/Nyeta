@@ -156,7 +156,7 @@ export default function CameraView({
                                     ? formatCurrencyDisplay(currencyResult)
                                     : currencyScanning
                                         ? 'กำลังตรวจเงิน...'
-                                        : currencyHint || 'กดปุ่มถ่ายเพื่อตรวจธนบัตรหรือเหรียญ'}
+                                        : currencyHint || 'กำลังค้นหาเงินอัตโนมัติ'}
                             </p>
                             {currencyResult && (
                                 <p className="text-lg text-amber-100/80 mt-3 font-medium">

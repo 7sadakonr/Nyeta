@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import speechManager, { Priority } from '@/shared/accessibility/speechManager';
 
 export type SpeechInputState = 'idle' | 'starting' | 'listening' | 'stopping';
@@ -15,13 +15,26 @@ export interface UseSpeechInputResult {
     setTranscript: React.Dispatch<React.SetStateAction<string>>;
 }
 
+const subscribeToSpeechRecognitionSupport = () => () => {};
+
+const getSpeechRecognitionSupport = () => (
+    typeof window !== 'undefined'
+    && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+);
+
+const getServerSpeechRecognitionSupport = () => false;
+
 export function useSpeechInput(
     onResult?: (transcript: string) => void,
     onFeedback?: (type: string) => void,
 ): UseSpeechInputResult {
     const [state, setState] = useState<SpeechInputState>('idle');
     const [transcript, setTranscript] = useState('');
-    const [isSupported, setIsSupported] = useState(false);
+    const isSupported = useSyncExternalStore(
+        subscribeToSpeechRecognitionSupport,
+        getSpeechRecognitionSupport,
+        getServerSpeechRecognitionSupport,
+    );
     const recognitionRef = useRef<any>(null);
     const onResultRef = useRef(onResult);
     const onFeedbackRef = useRef(onFeedback);
@@ -53,7 +66,6 @@ export function useSpeechInput(
         recognition.interimResults = true;
         recognition.lang = 'th-TH';
         recognitionRef.current = recognition;
-        setIsSupported(true);
 
         recognition.onstart = () => {
             setState('listening');

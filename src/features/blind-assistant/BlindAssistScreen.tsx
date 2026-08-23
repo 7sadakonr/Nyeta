@@ -316,6 +316,7 @@ export default function BlindAssistScreen() {
 
     return (
         <div
+            data-testid="blind-assistant-shell"
             onClick={activateBlindAudio}
             onTouchStart={activateBlindAudio}
             onContextMenu={(event) => event.preventDefault()}

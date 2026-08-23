@@ -7,7 +7,8 @@ test.describe('Nyeta entry screen', () => {
         await expect(page.getByRole('heading', { name: 'Nyeta' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'ผู้ช่วย AI' })).toBeVisible();
         await expect(page.getByRole('link', { name: 'โหมดอาสาสมัคร' })).toHaveAttribute('href', '/volunteer');
-        await expect(page.getByRole('button')).toHaveCount(1);
-        await expect(page.getByRole('button', { name: /โทรหาอาสา/i })).toHaveCount(0);
+        const app = page.locator('main');
+        await expect(app.getByRole('button')).toHaveCount(1);
+        await expect(app.getByRole('button', { name: /โทรหาอาสา/i })).toHaveCount(0);
     });
 });

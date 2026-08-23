@@ -4,9 +4,9 @@ test.describe('Blind Assistance Page (/blind)', () => {
     test('renders main blind interface and switches modes', async ({ page }) => {
         await page.goto('/blind');
 
-        // Check main container
-        const main = page.locator('main');
-        await expect(main).toBeVisible();
+        // The blind shell deliberately does not add an extra landmark for VoiceOver.
+        const shell = page.getByTestId('blind-assistant-shell');
+        await expect(shell).toBeVisible();
 
         // Check mode switcher tabs
         const assistantTab = page.getByRole('tab', { name: 'ผู้ช่วย' });
@@ -37,7 +37,7 @@ test.describe('Blind Assistance Page (/blind)', () => {
 
     test('uses no live region for realtime TTS-owned updates', async ({ page }) => {
         await page.goto('/blind');
-        await expect(page.locator('main').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
+        await expect(page.getByTestId('blind-assistant-shell').locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
         await expect(page.getByRole('tab', { name: 'ผู้ช่วย' })).toBeVisible();
 
         await page.goto('/call');

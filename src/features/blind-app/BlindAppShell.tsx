@@ -18,6 +18,9 @@ export interface BlindAppShellProps {
 const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] =>
     (ASSISTANT_TABS as readonly string[]).includes(tab);
 
+const ENTRY_AUDIO_RETRY_MS = 300;
+const MAX_ENTRY_AUDIO_ATTEMPTS = 3;
+
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -25,6 +28,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     const assistantRef = useRef<BlindAssistHandle | null>(null);
     const callRef = useRef<BlindCallHandle | null>(null);
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
+    const entryAudioRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const callLocked = ACTIVE_CALL_STATUSES.includes(callStatus);
 
     const audioActivationOptions = useCallback(() => ({
@@ -38,6 +42,10 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     }), []);
 
     const activateBlindAudio = useCallback(() => {
+        if (entryAudioRetryTimerRef.current) {
+            clearTimeout(entryAudioRetryTimerRef.current);
+            entryAudioRetryTimerRef.current = null;
+        }
         if (speechManager?.audioReady) {
             setAudioReady(true);
             return;
@@ -46,7 +54,30 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     }, [audioActivationOptions]);
 
     useEffect(() => {
-        speechManager?.initializeAudio('ผู้ช่วยพร้อม', audioActivationOptions());
+        let cancelled = false;
+        let attempts = 0;
+        const initialize = () => {
+            attempts += 1;
+            let started = false;
+            const options = audioActivationOptions();
+            speechManager?.initializeAudio('ผู้ช่วยพร้อม', {
+                ...options,
+                onStart: () => {
+                    started = true;
+                    options.onStart?.();
+                },
+                onEnd: (completed) => {
+                    if (completed || started || cancelled || attempts >= MAX_ENTRY_AUDIO_ATTEMPTS) return;
+                    entryAudioRetryTimerRef.current = setTimeout(initialize, ENTRY_AUDIO_RETRY_MS);
+                },
+            });
+        };
+        initialize();
+        return () => {
+            cancelled = true;
+            if (entryAudioRetryTimerRef.current) clearTimeout(entryAudioRetryTimerRef.current);
+            entryAudioRetryTimerRef.current = null;
+        };
     }, [audioActivationOptions]);
 
     const cancelScope = useCallback((scope: string) => {

@@ -72,6 +72,20 @@ describe('BlindAppShell', () => {
         expect(getByTestId('mock-assistant').textContent).toBe('assistant:ready');
     });
 
+    it('retries the entry announcement automatically when the browser rejects it before start', () => {
+        vi.useFakeTimers();
+        render(<BlindAppShell initialTab="assistant" />);
+
+        const options = initializeAudio.mock.calls[0][1];
+        act(() => {
+            options.onEnd(false);
+            vi.advanceTimersByTime(300);
+        });
+
+        expect(initializeAudio).toHaveBeenCalledTimes(2);
+        vi.useRealTimers();
+    });
+
     it('renders four accessible tabs and only the selected assistant mode', () => {
         const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 

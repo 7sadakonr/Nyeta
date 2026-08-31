@@ -63,18 +63,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         return () => stopCamera();
     }, [initCamera, stopCamera]);
     
-    const [hasAnnouncedReady, setHasAnnouncedReady] = useState(false);
+        const hasAnnouncedReadyRef = useRef(false);
 
     useEffect(() => {
-        if (aiReady && !hasAnnouncedReady) {
-            setHasAnnouncedReady(true);
+        if (aiReady && !hasAnnouncedReadyRef.current) {
+            hasAnnouncedReadyRef.current = true;
             let tabName = 'AI ผู้ช่วย พร้อม';
             if (mode === 'reader') tabName = 'โหมดอ่านเอกสาร พร้อม';
             else if (mode === 'currency') tabName = 'โหมดสแกนธนบัตร พร้อม';
             
             speechController.speak(tabName, { channel: 'status' });
         }
-    }, [aiReady, hasAnnouncedReady, mode]);
+    }, [aiReady, mode]);
 
     // Announce camera access error if any
 

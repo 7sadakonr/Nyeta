@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
-const { speak, stop, notifyUserNavigation } = vi.hoisted(() => ({
+const { speak, stop, notifyUserNavigation, unlockAudio } = vi.hoisted(() => ({
     speak: vi.fn(),
     stop: vi.fn(),
     notifyUserNavigation: vi.fn(),
+    unlockAudio: vi.fn(),
 }));
 
 vi.mock('@/features/blind-assistant/BlindAssistScreen', async () => {
@@ -39,7 +40,7 @@ vi.mock('@/features/calling/BlindCallScreen', async () => {
 vi.mock('@/shared/accessibility/HapticFeedback', () => ({ default: () => null }));
 vi.mock('@/features/blind-app/PwaControls', () => ({ default: () => null }));
 vi.mock('@/shared/accessibility/speechController', () => ({
-    speechController: { speak, stop, notifyUserNavigation }
+    speechController: { speak, stop, notifyUserNavigation, unlockAudio }
 }));
 
 import BlindAppShell from '@/features/blind-app/BlindAppShell';

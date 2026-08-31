@@ -14,6 +14,7 @@ export default function ClientEntryPoint({ initialTab }: ClientEntryPointProps) 
 
     useEffect(() => {
         if (typeof window !== 'undefined' && (window.navigator.webdriver || window.location.search.includes('test=true'))) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setStarted(true);
         }
     }, []);

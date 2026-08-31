@@ -74,12 +74,6 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     }, [activeTab, callLocked, cancelScope]);
 
     useEffect(() => {
-        const setAppHeight = () => {
-            document.documentElement.style.setProperty('--app-h', `${window.innerHeight}px`);
-        };
-        setAppHeight();
-        window.addEventListener('resize', setAppHeight);
-
         document.documentElement.style.backgroundColor = '#000000';
         document.body.style.backgroundColor = '#000000';
         
@@ -96,7 +90,6 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         }
 
         return () => {
-            window.removeEventListener('resize', setAppHeight);
             document.documentElement.style.backgroundColor = '';
             document.body.style.backgroundColor = '';
             if (metaThemeColor && oldThemeColor) {
@@ -107,7 +100,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
 
     return (
         <div
-            className="nyeta-surface flex h-[var(--app-h,100dvh)] w-full flex-col overflow-hidden bg-black text-white"
+            className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-black text-white"
             onTouchStartCapture={activateBlindAudio}
             onClickCapture={activateBlindAudio}
         >

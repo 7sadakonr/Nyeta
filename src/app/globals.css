@@ -47,11 +47,6 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-html, body {
-  height: var(--app-h, 100dvh);
-  width: 100%;
-}
-
 .nyeta-surface {
   font-family: var(--font-nyeta-sans), system-ui, sans-serif;
   -webkit-touch-callout: none;

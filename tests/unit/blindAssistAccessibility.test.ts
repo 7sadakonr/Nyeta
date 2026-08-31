@@ -101,7 +101,9 @@ describe('TTS and VoiceOver announcement ownership', () => {
         const blindShell = readSource('src/features/blind-app/BlindAppShell.tsx');
         const controlBar = readSource('src/features/blind-assistant/components/ControlBar.tsx');
 
-        expect(blindShell).toContain('h-[var(--app-h,100dvh)]');
+        expect(blindShell).toContain('fixed inset-0');
+        expect(blindShell).not.toContain('--app-h');
+        expect(blindShell).not.toContain('window.innerHeight');
         expect(screen).toContain('min-h-0 flex-1 overflow-y-auto');
         expect(controlBar).toContain('data-testid="blind-action-dock"');
         expect(controlBar).toContain('shrink-0');

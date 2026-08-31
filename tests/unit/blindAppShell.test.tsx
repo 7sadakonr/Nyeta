@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
@@ -48,6 +48,7 @@ vi.mock('@/shared/accessibility/speechManager', () => ({
 import BlindAppShell from '@/features/blind-app/BlindAppShell';
 
 describe('BlindAppShell', () => {
+    beforeEach(() => document.documentElement.style.removeProperty('--app-h'));
     afterEach(() => vi.clearAllMocks());
 
     it('activates browser speech from the first assistant gesture', () => {
@@ -73,6 +74,21 @@ describe('BlindAppShell', () => {
         expect(getByTestId('mock-assistant').textContent).toBe('currency');
         expect(queryByTestId('mock-call')).toBeNull();
         expect(interruptForAccessibilityNavigation).not.toHaveBeenCalled();
+    });
+
+    it('anchors the shell to the viewport without bottom safe-area padding in tab content', () => {
+        const { container, getByRole } = render(<BlindAppShell initialTab="assistant" />);
+
+        const shell = container.firstElementChild as HTMLElement;
+        const tablist = getByRole('tablist', { name: 'เมนูหลักสำหรับผู้พิการทางสายตา' });
+        const tabContent = tablist.firstElementChild as HTMLElement;
+
+        expect(shell.className).toContain('fixed');
+        expect(shell.className).toContain('inset-0');
+        expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('');
+        expect(tablist.className).toContain('bg-black/80');
+        expect(tabContent.className).not.toContain('pb-');
+        expect(tabContent.className).not.toContain('safe-area-inset-bottom');
     });
 
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {

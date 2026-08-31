@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { SpeechCategory } from '@/shared/types/speech';
+import { speechController } from '@/shared/accessibility/speechController';
 
 interface DeferredInstallPrompt extends Event {
     prompt: () => Promise<void>;
@@ -30,11 +29,11 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
     useEffect(() => {
         const onOnline = () => {
             setOnline(true);
-            if (audioReady) speechManager?.speak('กลับมาออนไลน์แล้ว', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+            if (audioReady) speechController.speak('กลับมาออนไลน์แล้ว', { channel: 'status' });
         };
         const onOffline = () => {
             setOnline(false);
-            if (audioReady) speechManager?.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { priority: Priority.HIGH, category: SpeechCategory.CRITICAL, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+            if (audioReady) speechController.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { channel: 'critical' });
         };
         const onBeforeInstallPrompt = (event: Event) => {
             event.preventDefault();
@@ -52,7 +51,7 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
 
     useEffect(() => {
         if (!audioReady || online) return;
-        speechManager?.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { priority: Priority.HIGH, category: SpeechCategory.CRITICAL, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+        speechController.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { channel: 'critical' });
     }, [audioReady, online]);
 
     useEffect(() => {

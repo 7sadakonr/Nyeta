@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { analyzeCurrencyFrame, detectCurrencyWithGemini, hasCurrencySceneChanged } from '@/features/blind-assistant/client/currencyGemini';
 import { CurrencyBatch, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { SpeechCategory } from '@/shared/types/speech';
+import { speechController } from '@/shared/accessibility/speechController';
 import { BoundingBox } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
 
@@ -67,11 +66,11 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     audioReadyRef.current = audioReady;
 
     useEffect(() => {
-        if (!audioReady || !enabled || !pendingResultSpeechRef.current) return;
+        if (!enabled || !pendingResultSpeechRef.current) return;
         const text = pendingResultSpeechRef.current;
         pendingResultSpeechRef.current = null;
-        speechManager?.speak(text, { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency', scope: 'blind:currency', rate: 1.1, interrupt: true, dedupe: true });
-    }, [audioReady, enabled]);
+        speechController.speak(text, { channel: 'result' });
+    }, [enabled]);
 
     const setPhaseIfChanged = useCallback((next: CurrencyScanPhase) => {
         if (phaseRef.current === next) return;
@@ -106,7 +105,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         if (!blockedAnnouncedRef.current && Date.now() - blockedSinceRef.current >= BLOCKED_ANNOUNCEMENT_MS) {
             blockedAnnouncedRef.current = true;
             setHintIfChanged('กล้องโดนบัง กรุณาเปิดหน้ากล้อง');
-            if (audioReadyRef.current) speechManager?.speak('กล้องโดนบัง กรุณาเปิดหน้ากล้อง', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: BLOCKED_ANNOUNCEMENT_MS });
+            speechController.speak('กล้องโดนบัง กรุณาเปิดหน้ากล้อง', { channel: 'critical', dedupeMs: BLOCKED_ANNOUNCEMENT_MS });
         }
     }, [setBlockedIfChanged, setHintIfChanged]);
 
@@ -124,7 +123,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         setResult(null);
         setHintIfChanged('พร้อมสแกนใบถัดไป');
         setPhaseIfChanged('searching');
-        if (audioReadyRef.current) speechManager?.speak('พร้อมสแกนใบถัดไป', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'currency', scope: 'blind:currency', realtimeKey: 'currency-ready', rate: 1.1, dedupe: true, cooldown: 2000 });
+        speechController.speak('พร้อมสแกนใบถัดไป', { channel: 'realtime', key: 'currency-ready', dedupeMs: 2000 });
     }, [setHintIfChanged, setPhaseIfChanged, setResult]);
 
     const requestProbe = useCallback(async (source: RequestSource, fingerprint: Uint8Array, returnPhase: 'searching' | 'waiting-removal') => {
@@ -169,8 +168,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
                 removalConfirmAtRef.current = 0;
                 feedback?.('success');
                 const speech = 'ครั้งนี้ ' + captured.total + ' บาท ยอดรวมสะสม ' + newTotal + ' บาท';
-                if (audioReadyRef.current) speechManager?.speak(speech, { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency', scope: 'blind:currency', rate: 1.1, interrupt: true, dedupe: true });
-                else pendingResultSpeechRef.current = speech;
+                speechController.speak(speech, { channel: 'result' });
                 setPhaseIfChanged('waiting-removal');
                 return;
             }
@@ -206,7 +204,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
             setHintIfChanged('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ');
             if (!networkAnnouncedRef.current) {
                 networkAnnouncedRef.current = true;
-                if (audioReadyRef.current) speechManager?.speak('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: delay });
+                speechController.speak('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ', { channel: 'critical', dedupeMs: delay });
             }
             setPhaseIfChanged(token.returnPhase);
         } finally {
@@ -251,7 +249,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
                 cancelPendingRequest();
                 setPhaseIfChanged('idle');
                 readyAnnouncedRef.current = false;
-                speechManager?.cancel({ scope: 'blind:currency' });
+                speechController.stop();
                 return;
             }
             if (!readyRef.current || !visibleRef.current) {
@@ -296,7 +294,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     const replayCurrencyDetails = useCallback(() => {
         const result = resultRef.current;
         if (!result) return;
-        if (audioReadyRef.current) speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true, navigationBehavior: 'pause-resume' });
+        speechController.speak(formatCurrencySpeech(result, null, true), { channel: 'result' });
         feedback?.('capture');
     }, [feedback]);
     const clearTotal = useCallback(() => { totalRef.current = 0; historyRef.current = []; setTotalAmount(0); setScannedHistory([]); }, []);

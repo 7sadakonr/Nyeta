@@ -31,6 +31,6 @@ describe('Currency auto-scan safeguards', () => {
         const source = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
         expect(source).toContain("if (token.returnPhase === 'waiting-removal')");
         expect(source).toContain('removalNotFoundCountRef.current >= 2');
-        expect(source).toContain("speechManager?.speak('พร้อมสแกนใบถัดไป'");
+        expect(source).toContain('พร้อมสแกนใบถัดไป');
     });
 });

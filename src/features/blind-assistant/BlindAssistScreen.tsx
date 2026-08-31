@@ -11,10 +11,9 @@ import { useObjectDetector } from '@/features/blind-assistant/hooks/useObjectDet
 import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
-import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
+import { speechController } from '@/shared/accessibility/speechController';
 
-import { SpeechCategory } from '@/shared/types/speech';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
@@ -63,18 +62,29 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
-    // Announce camera access error if any
+    
+    const [hasAnnouncedReady, setHasAnnouncedReady] = useState(false);
+
     useEffect(() => {
-        if (cameraError && audioReady) {
-            speechManager?.speak('ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้องครับ', {
-                priority: Priority.CRITICAL,
-                category: SpeechCategory.CRITICAL,
-                owner: 'camera-error',
-                scope: 'blind:shared',
-                rate: 1.1,
+        if (aiReady && !hasAnnouncedReady) {
+            setHasAnnouncedReady(true);
+            let tabName = 'AI ผู้ช่วย พร้อม';
+            if (mode === 'reader') tabName = 'โหมดอ่านเอกสาร พร้อม';
+            else if (mode === 'currency') tabName = 'โหมดสแกนธนบัตร พร้อม';
+            
+            speechController.speak(tabName, { channel: 'status' });
+        }
+    }, [aiReady, hasAnnouncedReady, mode]);
+
+    // Announce camera access error if any
+
+    useEffect(() => {
+        if (cameraError) {
+            speechController.speak('ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้องครับ', {
+                channel: 'critical'
             });
         }
-    }, [audioReady, cameraError]);
+    }, [cameraError]);
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
@@ -137,47 +147,30 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         const phaseMatches = pending?.important
             ? (targetingEvent?.type === 'target-lost' ? targetPhase === 'searching' : targetPhase === 'locked')
             : pending?.candidate ? targetPhase === 'candidate' : targetPhase === 'locked';
-        if (!audioReady) {
-            pendingObjectAnnouncementRef.current = null;
-            return;
-        }
+        
         if (mode !== 'assistant' || !pending || !eventIsCurrent || !phaseMatches) {
             if (!phaseMatches) pendingObjectAnnouncementRef.current = null;
             return;
         }
 
-        const didSpeak = speechManager?.speak(pending.text, {
-            priority: pending.important ? Priority.RESULT : Priority.GUIDANCE,
-            category: pending.important ? SpeechCategory.TASK : SpeechCategory.REALTIME,
-            owner: 'object-detector',
-            scope: 'blind:assistant',
-            realtimeKey: 'object-guidance',
+        speechController.speak(pending.text, {
+            channel: pending.important ? 'result' : 'realtime',
+            key: 'object-guidance',
             rate: 1.2,
-            interrupt: pending.important,
-            dedupe: true,
-            cooldown: pending.important ? 0 : 1200,
-        }) ?? false;
-        if (didSpeak) {
-
-            if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
-            return;
+            dedupeMs: pending.important ? 0 : 1200,
+        });
+        
+        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
+            pendingObjectAnnouncementRef.current = null;
         }
-
-        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
-    }, [audioReady, mode, targetPhase, targetingEvent]);
+    }, [mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
-        speechManager?.clearPausedSpeech();
-        speechManager?.stopByOwner('object-detector');
-        for (const scope of ['blind:assistant', 'blind:currency', 'blind:reader', 'blind:shared']) {
-            speechManager?.cancel({ scope });
-        }
+        speechController.stop();
     }, []);
 
-    // The blind surface is TTS-first: assistive-tech focus reads controls, but
-    // does not cancel task/realtime audio while the user navigates between them.
-    const accessibilityNavHandlers = useAccessibilitySpeechNavigation(undefined, 'preserve');
+    const accessibilityNavHandlers = useAccessibilitySpeechNavigation();
 
     // B. AI Assistant
     const {
@@ -189,7 +182,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
 
-    const isSpeaking = useSpeechSpeaking('ai-response');
+    const { isSpeaking } = useSpeechStatus();
 
     // C. Speech Input
     const {
@@ -242,8 +235,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     useEffect(() => {
         if (previousModeRef.current === mode) return;
         cancelListening();
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: `blind:${previousModeRef.current}` });
+        speechController.stop();
         if (mode !== 'reader') resetDocument();
         if (mode !== 'assistant') setVoiceTranscript('');
         previousModeRef.current = mode;
@@ -255,10 +247,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         stopReading();
         resetDocument();
         stopCamera();
-        speechManager?.clearPausedSpeech();
-        for (const scope of ['blind:assistant', 'blind:currency', 'blind:reader', 'blind:shared']) {
-            speechManager?.cancel({ scope });
-        }
+        speechController.stop();
     }, [cancelListening, resetDocument, stopCamera, stopReading, stopSpeaking]);
 
     useImperativeHandle(ref, () => ({ prepareForCall }), [prepareForCall]);
@@ -272,25 +261,16 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             prevMessagesLenRef.current = aiMessages.length;
             return;
         }
-        if (!audioReady) return;
+        
         prevMessagesLenRef.current = aiMessages.length;
         const lastMsg = aiMessages[aiMessages.length - 1];
         if (lastMsg?.role === 'ai' && lastMsg.content) {
-            speechManager?.clearPausedSpeech();
-            speechManager?.speak(lastMsg.content, {
-                priority: Priority.RESULT,
-                category: SpeechCategory.TASK,
-                owner: 'ai-response',
-                scope: 'blind:assistant',
+            speechController.speak(lastMsg.content, {
+                channel: 'result',
                 rate: 1.0,
-                chunk: true,
-                interrupt: true,
-                exclusive: true,
-                dedupe: true,
-                navigationBehavior: 'pause-resume',
             });
         }
-    }, [aiMessages, audioReady, mode]);
+    }, [aiMessages, mode]);
 
     // Derived State
     const statusLabel = !aiReady

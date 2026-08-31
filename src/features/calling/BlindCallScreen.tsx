@@ -7,7 +7,7 @@ import { useWakeLock } from '@/shared/hooks/useWakeLock';
 import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { playEarcon } from '@/shared/accessibility/audio';
 
@@ -44,7 +44,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         dataChannel
     });
     const [latestMessage, setLatestMessage] = useState<{ from?: string; text?: string } | null>(null);
-    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation(undefined, 'preserve');
+    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation();
 
     useEffect(() => {
         if (!dataChannel) return;
@@ -64,15 +64,10 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
     }, [dataChannel]);
 
     const speak = useCallback((text: string) => {
-        if (!audioReady || !text || text === lastSpokenRef.current) return;
+        if (!text || text === lastSpokenRef.current) return;
         lastSpokenRef.current = text;
-        speechManager?.speak(text, {
-            priority: Priority.HIGH,
-            owner: 'call-status',
-            scope: 'blind:volunteer',
-            rate: 1.1,
-        });
-    }, [audioReady]);
+        speechController.speak(text, { channel: 'status' });
+    }, []);
 
     // React to status changes: announce, earcon, haptic.
     useEffect(() => {
@@ -95,8 +90,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
             hapticRef.current?.trigger(2);
         }
         if (status === 'connected') {
-            speechManager?.stopByOwner('object-detector');
-            speechManager?.stopByOwner('page-guidance');
+            speechController.stop();
             playEarcon('connect');
             hapticRef.current?.trigger(3);
         }
@@ -120,16 +114,14 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
     const prepareForExit = useCallback(() => {
         endCall(false);
         hapticRef.current?.stopContinuous();
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: 'blind:volunteer' });
+        speechController.stop();
     }, [endCall]);
 
     useImperativeHandle(ref, () => ({ prepareForExit }), [prepareForExit]);
 
     useEffect(() => () => {
         hapticRef.current?.stopContinuous();
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: 'blind:volunteer' });
+        speechController.stop();
     }, []);
 
     const statusLabel =

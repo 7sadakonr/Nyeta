@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 import { playBeep } from '@/shared/accessibility/audio';
 
 export interface BlindChatOverlayProps {
@@ -32,11 +32,8 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
 
             // Speak the text
             if (audioReady && text) {
-                speechManager?.speak(text, {
-                    priority: Priority.HIGH,
-                    owner: 'volunteer-message',
-                    scope: 'blind:volunteer',
-                    rate: 1.0,
+                speechController.speak(text, {
+                    channel: 'result',
                 });
             }
         }
@@ -64,12 +61,12 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
                 recognition.onerror = (event: any) => {
                     console.error('Speech recognition error', event.error);
                     setIsListening(false);
-                    speechManager?.endListeningSession();
+                    speechController.endListening();
                 };
                 
                 recognition.onend = () => {
                     setIsListening(false);
-                    speechManager?.endListeningSession();
+                    speechController.endListening();
                 };
                 
                 recognitionRef.current = recognition;
@@ -78,7 +75,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
         return () => {
             try { recognitionRef.current?.abort(); } catch {}
             recognitionRef.current = null;
-            speechManager?.endListeningSession();
+            speechController.endListening();
         };
     }, [onSendMessage]);
 
@@ -92,18 +89,14 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
                 } catch {}
             }
 
-            const accepted = speechManager?.beginListeningSession({
-                abortRecognition: () => {
-                    try { recognitionRef.current?.abort(); } catch {}
-                },
-            }) ?? false;
+            speechController.beginListening(); const accepted = true;
 
             if (!accepted) return;
 
             try {
                 recognitionRef.current.start();
             } catch (e) {
-                speechManager?.endListeningSession();
+                speechController.endListening();
                 console.error(e);
             }
         }

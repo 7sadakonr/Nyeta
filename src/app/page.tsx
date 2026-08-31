@@ -1,4 +1,4 @@
-import BlindAppShell from '@/features/blind-app/BlindAppShell';
+import ClientEntryPoint from '@/features/blind-app/ClientEntryPoint';
 import ErrorBoundary from '@/shared/ui/ErrorBoundary';
 import type { BlindAppTab } from '@/features/blind-app/types';
 
@@ -10,7 +10,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ t
 
   return (
     <ErrorBoundary>
-      <BlindAppShell initialTab={initialTab} />
+      <ClientEntryPoint initialTab={initialTab} />
     </ErrorBoundary>
   );
 }

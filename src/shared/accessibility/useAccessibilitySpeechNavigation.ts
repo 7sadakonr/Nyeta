@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import speechManager from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 
 export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
   'a[href]',
@@ -33,15 +33,14 @@ export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
 const SAME_CONTROL_DEDUP_MS = 250;
 
 type NavigationCallback = () => void;
-export type AccessibilitySpeechNavigationPolicy = 'interrupt-realtime' | 'preserve';
+
 /**
  * Coordinates app TTS with keyboard, touch, and assistive-technology navigation.
  * Browsers do not expose VoiceOver speech state, so this deliberately reacts only
  * to real interaction/focus events and never attempts VoiceOver detection.
  */
 export function useAccessibilitySpeechNavigation(
-  onNavigation?: NavigationCallback,
-  policy: AccessibilitySpeechNavigationPolicy = 'interrupt-realtime',
+  onNavigation?: NavigationCallback
 ) {
   const lastInteractionRef = useRef<{ element: Element; at: number } | null>(null);
 
@@ -63,9 +62,11 @@ export function useAccessibilitySpeechNavigation(
     if (previous?.element === element && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
 
     lastInteractionRef.current = { element, at: now };
-    if (policy === 'interrupt-realtime') speechManager?.interruptForAccessibilityNavigation();
+    
+    speechController.notifyUserNavigation();
+    
     onNavigation?.();
-  }, [onNavigation, policy]);
+  }, [onNavigation]);
 
   return {
     onFocusCapture: (event: React.FocusEvent<HTMLElement>) => interruptForInteraction(event.target, 'focus'),

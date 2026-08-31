@@ -1,6 +1,5 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { SpeechCategory } from '@/shared/types/speech';
+import { speechController } from '@/shared/accessibility/speechController';
 import { captureFrameFromVideo, extractGeminiText } from '@/features/blind-assistant/client/geminiVision';
 import { AssistantMessage, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
@@ -41,12 +40,7 @@ export function useAiAssistant(
         if (statusRef.current === 'thinking') return;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
-            if (audioReady) speechManager?.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
-                priority: Priority.CRITICAL,
-                category: SpeechCategory.CRITICAL,
-                owner: 'ai-system',
-                scope: 'blind:assistant',
-            });
+            speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', { channel: 'critical' });
             feedback?.('error');
             return;
         }
@@ -85,12 +79,7 @@ export function useAiAssistant(
                 addLog?.('Error: Camera frame not ready');
                 setStatus('idle');
                 feedback?.('error');
-                if (audioReady) speechManager?.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
-                    priority: Priority.CRITICAL,
-                    category: SpeechCategory.CRITICAL,
-                    owner: 'ai-system',
-                    scope: 'blind:assistant',
-                });
+                speechController.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
                 return;
             }
 
@@ -173,7 +162,7 @@ export function useAiAssistant(
             clearTimeout(timeoutId);
             setStatus('idle');
         }
-    }, [videoRef, isReady, feedback, addLog, audioReady]);
+    }, [videoRef, isReady, feedback, addLog]);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();
@@ -183,14 +172,12 @@ export function useAiAssistant(
 
     const clearMessages = useCallback(() => {
         setMessages([]);
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: 'blind:assistant' });
+        speechController.stop();
         feedback?.('button');
     }, [feedback]);
 
     const stopSpeaking = useCallback(() => {
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: 'blind:assistant', categories: [SpeechCategory.TASK, SpeechCategory.REALTIME] });
+        speechController.stop();
         feedback?.('button');
     }, [feedback]);
 

@@ -26,7 +26,7 @@ const AUTO_REQUEST_INTERVAL_MS = 3250;
 const BLOCKED_ANNOUNCEMENT_MS = 2000;
 const NETWORK_BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
 
-export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean, isReady: boolean, feedback?: (type: EarconType) => void, addLog?: (msg: string) => void): UseCurrencyScannerResult {
+export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean, isReady: boolean, audioReady: boolean, feedback?: (type: EarconType) => void, addLog?: (msg: string) => void): UseCurrencyScannerResult {
     const [currencyResult, setCurrencyResult] = useState<CapturedCurrency | null>(null);
     const [phase, setPhase] = useState<CurrencyScanPhase>('idle');
     const [currencyHint, setCurrencyHint] = useState('');
@@ -36,6 +36,8 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
 
     const enabledRef = useRef(enabled);
     const readyRef = useRef(isReady);
+    const audioReadyRef = useRef(audioReady);
+    const pendingResultSpeechRef = useRef<string | null>(null);
     const visibleRef = useRef(typeof document === 'undefined' || document.visibilityState !== 'hidden');
     const phaseRef = useRef<CurrencyScanPhase>('idle');
     const resumePhaseRef = useRef<CurrencyScanPhase>('searching');
@@ -62,6 +64,14 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
 
     enabledRef.current = enabled;
     readyRef.current = isReady;
+    audioReadyRef.current = audioReady;
+
+    useEffect(() => {
+        if (!audioReady || !enabled || !pendingResultSpeechRef.current) return;
+        const text = pendingResultSpeechRef.current;
+        pendingResultSpeechRef.current = null;
+        speechManager?.speak(text, { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency', scope: 'blind:currency', rate: 1.1, interrupt: true, dedupe: true });
+    }, [audioReady, enabled]);
 
     const setPhaseIfChanged = useCallback((next: CurrencyScanPhase) => {
         if (phaseRef.current === next) return;
@@ -96,7 +106,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         if (!blockedAnnouncedRef.current && Date.now() - blockedSinceRef.current >= BLOCKED_ANNOUNCEMENT_MS) {
             blockedAnnouncedRef.current = true;
             setHintIfChanged('กล้องโดนบัง กรุณาเปิดหน้ากล้อง');
-            speechManager?.speak('กล้องโดนบัง กรุณาเปิดหน้ากล้อง', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: BLOCKED_ANNOUNCEMENT_MS });
+            if (audioReadyRef.current) speechManager?.speak('กล้องโดนบัง กรุณาเปิดหน้ากล้อง', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: BLOCKED_ANNOUNCEMENT_MS });
         }
     }, [setBlockedIfChanged, setHintIfChanged]);
 
@@ -114,7 +124,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         setResult(null);
         setHintIfChanged('พร้อมสแกนใบถัดไป');
         setPhaseIfChanged('searching');
-        speechManager?.speak('พร้อมสแกนใบถัดไป', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'currency', scope: 'blind:currency', realtimeKey: 'currency-ready', rate: 1.1, dedupe: true, cooldown: 2000 });
+        if (audioReadyRef.current) speechManager?.speak('พร้อมสแกนใบถัดไป', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'currency', scope: 'blind:currency', realtimeKey: 'currency-ready', rate: 1.1, dedupe: true, cooldown: 2000 });
     }, [setHintIfChanged, setPhaseIfChanged, setResult]);
 
     const requestProbe = useCallback(async (source: RequestSource, fingerprint: Uint8Array, returnPhase: 'searching' | 'waiting-removal') => {
@@ -158,7 +168,9 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
                 removalNotFoundCountRef.current = 0;
                 removalConfirmAtRef.current = 0;
                 feedback?.('success');
-                speechManager?.speak('ครั้งนี้ ' + captured.total + ' บาท ยอดรวมสะสม ' + newTotal + ' บาท', { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency', scope: 'blind:currency', rate: 1.1, interrupt: true, dedupe: true });
+                const speech = 'ครั้งนี้ ' + captured.total + ' บาท ยอดรวมสะสม ' + newTotal + ' บาท';
+                if (audioReadyRef.current) speechManager?.speak(speech, { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency', scope: 'blind:currency', rate: 1.1, interrupt: true, dedupe: true });
+                else pendingResultSpeechRef.current = speech;
                 setPhaseIfChanged('waiting-removal');
                 return;
             }
@@ -194,7 +206,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
             setHintIfChanged('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ');
             if (!networkAnnouncedRef.current) {
                 networkAnnouncedRef.current = true;
-                speechManager?.speak('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: delay });
+                if (audioReadyRef.current) speechManager?.speak('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ', { priority: Priority.CRITICAL, category: SpeechCategory.CRITICAL, owner: 'currency', scope: 'blind:currency', rate: 1.1, dedupe: true, cooldown: delay });
             }
             setPhaseIfChanged(token.returnPhase);
         } finally {
@@ -284,7 +296,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
     const replayCurrencyDetails = useCallback(() => {
         const result = resultRef.current;
         if (!result) return;
-        speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true, navigationBehavior: 'pause-resume' });
+        if (audioReadyRef.current) speechManager?.speak(formatCurrencySpeech(result, null, true), { priority: Priority.RESULT, category: SpeechCategory.TASK, owner: 'currency-details', scope: 'blind:currency', rate: 1.1, interrupt: true, navigationBehavior: 'pause-resume' });
         feedback?.('capture');
     }, [feedback]);
     const clearTotal = useCallback(() => { totalRef.current = 0; historyRef.current = []; setTotalAmount(0); setScannedHistory([]); }, []);

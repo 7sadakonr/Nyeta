@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
-const { activateFromUserGesture, clearPausedSpeech, cancel, speak, interruptForAccessibilityNavigation } = vi.hoisted(() => ({
+const { initializeAudio, activateFromUserGesture, clearPausedSpeech, cancel, speak, interruptForAccessibilityNavigation } = vi.hoisted(() => ({
+    initializeAudio: vi.fn(),
     activateFromUserGesture: vi.fn(),
     clearPausedSpeech: vi.fn(),
     cancel: vi.fn(),
@@ -16,11 +17,11 @@ vi.mock('@/features/blind-assistant/BlindAssistScreen', async () => {
     const React = await import('react');
     return {
         default: React.forwardRef(function MockBlindAssistScreen(
-            { mode }: { mode: string },
+            { mode, audioReady }: { mode: string; audioReady: boolean },
             ref: React.ForwardedRef<{ prepareForCall: () => void }>,
         ) {
             React.useImperativeHandle(ref, () => ({ prepareForCall: assistantPrepareForCall }));
-            return <div data-testid="mock-assistant">{mode}</div>;
+            return <div data-testid="mock-assistant">{mode}:{audioReady ? 'ready' : 'waiting'}</div>;
         }),
     };
 });
@@ -41,7 +42,7 @@ vi.mock('@/features/calling/BlindCallScreen', async () => {
 vi.mock('@/shared/accessibility/HapticFeedback', () => ({ default: () => null }));
 vi.mock('@/features/blind-app/PwaControls', () => ({ default: () => null }));
 vi.mock('@/shared/accessibility/speechManager', () => ({
-    default: { activateFromUserGesture, clearPausedSpeech, cancel, speak, interruptForAccessibilityNavigation },
+    default: { audioReady: false, initializeAudio, activateFromUserGesture, clearPausedSpeech, cancel, speak, interruptForAccessibilityNavigation },
     Priority: { AMBIENT: 0, GUIDANCE: 1, ACTION: 2, RESULT: 3, CRITICAL: 4, HIGH: 3 },
 }));
 
@@ -59,6 +60,18 @@ describe('BlindAppShell', () => {
         expect(activateFromUserGesture).toHaveBeenCalledWith('ผู้ช่วยพร้อม', expect.objectContaining({ owner: 'blind-entry' }));
     });
 
+    it('initializes TTS on mount and exposes readiness only after native speech starts', () => {
+        const { getByTestId } = render(<BlindAppShell initialTab="assistant" />);
+
+        expect(initializeAudio).toHaveBeenCalledWith('ผู้ช่วยพร้อม', expect.objectContaining({ owner: 'blind-entry' }));
+        expect(getByTestId('mock-assistant').textContent).toBe('assistant:waiting');
+
+        const options = initializeAudio.mock.calls[0][1];
+        act(() => options.onStart());
+
+        expect(getByTestId('mock-assistant').textContent).toBe('assistant:ready');
+    });
+
     it('renders four accessible tabs and only the selected assistant mode', () => {
         const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 
@@ -67,11 +80,11 @@ describe('BlindAppShell', () => {
         expect(getByRole('tab', { name: 'เงิน' }).getAttribute('aria-controls')).toBe('blind-app-panel');
         expect(getByRole('tab', { name: 'อ่าน' }).getAttribute('aria-controls')).toBe('blind-app-panel');
         expect(getByRole('tab', { name: 'อาสา' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByTestId('mock-assistant').textContent).toBe('assistant');
+        expect(getByTestId('mock-assistant').textContent).toBe('assistant:waiting');
         expect(queryByTestId('mock-call')).toBeNull();
 
         fireEvent.click(getByRole('tab', { name: 'เงิน' }));
-        expect(getByTestId('mock-assistant').textContent).toBe('currency');
+        expect(getByTestId('mock-assistant').textContent).toBe('currency:waiting');
         expect(queryByTestId('mock-call')).toBeNull();
         expect(interruptForAccessibilityNavigation).not.toHaveBeenCalled();
     });

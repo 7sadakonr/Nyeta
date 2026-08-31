@@ -8,6 +8,9 @@ import { CancelSpeechOptions, Priority, PriorityLevel, SpeechCategory, SpeechCat
 
 export { Priority };
 
+export type AudioActivationState = 'idle' | 'pending' | 'active';
+type AudioActivationSource = 'automatic' | 'gesture';
+
 const ACCESSIBILITY_NAVIGATION_COOLDOWN_MS = 3500;
 const MAX_DEDUPE_HISTORY_ENTRIES = 128;
 const DEFAULT_REALTIME_MAX_AGE_MS = 1500;
@@ -68,7 +71,10 @@ export class SpeechManager {
   private _speechCounter = 0;
   private _currentSpeechId = 0;
   private _voices: SpeechSynthesisVoice[] = [];
-  private _audioActivationState: 'idle' | 'pending' | 'active' = 'idle';
+  private _audioActivationState: AudioActivationState = 'idle';
+  private _audioActivationSource: AudioActivationSource | null = null;
+  private _audioActivationOwner: string | null = null;
+  private _audioActivationAttemptId = 0;
   private _listeningExclusive = false;
   private _abortRecognition: (() => void) | null = null;
   private _criticalAbortRequested = false;
@@ -126,28 +132,62 @@ export class SpeechManager {
     }
   }
 
-  /** Starts a short audible utterance inside a user gesture for iOS Safari. */
-  public activateFromUserGesture(text: string, options: SpeechOptions = {}): boolean {
-    if (this._audioActivationState === 'active' || this._audioActivationState === 'pending' || this._speaking) return true;
+  public get audioActivationState(): AudioActivationState { return this._audioActivationState; }
+  public get audioReady(): boolean { return this._audioActivationState === 'active'; }
 
-    this._audioActivationState = 'pending';
+  private _setAudioActivationState(state: AudioActivationState, source: AudioActivationSource | null = null, owner: string | null = null): void {
+    const changed = this._audioActivationState !== state
+      || this._audioActivationSource !== source
+      || this._audioActivationOwner !== owner;
+    this._audioActivationState = state;
+    this._audioActivationSource = source;
+    this._audioActivationOwner = owner;
+    if (changed) this._notify();
+  }
+
+  private _startAudioActivation(source: AudioActivationSource, text: string, options: SpeechOptions = {}): boolean {
+    const attemptId = ++this._audioActivationAttemptId;
+    const owner = options.owner || 'audio-activation';
+    let started = false;
+    this._setAudioActivationState('pending', source, owner);
+
     const accepted = this.speak(text, {
       ...options,
       category: SpeechCategory.TASK,
       priority: Priority.ACTION,
-      owner: options.owner || 'audio-activation',
+      owner,
       onStart: () => {
-        this._audioActivationState = 'active';
+        if (this._audioActivationAttemptId !== attemptId) return;
+        started = true;
+        this._setAudioActivationState('active');
         options.onStart?.();
       },
       onEnd: (completed) => {
-        if (!completed) this._audioActivationState = 'idle';
+        if (this._audioActivationAttemptId === attemptId && !started) {
+          this._setAudioActivationState('idle');
+        }
         options.onEnd?.(completed);
       },
     });
 
-    if (!accepted) this._audioActivationState = 'idle';
+    if (!accepted && this._audioActivationAttemptId === attemptId) this._setAudioActivationState('idle');
     return accepted;
+  }
+
+  /** Attempts the entry announcement during page initialization. */
+  public initializeAudio(text: string, options: SpeechOptions = {}): boolean {
+    if (this._audioActivationState === 'active' || this._audioActivationState === 'pending') return true;
+    return this._startAudioActivation('automatic', text, options);
+  }
+
+  /** Starts a short audible utterance inside a trusted user gesture for iOS Safari. */
+  public activateFromUserGesture(text: string, options: SpeechOptions = {}): boolean {
+    if (this._audioActivationState === 'active') return true;
+    if (this._audioActivationState === 'pending') {
+      if (this._audioActivationSource === 'gesture') return true;
+      if (this._audioActivationOwner) this.cancel({ owner: this._audioActivationOwner });
+    }
+    return this._startAudioActivation('gesture', text, options);
   }
 
   /** Makes microphone capture exclusive over every non-critical speech request. */
@@ -342,6 +382,7 @@ export class SpeechManager {
       exclusive = false,
       dedupe = false,
       cooldown = 0,
+      onStart,
       onEnd,
       navigationBehavior,
     }: SpeechOptions = {}
@@ -381,6 +422,7 @@ export class SpeechManager {
       exclusive,
       dedupe,
       cooldown,
+      onStart,
       onEnd,
       speechKey: speechKey || undefined,
       navigationBehavior,

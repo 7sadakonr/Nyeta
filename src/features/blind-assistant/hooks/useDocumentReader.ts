@@ -24,6 +24,7 @@ export function useDocumentReader(
     videoRef: RefObject<HTMLVideoElement | null>,
     enabled: boolean,
     isReady: boolean,
+    audioReady: boolean,
     aiStatus: AssistantStatus,
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void
@@ -37,7 +38,26 @@ export function useDocumentReader(
     const [pageCorners, setPageCorners] = useState<QuadCorners | null>(null);
 
     const docTextRef = useRef<string>(docText);
+    const audioReadyRef = useRef(audioReady);
+    const pendingDocumentSpeechRef = useRef<string | null>(null);
     useEffect(() => { docTextRef.current = docText; }, [docText]);
+    audioReadyRef.current = audioReady;
+
+    useEffect(() => {
+        if (!audioReady || !enabled || !pendingDocumentSpeechRef.current) return;
+        const text = pendingDocumentSpeechRef.current;
+        pendingDocumentSpeechRef.current = null;
+        const accepted = speechManager?.speak(text, {
+            priority: Priority.RESULT,
+            category: SpeechCategory.TASK,
+            owner: 'document-reader',
+            scope: 'blind:reader',
+            rate: 1.0,
+            chunk: true,
+            onEnd: () => setIsReading(false),
+        }) ?? false;
+        if (accepted) setIsReading(true);
+    }, [audioReady, enabled]);
 
     const lastSpokenPageRef = useRef<string>('');
     const alignedCountRef = useRef<number>(0);
@@ -60,7 +80,7 @@ export function useDocumentReader(
         if (isProcessing || !enabled) return;
         if (!isReady || !videoRef.current) {
             feedback?.('error');
-            speechManager?.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', {
+            if (audioReadyRef.current) speechManager?.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
@@ -74,7 +94,7 @@ export function useDocumentReader(
             const imageDataUrl = captureFrameFromVideo(videoRef.current, { maxDimension: 1024, quality: 0.75 });
             if (!imageDataUrl) {
                 feedback?.('error');
-                speechManager?.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
+                if (audioReadyRef.current) speechManager?.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
                     priority: Priority.CRITICAL,
                     category: SpeechCategory.CRITICAL,
                     owner: 'document-reader',
@@ -106,8 +126,7 @@ export function useDocumentReader(
             setDocText(text);
             feedback?.('success');
 
-            setIsReading(true);
-            speechManager?.speak(text, {
+            const speechOptions = {
                 priority: Priority.RESULT,
                 category: SpeechCategory.TASK,
                 owner: 'document-reader',
@@ -115,14 +134,20 @@ export function useDocumentReader(
                 rate: 1.0,
                 chunk: true,
                 onEnd: () => setIsReading(false),
-            });
+            } as const;
+            if (audioReadyRef.current) {
+                const accepted = speechManager?.speak(text, speechOptions) ?? false;
+                if (accepted) setIsReading(true);
+            } else {
+                pendingDocumentSpeechRef.current = text;
+            }
         } catch (error: any) {
             if (error?.name === 'AbortError') return;
             console.error('Read document error:', error);
             setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
-            speechManager?.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', {
+            if (audioReadyRef.current) speechManager?.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
@@ -169,6 +194,7 @@ export function useDocumentReader(
             }
 
             if (text.includes('ตรงแล้ว')) return;
+            if (!audioReadyRef.current) return;
             speechManager?.speak(text, {
                 priority: Priority.GUIDANCE,
                 category: SpeechCategory.REALTIME,
@@ -236,7 +262,7 @@ export function useDocumentReader(
                         alignedCountRef.current = 0;
                         feedback?.('success');
                         speechManager?.cancel({ owner: 'page-guidance' });
-                        speechManager?.speak('ตรงแล้ว กำลังถ่ายเอกสาร', {
+                        if (audioReadyRef.current) speechManager?.speak('ตรงแล้ว กำลังถ่ายเอกสาร', {
                             priority: Priority.ACTION,
                             category: SpeechCategory.TASK,
                             owner: 'document-reader',
@@ -277,8 +303,8 @@ export function useDocumentReader(
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
         speechManager?.cancel({ owner: 'document-reader' });
-        setIsReading(true);
-        speechManager?.speak(docText, {
+        if (audioReadyRef.current) {
+            const accepted = speechManager?.speak(docText, {
             priority: Priority.RESULT,
             category: SpeechCategory.TASK,
             owner: 'document-reader',
@@ -287,7 +313,9 @@ export function useDocumentReader(
             chunk: true,
             navigationBehavior: 'pause-resume',
             onEnd: () => setIsReading(false),
-        });
+            }) ?? false;
+            if (accepted) setIsReading(true);
+        }
         feedback?.('success');
     }, [docText, feedback]);
 
@@ -296,6 +324,7 @@ export function useDocumentReader(
         abortControllerRef.current = null;
         setDocText('');
         setIsReading(false);
+        pendingDocumentSpeechRef.current = null;
         autoCaptureFiredRef.current = false;
         speechManager?.clearPausedSpeech();
         speechManager?.stopByOwner('document-reader');

@@ -9,7 +9,7 @@ interface DeferredInstallPrompt extends Event {
     userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
-export default function PwaControls({ callActive }: { callActive: boolean }) {
+export default function PwaControls({ callActive, audioReady }: { callActive: boolean; audioReady: boolean }) {
     const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
     const [installPrompt, setInstallPrompt] = useState<DeferredInstallPrompt | null>(null);
     const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
@@ -30,11 +30,11 @@ export default function PwaControls({ callActive }: { callActive: boolean }) {
     useEffect(() => {
         const onOnline = () => {
             setOnline(true);
-            speechManager?.speak('กลับมาออนไลน์แล้ว', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+            if (audioReady) speechManager?.speak('กลับมาออนไลน์แล้ว', { priority: Priority.AMBIENT, category: SpeechCategory.REALTIME, owner: 'network-status', scope: 'blind:shared', dedupe: true });
         };
         const onOffline = () => {
             setOnline(false);
-            speechManager?.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { priority: Priority.HIGH, category: SpeechCategory.CRITICAL, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+            if (audioReady) speechManager?.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { priority: Priority.HIGH, category: SpeechCategory.CRITICAL, owner: 'network-status', scope: 'blind:shared', dedupe: true });
         };
         const onBeforeInstallPrompt = (event: Event) => {
             event.preventDefault();
@@ -48,7 +48,12 @@ export default function PwaControls({ callActive }: { callActive: boolean }) {
             window.removeEventListener('offline', onOffline);
             window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
         };
-    }, []);
+    }, [audioReady]);
+
+    useEffect(() => {
+        if (!audioReady || online) return;
+        speechManager?.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { priority: Priority.HIGH, category: SpeechCategory.CRITICAL, owner: 'network-status', scope: 'blind:shared', dedupe: true });
+    }, [audioReady, online]);
 
     useEffect(() => {
         if (!('serviceWorker' in navigator)) return;

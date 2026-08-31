@@ -7,14 +7,18 @@ import { playBeep } from '@/shared/accessibility/audio';
 export interface BlindChatOverlayProps {
     latestMessage: { from?: string; text?: string } | null;
     onSendMessage: (text: string) => void;
+    audioReady?: boolean;
 }
 
-export default function BlindChatOverlay({ latestMessage, onSendMessage }: BlindChatOverlayProps) {
+export default function BlindChatOverlay({ latestMessage, onSendMessage, audioReady = false }: BlindChatOverlayProps) {
     const [isListening, setIsListening] = useState<boolean>(false);
     const recognitionRef = useRef<any>(null);
+    const lastHandledMessageRef = useRef<{ from?: string; text?: string } | null>(null);
 
     // TTS: Speak the incoming message
     useEffect(() => {
+        if (latestMessage === lastHandledMessageRef.current) return;
+        lastHandledMessageRef.current = latestMessage;
         if (latestMessage && latestMessage.from === 'volunteer') {
             const text = latestMessage.text;
 
@@ -27,7 +31,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
             }
 
             // Speak the text
-            if (text) {
+            if (audioReady && text) {
                 speechManager?.speak(text, {
                     priority: Priority.HIGH,
                     owner: 'volunteer-message',
@@ -36,7 +40,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                 });
             }
         }
-    }, [latestMessage]);
+    }, [audioReady, latestMessage]);
 
     // Setup Speech Recognition
     useEffect(() => {

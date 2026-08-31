@@ -18,7 +18,8 @@ export function useAiAssistant(
     videoRef: RefObject<HTMLVideoElement | null>,
     isReady: boolean,
     feedback?: (type: EarconType) => void,
-    addLog?: (msg: string) => void
+    addLog?: (msg: string) => void,
+    audioReady = false,
 ): UseAiAssistantResult {
     const [status, setStatus] = useState<AssistantStatus>('idle');
     const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -40,7 +41,7 @@ export function useAiAssistant(
         if (statusRef.current === 'thinking') return;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
-            speechManager?.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
+            if (audioReady) speechManager?.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'ai-system',
@@ -84,7 +85,7 @@ export function useAiAssistant(
                 addLog?.('Error: Camera frame not ready');
                 setStatus('idle');
                 feedback?.('error');
-                speechManager?.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
+                if (audioReady) speechManager?.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
                     priority: Priority.CRITICAL,
                     category: SpeechCategory.CRITICAL,
                     owner: 'ai-system',
@@ -172,7 +173,7 @@ export function useAiAssistant(
             clearTimeout(timeoutId);
             setStatus('idle');
         }
-    }, [videoRef, isReady, feedback, addLog]);
+    }, [videoRef, isReady, feedback, addLog, audioReady]);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();

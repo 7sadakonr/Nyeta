@@ -41,9 +41,10 @@ export interface BlindAssistHandle {
 export interface BlindAssistScreenProps {
     mode?: AssistantMode;
     presentation?: 'standalone' | 'embedded';
+    audioReady?: boolean;
 }
 
-export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function BlindAssistScreen({ mode = 'assistant', presentation = 'standalone' }, ref) {
+export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function BlindAssistScreen({ mode = 'assistant', presentation = 'standalone', audioReady = false }, ref) {
     const [, setLogs] = useState<string[]>([]);
 
     // Refs
@@ -64,7 +65,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [initCamera, stopCamera]);
     // Announce camera access error if any
     useEffect(() => {
-        if (cameraError) {
+        if (cameraError && audioReady) {
             speechManager?.speak('ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้องครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
@@ -73,7 +74,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                 rate: 1.1,
             });
         }
-    }, [cameraError]);
+    }, [audioReady, cameraError]);
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
@@ -136,6 +137,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         const phaseMatches = pending?.important
             ? (targetingEvent?.type === 'target-lost' ? targetPhase === 'searching' : targetPhase === 'locked')
             : pending?.candidate ? targetPhase === 'candidate' : targetPhase === 'locked';
+        if (!audioReady) {
+            pendingObjectAnnouncementRef.current = null;
+            return;
+        }
         if (mode !== 'assistant' || !pending || !eventIsCurrent || !phaseMatches) {
             if (!phaseMatches) pendingObjectAnnouncementRef.current = null;
             return;
@@ -159,7 +164,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         }
 
         if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
-    }, [mode, targetPhase, targetingEvent]);
+    }, [audioReady, mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
@@ -182,7 +187,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         askTextOnly,
         clearMessages,
         stopSpeaking
-    } = useAiAssistant(videoRef, aiReady, feedback, addLog);
+    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
 
     const isSpeaking = useSpeechSpeaking('ai-response');
 
@@ -215,7 +220,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         isBlocked: currencyBlocked,
         replayCurrencyDetails,
         clearTotal
-    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
+    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog);
 
     // E. Document Reader
     const {
@@ -230,7 +235,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         replayDocument,
         stopReading,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, aiStatus, feedback, addLog);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog);
 
     // 3. Mode Switcher
     const previousModeRef = useRef<AssistantMode>(mode);
@@ -262,8 +267,13 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const prevMessagesLenRef = useRef<number>(0);
     useEffect(() => {
         const hasNewMessage = aiMessages.length > prevMessagesLenRef.current;
+        if (!hasNewMessage) return;
+        if (mode !== 'assistant') {
+            prevMessagesLenRef.current = aiMessages.length;
+            return;
+        }
+        if (!audioReady) return;
         prevMessagesLenRef.current = aiMessages.length;
-        if (mode !== 'assistant' || !hasNewMessage) return;
         const lastMsg = aiMessages[aiMessages.length - 1];
         if (lastMsg?.role === 'ai' && lastMsg.content) {
             speechManager?.clearPausedSpeech();
@@ -280,7 +290,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                 navigationBehavior: 'pause-resume',
             });
         }
-    }, [aiMessages, mode]);
+    }, [aiMessages, audioReady, mode]);
 
     // Derived State
     const statusLabel = !aiReady

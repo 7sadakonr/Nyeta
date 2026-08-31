@@ -27,13 +27,15 @@ export interface BlindCallHandle {
 export interface BlindCallScreenProps {
     presentation?: 'standalone' | 'embedded';
     onStatusChange?: (status: import('@/features/calling/types').CallStatus) => void;
+    audioReady?: boolean;
 }
 
-export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindCallScreen({ presentation = 'standalone', onStatusChange }, ref) {
+export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindCallScreen({ presentation = 'standalone', onStatusChange, audioReady = false }, ref) {
     const { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, localStreamRef, dataChannel: rawDataChannel } = useBlindHelp();
     const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const lastSpokenRef = useRef<string>('');
+    const previousStatusRef = useRef(status);
 
     const dataChannel = useDataChannel(rawDataChannel, 'blind');
     const { captureState } = useCaptureHandler({
@@ -62,7 +64,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
     }, [dataChannel]);
 
     const speak = useCallback((text: string) => {
-        if (!text || text === lastSpokenRef.current) return;
+        if (!audioReady || !text || text === lastSpokenRef.current) return;
         lastSpokenRef.current = text;
         speechManager?.speak(text, {
             priority: Priority.HIGH,
@@ -70,10 +72,13 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
             scope: 'blind:volunteer',
             rate: 1.1,
         });
-    }, []);
+    }, [audioReady]);
 
     // React to status changes: announce, earcon, haptic.
     useEffect(() => {
+        const statusChanged = previousStatusRef.current !== status;
+        previousStatusRef.current = status;
+        if (!statusChanged) return;
         onStatusChange?.(status);
         const message = status === 'error' ? (error || STATUS_SPEECH.error) : STATUS_SPEECH[status];
         if (message) speak(message);
@@ -154,6 +159,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
                 <BlindChatOverlay 
                     latestMessage={latestMessage}
                     onSendMessage={handleSendMessage}
+                    audioReady={audioReady}
                 />
             )}
 

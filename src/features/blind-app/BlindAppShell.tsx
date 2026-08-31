@@ -21,21 +21,33 @@ const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] 
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
+    const [audioReady, setAudioReady] = useState(() => speechManager?.audioReady ?? false);
     const assistantRef = useRef<BlindAssistHandle | null>(null);
     const callRef = useRef<BlindCallHandle | null>(null);
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const callLocked = ACTIVE_CALL_STATUSES.includes(callStatus);
 
-    const activateBlindAudio = useCallback(() => {
-        speechManager?.activateFromUserGesture('ผู้ช่วยพร้อม', {
+    const audioActivationOptions = useCallback(() => ({
             priority: Priority.ACTION,
             category: SpeechCategory.TASK,
             owner: 'blind-entry',
             scope: 'blind:app',
             rate: 1.1,
             dedupe: 'blind-entry',
-        });
-    }, []);
+            onStart: () => setAudioReady(true),
+    }), []);
+
+    const activateBlindAudio = useCallback(() => {
+        if (speechManager?.audioReady) {
+            setAudioReady(true);
+            return;
+        }
+        speechManager?.activateFromUserGesture('ผู้ช่วยพร้อม', audioActivationOptions());
+    }, [audioActivationOptions]);
+
+    useEffect(() => {
+        speechManager?.initializeAudio('ผู้ช่วยพร้อม', audioActivationOptions());
+    }, [audioActivationOptions]);
 
     const cancelScope = useCallback((scope: string) => {
         speechManager?.clearPausedSpeech();
@@ -46,7 +58,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         if (nextTab === activeTab) return;
         if (callLocked && nextTab !== 'volunteer') {
             void hapticRef.current?.trigger(2);
-            speechManager?.speak('กรุณาวางสายก่อนเปลี่ยนเมนู', {
+            if (audioReady) speechManager?.speak('กรุณาวางสายก่อนเปลี่ยนเมนู', {
                 priority: Priority.HIGH,
                 category: SpeechCategory.TASK,
                 owner: 'blind-tab-lock',
@@ -71,7 +83,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         }
         void hapticRef.current?.trigger(1);
         setActiveTab(nextTab);
-    }, [activeTab, callLocked, cancelScope]);
+    }, [activeTab, audioReady, callLocked, cancelScope]);
 
     useEffect(() => {
         document.documentElement.style.backgroundColor = '#000000';
@@ -105,12 +117,12 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
             onClickCapture={activateBlindAudio}
         >
             <HapticFeedback ref={hapticRef} />
-            <PwaControls callActive={callLocked} />
+            <PwaControls callActive={callLocked} audioReady={audioReady} />
             <section id="blind-app-panel" role="tabpanel" aria-labelledby={`blind-app-tab-${activeTab}`} className="min-h-0 flex-1 overflow-hidden">
                 {activeTab === 'volunteer' ? (
-                    <BlindCallScreen ref={callRef} presentation="embedded" onStatusChange={setCallStatus} />
+                    <BlindCallScreen ref={callRef} presentation="embedded" onStatusChange={setCallStatus} audioReady={audioReady} />
                 ) : (
-                    <BlindAssistScreen ref={assistantRef} mode={activeTab} presentation="embedded" />
+                    <BlindAssistScreen ref={assistantRef} mode={activeTab} presentation="embedded" audioReady={audioReady} />
                 )}
             </section>
             <BlindBottomNavigation activeTab={activeTab} callLocked={callLocked} onSelect={selectTab} />

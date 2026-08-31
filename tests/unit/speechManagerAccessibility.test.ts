@@ -286,6 +286,70 @@ describe('SpeechManager accessibility navigation coordination', () => {
     expect(utterances).toHaveLength(1);
   });
 
+  it('marks automatic audio initialization active only after the native utterance starts', () => {
+    const manager = new SpeechManager();
+    const onStart = vi.fn();
+
+    expect(manager.initializeAudio('ผู้ช่วยพร้อม', { onStart })).toBe(true);
+    expect(manager.audioActivationState).toBe('pending');
+    expect(onStart).not.toHaveBeenCalled();
+
+    utterances[0].onstart?.();
+
+    expect(manager.audioActivationState).toBe('active');
+    expect(onStart).toHaveBeenCalledOnce();
+  });
+
+  it('retries a blocked automatic attempt from the first user gesture', () => {
+    const manager = new SpeechManager();
+
+    expect(manager.initializeAudio('ผู้ช่วยพร้อม', { owner: 'blind-entry' })).toBe(true);
+    expect(manager.audioActivationState).toBe('pending');
+
+    expect(manager.activateFromUserGesture('ผู้ช่วยพร้อม', { owner: 'blind-entry' })).toBe(true);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(utterances).toHaveLength(2);
+    expect(manager.audioActivationState).toBe('pending');
+  });
+
+  it('does not let a speech request that has not started block gesture activation', () => {
+    const manager = new SpeechManager();
+
+    manager.speak('ขยับกล้องไปทางซ้าย', {
+      category: SpeechCategory.REALTIME,
+      owner: 'object-detector',
+    });
+    expect(manager.isSpeaking).toBe(true);
+
+    expect(manager.activateFromUserGesture('ผู้ช่วยพร้อม')).toBe(true);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(utterances.map(utterance => utterance.text)).toEqual(['ขยับกล้องไปทางซ้าย', 'ผู้ช่วยพร้อม']);
+  });
+
+  it('resets a blocked activation so a later gesture can retry it', () => {
+    const manager = new SpeechManager();
+
+    manager.initializeAudio('ผู้ช่วยพร้อม');
+    utterances[0].onerror?.({ error: 'not-allowed' } as SpeechSynthesisErrorEvent);
+
+    expect(manager.audioActivationState).toBe('idle');
+    expect(manager.activateFromUserGesture('ผู้ช่วยพร้อม')).toBe(true);
+    expect(utterances).toHaveLength(2);
+  });
+
+  it('keeps audio ready after an entry utterance has started and is later interrupted', () => {
+    const manager = new SpeechManager();
+
+    manager.initializeAudio('ผู้ช่วยพร้อม');
+    utterances[0].onstart?.();
+    manager.speak('กล้องมีปัญหา', { category: SpeechCategory.CRITICAL, owner: 'camera-error' });
+
+    expect(manager.audioReady).toBe(true);
+    expect(manager.audioActivationState).toBe('active');
+  });
+
   it('reports a native speech error as incomplete', () => {
     const manager = new SpeechManager();
     const onEnd = vi.fn();

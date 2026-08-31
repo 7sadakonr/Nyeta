@@ -34,4 +34,31 @@ describe('useCamera', () => {
             },
         });
     });
+
+    it('stops a stream that resolves after the camera has been stopped', async () => {
+        let resolveStream: ((stream: MediaStream) => void) | undefined;
+        const getUserMedia = vi.fn().mockImplementation(() => new Promise<MediaStream>((resolve) => {
+            resolveStream = resolve;
+        }));
+        const stop = vi.fn();
+        const lateStream = { getTracks: () => [{ stop }] } as unknown as MediaStream;
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia },
+        });
+        const { result } = renderHook(() => useCamera());
+
+        let pendingInit: Promise<void>;
+        act(() => {
+            pendingInit = result.current.initCamera();
+            result.current.stopCamera();
+        });
+        await act(async () => {
+            resolveStream?.(lateStream);
+            await pendingInit!;
+        });
+
+        expect(stop).toHaveBeenCalledOnce();
+        expect(result.current.stream).toBeNull();
+    });
 });

@@ -1,10 +1,5 @@
-import BlindCallScreen from '@/features/calling/BlindCallScreen';
-import ErrorBoundary from '@/shared/ui/ErrorBoundary';
+import { redirect } from 'next/navigation';
 
 export default function CallPage() {
-    return (
-        <ErrorBoundary>
-            <BlindCallScreen />
-        </ErrorBoundary>
-    );
+    redirect('/?tab=volunteer');
 }

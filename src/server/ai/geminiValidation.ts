@@ -117,6 +117,13 @@ export function validateRequestBody(body: unknown): {
 
     const payload = body as Record<string, any>;
 
+    const hasInput = payload.contents !== undefined
+        || (typeof payload.userPrompt === 'string' && payload.userPrompt.trim().length > 0)
+        || (typeof payload.imageBase64 === 'string' && payload.imageBase64.length > 0);
+    if (!hasInput) {
+        return { valid: false, error: 'A prompt, image, or contents is required', status: 400 };
+    }
+
     // Security check: Client MUST NOT send custom systemPrompt
     if (payload.systemPrompt) {
         return {

@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 import { useBlindHelp } from '@/features/calling/hooks/useBlindHelp';
 import { useWakeLock } from '@/shared/hooks/useWakeLock';
@@ -21,7 +20,16 @@ const STATUS_SPEECH: Record<string, string> = {
     error: 'เกิดข้อผิดพลาด กรุณาลองใหม่',
 };
 
-export default function BlindCallScreen() {
+export interface BlindCallHandle {
+    prepareForExit: () => void;
+}
+
+export interface BlindCallScreenProps {
+    presentation?: 'standalone' | 'embedded';
+    onStatusChange?: (status: import('@/features/calling/types').CallStatus) => void;
+}
+
+export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindCallScreen({ presentation = 'standalone', onStatusChange }, ref) {
     const { status, error, startCall, endCall, reset, localVideoRef, remoteAudioRef, localStreamRef, dataChannel: rawDataChannel } = useBlindHelp();
     const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
@@ -34,7 +42,7 @@ export default function BlindCallScreen() {
         dataChannel
     });
     const [latestMessage, setLatestMessage] = useState<{ from?: string; text?: string } | null>(null);
-    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation();
+    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation(undefined, 'preserve');
 
     useEffect(() => {
         if (!dataChannel) return;
@@ -59,12 +67,14 @@ export default function BlindCallScreen() {
         speechManager?.speak(text, {
             priority: Priority.HIGH,
             owner: 'call-status',
+            scope: 'blind:volunteer',
             rate: 1.1,
         });
     }, []);
 
     // React to status changes: announce, earcon, haptic.
     useEffect(() => {
+        onStatusChange?.(status);
         const message = status === 'error' ? (error || STATUS_SPEECH.error) : STATUS_SPEECH[status];
         if (message) speak(message);
 
@@ -89,7 +99,9 @@ export default function BlindCallScreen() {
             playEarcon('end');
             hapticRef.current?.trigger(1);
         }
-    }, [status, error, speak]);
+        const haptic = hapticRef.current;
+        return () => haptic?.stopContinuous();
+    }, [status, error, speak, onStatusChange]);
 
     const isActive = status === 'calling' || status === 'connecting' || status === 'connected';
     const isFinished = status === 'ended' || status === 'no-answer' || status === 'error';
@@ -99,6 +111,21 @@ export default function BlindCallScreen() {
         if (isActive) requestWakeLock();
         else releaseWakeLock();
     }, [isActive, requestWakeLock, releaseWakeLock]);
+
+    const prepareForExit = useCallback(() => {
+        endCall(false);
+        hapticRef.current?.stopContinuous();
+        speechManager?.clearPausedSpeech();
+        speechManager?.cancel({ scope: 'blind:volunteer' });
+    }, [endCall]);
+
+    useImperativeHandle(ref, () => ({ prepareForExit }), [prepareForExit]);
+
+    useEffect(() => () => {
+        hapticRef.current?.stopContinuous();
+        speechManager?.clearPausedSpeech();
+        speechManager?.cancel({ scope: 'blind:volunteer' });
+    }, []);
 
     const statusLabel =
         status === 'calling' ? 'กำลังเรียกอาสาสมัคร...' :
@@ -110,12 +137,13 @@ export default function BlindCallScreen() {
         'พร้อมเรียกอาสาสมัคร';
 
     return (
-        <div {...accessibilitySpeechNavigation} className="flex flex-col h-screen bg-slate-900 text-white relative overflow-hidden font-sans">
+        <div {...accessibilitySpeechNavigation} className="flex h-full w-full flex-col bg-black text-white relative overflow-hidden font-sans">
             <HapticFeedback ref={hapticRef} />
 
             {/* Hidden media elements */}
             <video ref={localVideoRef} autoPlay muted playsInline className="sr-only" aria-hidden="true" />
             <audio ref={remoteAudioRef} autoPlay className="sr-only" aria-hidden="true" />
+
             {/* Capture Flash Overlay */}
             {captureState === 'flash-on' && (
                 <div className="absolute inset-0 z-[60] bg-white pointer-events-none transition-opacity duration-75" />
@@ -129,49 +157,37 @@ export default function BlindCallScreen() {
                 />
             )}
 
-            {/* Top bar */}
-            <div className="absolute top-0 inset-x-0 z-50 p-4 flex justify-start">
-                <Link
-                    href="/blind/select"
-                    onClick={() => isActive && endCall(false)}
-                    className="flex items-center gap-2 bg-black/50 hover:bg-black/70 text-white px-5 py-3 rounded-full backdrop-blur-md border border-white/20"
-                    aria-label="กลับหน้าหลัก"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
-                </Link>
-            </div>
-
             <main className="flex-1 flex flex-col items-center justify-center px-8 text-center">
                 {/* Visual status indicator */}
                 <div
-                    className={`w-36 h-36 rounded-full flex items-center justify-center mb-8 border-4 transition-all ${
-                        status === 'connected' ? 'bg-emerald-500/20 border-emerald-400' :
-                        isActive ? 'bg-amber-500/20 border-amber-400 animate-pulse' :
-                        status === 'no-answer' || status === 'error' ? 'bg-red-500/20 border-red-400' :
-                        'bg-sky-500/20 border-sky-400'
+                    className={`size-32 rounded-full flex items-center justify-center mb-8 transition-colors duration-500 ${
+                        status === 'connected' ? 'bg-[#34C759]/20 text-[#34C759]' :
+                        isActive ? 'bg-[#FF9F0A]/20 text-[#FF9F0A] animate-pulse' :
+                        status === 'no-answer' || status === 'error' ? 'bg-[#FF453A]/20 text-[#FF453A]' :
+                        'bg-[#0A84FF]/20 text-[#0A84FF]'
                     }`}
                     aria-hidden="true"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
                     </svg>
                 </div>
 
-                <h1 className="text-3xl font-black mb-3">{statusLabel}</h1>
+                <h1 className="text-[28px] font-bold tracking-tight mb-2 text-white">{statusLabel}</h1>
                 {!isActive && !isFinished && (
-                    <p className="text-lg text-slate-400 mb-2">
+                    <p className="text-[17px] text-[#8E8E93] leading-relaxed">
                         กดปุ่มด้านล่างเพื่อโทรขอความช่วยเหลือจากอาสาสมัคร
                     </p>
                 )}
             </main>
 
             {/* Bottom control */}
-            <div className="px-6 pb-12 pt-4">
+            <div className="px-4 pb-4 pt-2" role="group" aria-label="การควบคุมการโทร">
                 {!isActive ? (
                     <button
                         type="button"
-                        onClick={() => { reset(); startCall(); }}
-                        className="w-full py-7 rounded-3xl text-2xl font-black bg-sky-500 hover:bg-sky-400 active:scale-95 transition-all shadow-xl focus:outline-none focus:ring-4 focus:ring-sky-300"
+                        onClick={() => { onStatusChange?.('calling'); reset(); startCall(); }}
+                        className="w-full py-4 rounded-xl text-[17px] font-semibold bg-[#0A84FF] text-white active:bg-[#007AFF] transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#0A84FF]/40"
                         aria-label={isFinished ? 'เรียกอาสาสมัครอีกครั้ง' : 'เรียกอาสาสมัคร'}
                     >
                         {isFinished ? 'เรียกอีกครั้ง' : 'เรียกอาสาสมัคร'}
@@ -180,7 +196,7 @@ export default function BlindCallScreen() {
                     <button
                         type="button"
                         onClick={() => endCall(true)}
-                        className="w-full py-7 rounded-3xl text-2xl font-black bg-red-600 hover:bg-red-500 active:scale-95 transition-all shadow-xl focus:outline-none focus:ring-4 focus:ring-red-300"
+                        className="w-full py-4 rounded-xl text-[17px] font-semibold bg-[#FF453A] text-white active:bg-[#D70015] transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#FF453A]/40"
                         aria-label="วางสาย"
                     >
                         วางสาย
@@ -189,4 +205,4 @@ export default function BlindCallScreen() {
             </div>
         </div>
     );
-}
+});

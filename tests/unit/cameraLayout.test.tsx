@@ -13,13 +13,13 @@ vi.stubGlobal('ResizeObserver', class {
 
 describe('AI camera layout', () => {
     it('keeps the camera large before a description and collapses it after one arrives', () => {
-        expect(getCameraHeightClass(false)).toContain('52dvh');
-        expect(getCameraHeightClass(true)).toContain('20dvh');
+        expect(getCameraHeightClass(false)).toContain('52vh');
+        expect(getCameraHeightClass(true)).toContain('20vh');
         expect(getCameraHeightClass(false, true)).toContain('flex-1');
         expect(getCameraHeightClass(false, true)).toContain('h-full');
     });
 
-    it('uses an edge-to-edge square camera frame in assistant mode', () => {
+    it('uses a full-width dark camera frame in assistant mode', () => {
         const videoRef = createRef<HTMLVideoElement>();
         const cameraContainerRef = createRef<HTMLDivElement>();
         const { container } = render(
@@ -34,7 +34,7 @@ describe('AI camera layout', () => {
         );
 
         expect(container.firstElementChild?.className).toContain('w-full');
-        expect(container.firstElementChild?.className).toContain('rounded-none');
+        expect(container.firstElementChild?.className).toContain('bg-[#1C1C1E]');
     });
 
     it('fills the expanded assistant preview without side letterboxing', () => {
@@ -55,7 +55,7 @@ describe('AI camera layout', () => {
         expect(container.querySelector('video')?.className).toContain('object-cover');
     });
 
-    it('uses the same square camera frame for currency mode', () => {
+    it('uses the same dark camera frame for currency mode', () => {
         const videoRef = createRef<HTMLVideoElement>();
         const cameraContainerRef = createRef<HTMLDivElement>();
         const { container } = render(
@@ -69,7 +69,7 @@ describe('AI camera layout', () => {
             />,
         );
 
-        expect(container.firstElementChild?.className).toContain('rounded-none');
+        expect(container.firstElementChild?.className).toContain('bg-[#1C1C1E]');
     });
 
     it('shows the latest amount and detected denominations in bottom camera cards', () => {
@@ -94,7 +94,7 @@ describe('AI camera layout', () => {
 
         const summary = screen.getByLabelText('สรุปการตรวจเงิน');
         expect(summary.className).toContain('absolute');
-        expect(summary.className).toContain('bottom-3');
+        expect(summary.className).toContain('bottom-4');
         expect(screen.getByText('ตรวจพบล่าสุด')).toBeTruthy();
         expect(screen.getByText('ที่ตรวจจับได้')).toBeTruthy();
         expect(screen.getByText('฿100')).toBeTruthy();

@@ -17,7 +17,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
     useEffect(() => {
         if (latestMessage && latestMessage.from === 'volunteer') {
             const text = latestMessage.text;
-            
+
             // Play notification sound
             playBeep(600, 0.1);
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -31,6 +31,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                 speechManager?.speak(text, {
                     priority: Priority.HIGH,
                     owner: 'volunteer-message',
+                    scope: 'blind:volunteer',
                     rate: 1.0,
                 });
             }
@@ -59,15 +60,22 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                 recognition.onerror = (event: any) => {
                     console.error('Speech recognition error', event.error);
                     setIsListening(false);
+                    speechManager?.endListeningSession();
                 };
                 
                 recognition.onend = () => {
                     setIsListening(false);
+                    speechManager?.endListeningSession();
                 };
                 
                 recognitionRef.current = recognition;
             }
         }
+        return () => {
+            try { recognitionRef.current?.abort(); } catch {}
+            recognitionRef.current = null;
+            speechManager?.endListeningSession();
+        };
     }, [onSendMessage]);
 
     const startListening = () => {
@@ -79,9 +87,19 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                     navigator.vibrate([50, 50, 50]);
                 } catch {}
             }
+
+            const accepted = speechManager?.beginListeningSession({
+                abortRecognition: () => {
+                    try { recognitionRef.current?.abort(); } catch {}
+                },
+            }) ?? false;
+
+            if (!accepted) return;
+
             try {
                 recognitionRef.current.start();
             } catch (e) {
+                speechManager?.endListeningSession();
                 console.error(e);
             }
         }

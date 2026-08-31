@@ -1,14 +1,14 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Nyeta entry screen', () => {
-    test('routes each primary role to its dedicated entry point', async ({ page }) => {
+test.describe('Nyeta blind app', () => {
+    test('opens the blind shell with four bottom-navigation tabs', async ({ page }) => {
         await page.goto('/');
 
-        await expect(page.getByRole('heading', { name: 'Nyeta' })).toBeVisible();
-        await expect(page.getByRole('link', { name: 'Blind' })).toHaveAttribute('href', '/blind/select');
-        await expect(page.getByRole('link', { name: 'Volunteer' })).toHaveAttribute('href', '/volunteer');
-        const app = page.locator('main');
-        await expect(app.getByRole('link')).toHaveCount(2);
-        await expect(app.getByRole('button')).toHaveCount(0);
+        const tabs = page.getByRole('tablist', { name: 'เมนูหลักสำหรับผู้พิการทางสายตา' });
+        await expect(tabs).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'AI' })).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tab', { name: 'เงิน' })).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'อ่าน' })).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'อาสา' })).toBeVisible();
     });
 });

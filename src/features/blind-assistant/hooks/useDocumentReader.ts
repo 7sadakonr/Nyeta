@@ -45,6 +45,7 @@ export function useDocumentReader(
     const pageOverlayActiveRef = useRef<boolean>(false);
     const scanBusyRef = useRef<boolean>(false);
     const autoCaptureFiredRef = useRef<boolean>(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const consecutiveGuidanceRef = useRef<number>(0);
     const guidanceCandidateRef = useRef<string>('');
@@ -59,7 +60,7 @@ export function useDocumentReader(
         if (isProcessing || !enabled) return;
         if (!isReady || !videoRef.current) {
             feedback?.('error');
-            speechManager?.speak('กล้องกำลังเริ่มต้น กรุณารอสักครู่ครับ', {
+            speechManager?.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
@@ -73,7 +74,7 @@ export function useDocumentReader(
             const imageDataUrl = captureFrameFromVideo(videoRef.current, { maxDimension: 1024, quality: 0.75 });
             if (!imageDataUrl) {
                 feedback?.('error');
-                speechManager?.speak('ยังจับภาพเอกสารไม่ได้ กรุณาถือกล้องให้นิ่งแล้วลองใหม่ครับ', {
+                speechManager?.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
                     priority: Priority.CRITICAL,
                     category: SpeechCategory.CRITICAL,
                     owner: 'document-reader',
@@ -90,12 +91,16 @@ export function useDocumentReader(
             addLog?.('Capturing document...');
             setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
+            abortControllerRef.current?.abort();
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
             const text = await callGeminiVision({
                 mode: 'reader',
                 imageDataUrl,
                 userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
                 maxTokens: 1500,
                 temperature: 0,
+                signal: controller.signal,
             });
 
             setDocText(text);
@@ -112,17 +117,19 @@ export function useDocumentReader(
                 onEnd: () => setIsReading(false),
             });
         } catch (error: any) {
+            if (error?.name === 'AbortError') return;
             console.error('Read document error:', error);
             setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
-            speechManager?.speak('เกิดข้อผิดพลาดในการอ่านเอกสาร กรุณาลองใหม่อีกครั้งครับ', {
+            speechManager?.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'document-reader',
                 scope: 'blind:reader',
             });
         } finally {
+            abortControllerRef.current = null;
             setIsProcessing(false);
         }
     }, [isReady, isProcessing, enabled, videoRef, feedback, addLog]);
@@ -285,6 +292,8 @@ export function useDocumentReader(
     }, [docText, feedback]);
 
     const resetDocument = useCallback(() => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
         setDocText('');
         setIsReading(false);
         autoCaptureFiredRef.current = false;
@@ -300,6 +309,11 @@ export function useDocumentReader(
         setIsReading(false);
         feedback?.('success');
     }, [feedback]);
+
+    useEffect(() => () => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+    }, []);
 
     return {
         docText,

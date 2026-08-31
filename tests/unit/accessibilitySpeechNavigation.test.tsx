@@ -8,8 +8,8 @@ vi.mock('@/shared/accessibility/speechManager', () => ({ default: { interruptFor
 
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 
-function NavigationHarness({ onNavigation }: { onNavigation?: () => void }) {
-  const handlers = useAccessibilitySpeechNavigation(onNavigation);
+function NavigationHarness({ onNavigation, preserveSpeech = false }: { onNavigation?: () => void; preserveSpeech?: boolean }) {
+  const handlers = useAccessibilitySpeechNavigation(onNavigation, preserveSpeech ? 'preserve' : 'interrupt-realtime');
   return <div {...handlers}><button type="button"><svg data-testid="icon" /></button><div data-testid="static">ข้อความภาพ</div><div role="tab" tabIndex={0}>โหมดผู้ช่วย</div></div>;
 }
 
@@ -33,6 +33,17 @@ describe('accessibility speech navigation delegation', () => {
     fireEvent.focusIn(getByRole('tab'));
     expect(interruptForAccessibilityNavigation).toHaveBeenCalledTimes(2);
     expect(onNavigation).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves app speech on TTS-first surfaces while still reporting navigation', () => {
+    const onNavigation = vi.fn();
+    const { getByRole } = render(<NavigationHarness onNavigation={onNavigation} preserveSpeech />);
+
+    fireEvent.focusIn(getByRole('button'));
+    fireEvent.click(getByRole('button'));
+
+    expect(interruptForAccessibilityNavigation).not.toHaveBeenCalled();
+    expect(onNavigation).toHaveBeenCalledTimes(1);
   });
 });
 

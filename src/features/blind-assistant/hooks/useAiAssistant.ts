@@ -40,7 +40,7 @@ export function useAiAssistant(
         if (statusRef.current === 'thinking') return;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
-            speechManager?.speak('กล้องกำลังเริ่มทำงาน กรุณารอสักครู่แล้วกดใหม่ครับ', {
+            speechManager?.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
                 priority: Priority.CRITICAL,
                 category: SpeechCategory.CRITICAL,
                 owner: 'ai-system',
@@ -84,7 +84,7 @@ export function useAiAssistant(
                 addLog?.('Error: Camera frame not ready');
                 setStatus('idle');
                 feedback?.('error');
-                speechManager?.speak('กล้องยังไม่พร้อม กรุณาลองใหม่อีกครั้ง', {
+                speechManager?.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', {
                     priority: Priority.CRITICAL,
                     category: SpeechCategory.CRITICAL,
                     owner: 'ai-system',
@@ -130,7 +130,7 @@ export function useAiAssistant(
 
             if (!response.ok) {
                 if (response.status === 429) {
-                    const msg = 'ตอนนี้ AI ทำงานหนักเกินโควต้าฟรี กรุณารอสักครู่นะครับ';
+                    const msg = 'ระบบยุ่งมาก กรุณารอ 30 วินาทีแล้วลองใหม่ครับ';
                     setMessages(current => [...current, { role: 'ai', content: msg }]);
                     feedback?.('error');
                     setStatus('idle');
@@ -141,7 +141,7 @@ export function useAiAssistant(
 
             const data = await response.json();
             if (data.error) {
-                const msg = `ขอโทษครับ เกิดข้อผิดพลาด: ${data.error.message}`;
+                const msg = 'เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ';
                 setMessages(current => [...current, { role: 'ai', content: msg }]);
                 feedback?.('error');
             } else {
@@ -150,7 +150,7 @@ export function useAiAssistant(
                     setMessages(current => [...current, { role: 'ai', content: replyText }]);
                     feedback?.('success');
                 } else {
-                    const msg = 'ขอโทษครับ AI ไม่ตอบกลับ ลองใหม่อีกทีนะครับ';
+                    const msg = 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ';
                     setMessages(current => [...current, { role: 'ai', content: msg }]);
                     feedback?.('error');
                 }
@@ -158,14 +158,14 @@ export function useAiAssistant(
         } catch (error: any) {
             if (error.name === 'AbortError') {
                 if (timedOut) {
-                    const msg = 'การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้งครับ';
+                    const msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ';
                     setMessages(current => [...current, { role: 'ai', content: msg }]);
                     feedback?.('error');
                 }
                 return;
             }
             console.error('Capture Error:', error);
-            const msg = 'เกิดข้อผิดพลาดในการเชื่อมต่อครับ';
+            const msg = 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่ครับ';
             setMessages(current => [...current, { role: 'ai', content: msg }]);
             feedback?.('error');
         } finally {

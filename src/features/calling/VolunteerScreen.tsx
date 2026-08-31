@@ -123,9 +123,9 @@ export default function VolunteerScreen() {
     }, [inCall]);
 
     return (
-        <div className="flex flex-col min-h-screen bg-slate-950 text-white font-sans">
+        <div className="flex min-h-dvh flex-col bg-slate-950 text-white font-sans">
             {/* Header */}
-            <header className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+            <header className="flex items-center justify-between border-b border-slate-800 px-5 pb-4 pt-[calc(env(safe-area-inset-top)+1rem)]">
                 <Link href="/" className="flex items-center gap-2 text-slate-300 hover:text-white" aria-label="กลับหน้าหลัก">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
                     <span className="font-semibold">อาสาสมัคร</span>
@@ -244,7 +244,7 @@ export default function VolunteerScreen() {
             )}
 
             {/* Bottom control bar */}
-            <div className="px-5 pb-8 pt-3 border-t border-slate-800">
+            <div className="border-t border-slate-800 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
                 {inCall ? (
                     <button
                         type="button"

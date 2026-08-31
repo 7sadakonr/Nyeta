@@ -42,6 +42,8 @@ export function useBlindHelp(): UseBlindHelpResult {
     const ringTimerRef = useRef<NodeJS.Timeout | null>(null);
     const candidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
     const statusRef = useRef<CallStatus>('idle');
+    const mountedRef = useRef(false);
+    const operationIdRef = useRef(0);
 
     const setStatusSafe = useCallback((next: CallStatus) => {
         statusRef.current = next;
@@ -49,6 +51,7 @@ export function useBlindHelp(): UseBlindHelpResult {
     }, []);
 
     const cleanup = useCallback((nextStatus?: CallStatus) => {
+        operationIdRef.current += 1;
         if (ringTimerRef.current) {
             clearTimeout(ringTimerRef.current);
             ringTimerRef.current = null;
@@ -150,6 +153,8 @@ export function useBlindHelp(): UseBlindHelpResult {
 
     const startCall = useCallback(async () => {
         if (['calling', 'connecting', 'connected'].includes(statusRef.current)) return;
+        const operationId = operationIdRef.current + 1;
+        operationIdRef.current = operationId;
         setError(null);
         setStatusSafe('calling');
 
@@ -163,6 +168,10 @@ export function useBlindHelp(): UseBlindHelpResult {
             console.error('getUserMedia error', err);
             setError('ไม่สามารถเข้าถึงกล้องหรือไมโครโฟนได้');
             setStatusSafe('error');
+            return;
+        }
+        if (!mountedRef.current || operationId !== operationIdRef.current) {
+            stream.getTracks().forEach((track) => track.stop());
             return;
         }
         localStreamRef.current = stream;
@@ -179,14 +188,18 @@ export function useBlindHelp(): UseBlindHelpResult {
         } catch (err: any) {
             console.error('Session auth error:', err.message);
             setError('ไม่สามารถสร้างเซสชันการโทรได้');
-            setStatusSafe('error');
+            cleanup('error');
+            return;
+        }
+        if (!mountedRef.current || operationId !== operationIdRef.current) {
+            stream.getTracks().forEach((track) => track.stop());
             return;
         }
 
         const callId = session?.callId;
         if (!callId) {
             setError('ไม่สามารถรับรหัสการโทรได้');
-            setStatusSafe('error');
+            cleanup('error');
             return;
         }
 
@@ -218,12 +231,22 @@ export function useBlindHelp(): UseBlindHelpResult {
                 }
             },
         });
+        if (!mountedRef.current || operationId !== operationIdRef.current) {
+            closePeerConnection(pc);
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+        }
         pcRef.current = pc;
 
         const channel = pc.createDataChannel('nyeta-data', { ordered: true });
         setDataChannel(channel);
 
         const pusherChannel = subscribe(callChannel(callId));
+        if (!mountedRef.current || operationId !== operationIdRef.current) {
+            closePeerConnection(pc);
+            stream.getTracks().forEach((track) => track.stop());
+            return;
+        }
         channelRef.current = pusherChannel;
         if (pusherChannel) {
             pusherChannel.bind(EVENTS.CALL_ACCEPTED, handleAccepted);
@@ -236,7 +259,10 @@ export function useBlindHelp(): UseBlindHelpResult {
 
         await sendEvent(VOLUNTEERS_CHANNEL, EVENTS.INCOMING_CALL, { callId }, sessionTokenRef.current || undefined);
 
+        if (!mountedRef.current || operationId !== operationIdRef.current) return;
+
         ringTimerRef.current = setTimeout(() => {
+            if (!mountedRef.current || operationId !== operationIdRef.current) return;
             if (!acceptedVolunteerRef.current) {
                 if (callIdRef.current) {
                     sendEvent(VOLUNTEERS_CHANNEL, EVENTS.CALL_CANCELLED, { callId: callIdRef.current }, sessionTokenRef.current || undefined);
@@ -253,7 +279,10 @@ export function useBlindHelp(): UseBlindHelpResult {
     }, [setStatusSafe]);
 
     useEffect(() => {
+        mountedRef.current = true;
         return () => {
+            mountedRef.current = false;
+            operationIdRef.current += 1;
             const id = callIdRef.current;
             const token = sessionTokenRef.current;
             if (id) {

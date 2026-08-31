@@ -109,7 +109,7 @@ export function useSpeechInput(
         const recognition = recognitionRef.current;
         if (!recognition) {
             onFeedbackRef.current?.('error');
-            speechManager?.speak('เบราว์เซอร์นี้ไม่รองรับการสั่งงานด้วยเสียง', {
+            speechManager?.speak('เบราว์เซอร์นี้ไม่รองรับไมค์ กรุณาใช้ Chrome หรือ Safari ครับ', {
                 priority: Priority.CRITICAL,
                 owner: 'speech-input',
                 dedupe: true,

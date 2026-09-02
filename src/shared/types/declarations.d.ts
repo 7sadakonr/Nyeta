@@ -7,6 +7,7 @@ declare global {
     webkitAudioContext?: typeof AudioContext;
     SpeechRecognition?: any;
     webkitSpeechRecognition?: any;
+    onbeforeinstallprompt?: ((event: Event) => void) | null;
   }
 }
 

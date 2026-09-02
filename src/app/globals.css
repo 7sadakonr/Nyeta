@@ -18,6 +18,20 @@
   --nyeta-volunteer-accent: #fbbf24;
   --background: var(--nyeta-bg);
   --foreground: var(--nyeta-text);
+
+  /* Dark blind-assistant surface tokens */
+  --blind-bg: #0A0F1A;
+  --blind-surface: rgba(255, 255, 255, 0.06);
+  --blind-surface-hover: rgba(255, 255, 255, 0.10);
+  --blind-border: rgba(255, 255, 255, 0.10);
+  --blind-border-strong: rgba(255, 255, 255, 0.18);
+  --blind-text: rgba(255, 255, 255, 0.90);
+  --blind-text-muted: rgba(255, 255, 255, 0.50);
+  --blind-accent: #3B82F6;
+  --blind-accent-glow: rgba(59, 130, 246, 0.25);
+  --blind-success: #22C55E;
+  --blind-danger: #EF4444;
+  --blind-danger-surface: rgba(239, 68, 68, 0.12);
 }
 
 @theme inline {
@@ -56,52 +70,6 @@ body {
 .nyeta-surface :focus-visible {
   outline: 3px solid var(--nyeta-blue);
   outline-offset: 3px;
-}
-
-/* Blind-assistant screen is intentionally light-only. Camera content stays dark
-   inside CameraView so live video overlays remain legible. */
-[data-testid="blind-assistant-shell"] {
-  background: var(--nyeta-bg) !important;
-  color: var(--nyeta-text) !important;
-}
-
-[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] {
-  margin: 0 1rem 1rem;
-  border: 1px solid var(--nyeta-border);
-  border-radius: 1.5rem;
-  background: #ffffff !important;
-  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
-}
-
-[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] h2,
-[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] [class*="text-[#6FE8FF]"] {
-  color: var(--nyeta-blue) !important;
-}
-
-[data-testid="blind-assistant-shell"] [aria-label="เนื้อหาเอกสาร"] > p {
-  color: var(--nyeta-text) !important;
-}
-
-[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] {
-  border: 1px solid var(--nyeta-border);
-  background: #ffffff !important;
-  color: var(--nyeta-text) !important;
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16) !important;
-}
-
-[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] h2,
-[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] > p {
-  color: var(--nyeta-blue) !important;
-}
-
-[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] ul {
-  color: var(--nyeta-text) !important;
-}
-
-[data-testid="blind-assistant-shell"] [role="dialog"][aria-labelledby="currency-details-title"] button {
-  border-color: var(--nyeta-border) !important;
-  background: #f1f5f9 !important;
-  color: var(--nyeta-text) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

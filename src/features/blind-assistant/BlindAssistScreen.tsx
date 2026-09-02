@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { forwardRef, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
 // Custom Hooks
@@ -11,9 +11,9 @@ import { useObjectDetector } from '@/features/blind-assistant/hooks/useObjectDet
 import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
-import { useSpeechSpeaking } from '@/features/blind-assistant/hooks/useSpeechStatus';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { SpeechCategory } from '@/shared/types/speech';
+import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
+import { speechController } from '@/shared/accessibility/speechController';
+
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
@@ -22,7 +22,6 @@ import { isImportantTargetingEvent } from '@/features/blind-assistant/client/obj
 // UI Components
 import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
 import CameraView from '@/features/blind-assistant/components/CameraView';
-import ModeSwitcher from '@/features/blind-assistant/components/ModeSwitcher';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
@@ -30,37 +29,26 @@ export function getCameraHeightClass(showCapturedText: boolean, expandCameraPrev
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
 
     return showCapturedText
-        ? 'h-[clamp(7rem,20dvh,14rem)] min-h-0'
-        : 'h-[clamp(14rem,52dvh,38rem)] min-h-0';
+        ? 'h-[clamp(7rem,20vh,14rem)] min-h-0'
+        : 'h-[clamp(14rem,52vh,38rem)] min-h-0';
 }
 
-export default function BlindAssistScreen() {
-    // Mode State
-    const [mode, setMode] = useState<AssistantMode>(() => {
-        if (typeof window !== 'undefined') {
-            const savedMode = localStorage.getItem('nyeta_blind_mode') as AssistantMode | null;
-            if (savedMode && ['assistant', 'currency', 'reader'].includes(savedMode)) {
-                return savedMode;
-            }
-        }
-        return 'assistant';
-    });
+export interface BlindAssistHandle {
+    prepareForCall: () => void;
+}
+
+export interface BlindAssistScreenProps {
+    mode?: AssistantMode;
+    presentation?: 'standalone' | 'embedded';
+    audioReady?: boolean;
+}
+
+export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function BlindAssistScreen({ mode = 'assistant', presentation = 'standalone', audioReady = false }, ref) {
     const [, setLogs] = useState<string[]>([]);
 
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
-
-    const activateBlindAudio = useCallback(() => {
-        speechManager?.activateFromUserGesture('ผู้ช่วยพร้อม', {
-            priority: Priority.ACTION,
-            category: SpeechCategory.TASK,
-            owner: 'blind-entry',
-            scope: 'blind:shared',
-            rate: 1.1,
-            dedupe: 'blind-entry',
-        });
-    }, []);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -74,15 +62,26 @@ export default function BlindAssistScreen() {
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
+    
+        const hasAnnouncedReadyRef = useRef(false);
+
+    useEffect(() => {
+        if (aiReady && !hasAnnouncedReadyRef.current) {
+            hasAnnouncedReadyRef.current = true;
+            let tabName = 'AI ผู้ช่วย พร้อม';
+            if (mode === 'reader') tabName = 'โหมดอ่านเอกสาร พร้อม';
+            else if (mode === 'currency') tabName = 'โหมดสแกนธนบัตร พร้อม';
+            
+            speechController.speak(tabName, { channel: 'status' });
+        }
+    }, [aiReady, mode]);
+
     // Announce camera access error if any
+
     useEffect(() => {
         if (cameraError) {
-            speechManager?.speak('ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์ครับ', {
-                priority: Priority.CRITICAL,
-                category: SpeechCategory.CRITICAL,
-                owner: 'camera-error',
-                scope: 'blind:shared',
-                rate: 1.1,
+            speechController.speak('ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้องครับ', {
+                channel: 'critical'
             });
         }
     }, [cameraError]);
@@ -148,39 +147,29 @@ export default function BlindAssistScreen() {
         const phaseMatches = pending?.important
             ? (targetingEvent?.type === 'target-lost' ? targetPhase === 'searching' : targetPhase === 'locked')
             : pending?.candidate ? targetPhase === 'candidate' : targetPhase === 'locked';
+        
         if (mode !== 'assistant' || !pending || !eventIsCurrent || !phaseMatches) {
             if (!phaseMatches) pendingObjectAnnouncementRef.current = null;
             return;
         }
 
-        const didSpeak = speechManager?.speak(pending.text, {
-            priority: pending.important ? Priority.RESULT : Priority.GUIDANCE,
-            category: pending.important ? SpeechCategory.TASK : SpeechCategory.REALTIME,
-            owner: 'object-detector',
-            scope: 'blind:assistant',
-            realtimeKey: 'object-guidance',
+        speechController.speak(pending.text, {
+            channel: pending.important ? 'result' : 'realtime',
+            key: 'object-guidance',
             rate: 1.2,
-            interrupt: pending.important,
-            dedupe: true,
-            cooldown: pending.important ? 0 : 1200,
-        }) ?? false;
-        if (didSpeak) {
-
-            if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
-            return;
+            dedupeMs: pending.important ? 0 : 1200,
+        });
+        
+        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
+            pendingObjectAnnouncementRef.current = null;
         }
-
-        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) pendingObjectAnnouncementRef.current = null;
     }, [mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
-        speechManager?.clearPausedSpeech();
-        speechManager?.stopByOwner('object-detector');
+        speechController.stop();
     }, []);
 
-    // The blind surface is TTS-first: assistive-tech focus reads controls, but
-    // does not cancel task/realtime audio while the user navigates between them.
     const accessibilityNavHandlers = useAccessibilitySpeechNavigation();
 
     // B. AI Assistant
@@ -191,9 +180,9 @@ export default function BlindAssistScreen() {
         askTextOnly,
         clearMessages,
         stopSpeaking
-    } = useAiAssistant(videoRef, aiReady, feedback, addLog);
+    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
 
-    const isSpeaking = useSpeechSpeaking('ai-response');
+    const { isSpeaking } = useSpeechStatus();
 
     // C. Speech Input
     const {
@@ -224,7 +213,7 @@ export default function BlindAssistScreen() {
         isBlocked: currencyBlocked,
         replayCurrencyDetails,
         clearTotal
-    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, feedback, addLog);
+    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog);
 
     // E. Document Reader
     const {
@@ -239,46 +228,46 @@ export default function BlindAssistScreen() {
         replayDocument,
         stopReading,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, aiStatus, feedback, addLog);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog);
 
     // 3. Mode Switcher
-    const switchMode = useCallback((newMode: AssistantMode) => {
-        if (newMode === mode) return;
-
+    const previousModeRef = useRef<AssistantMode>(mode);
+    useEffect(() => {
+        if (previousModeRef.current === mode) return;
         cancelListening();
-        speechManager?.clearPausedSpeech();
-        speechManager?.cancel({ scope: `blind:${mode}` });
-        speechManager?.interruptForAccessibilityNavigation();
-        hapticRef.current?.trigger(1);
-        setMode(newMode);
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('nyeta_blind_mode', newMode);
-        }
-        // Reset state
-        if (newMode !== 'reader') resetDocument();
-        if (newMode !== 'assistant') setVoiceTranscript('');
+        speechController.stop();
+        if (mode !== 'reader') resetDocument();
+        if (mode !== 'assistant') setVoiceTranscript('');
+        previousModeRef.current = mode;
     }, [cancelListening, mode, resetDocument, setVoiceTranscript]);
+
+    const prepareForCall = useCallback(() => {
+        cancelListening();
+        stopSpeaking();
+        stopReading();
+        resetDocument();
+        stopCamera();
+        speechController.stop();
+    }, [cancelListening, resetDocument, stopCamera, stopReading, stopSpeaking]);
+
+    useImperativeHandle(ref, () => ({ prepareForCall }), [prepareForCall]);
 
     // Auto-speak AI responses for blind users
     const prevMessagesLenRef = useRef<number>(0);
     useEffect(() => {
         const hasNewMessage = aiMessages.length > prevMessagesLenRef.current;
+        if (!hasNewMessage) return;
+        if (mode !== 'assistant') {
+            prevMessagesLenRef.current = aiMessages.length;
+            return;
+        }
+        
         prevMessagesLenRef.current = aiMessages.length;
-        if (mode !== 'assistant' || !hasNewMessage) return;
         const lastMsg = aiMessages[aiMessages.length - 1];
         if (lastMsg?.role === 'ai' && lastMsg.content) {
-            speechManager?.clearPausedSpeech();
-            speechManager?.speak(lastMsg.content, {
-                priority: Priority.RESULT,
-                category: SpeechCategory.TASK,
-                owner: 'ai-response',
-                scope: 'blind:assistant',
+            speechController.speak(lastMsg.content, {
+                channel: 'result',
                 rate: 1.0,
-                chunk: true,
-                interrupt: true,
-                exclusive: true,
-                dedupe: true,
-                navigationBehavior: 'pause-resume',
             });
         }
     }, [aiMessages, mode]);
@@ -297,6 +286,7 @@ export default function BlindAssistScreen() {
                 : mode === 'reader' && readerAligned
                     ? 'ตรงแล้ว พร้อมถ่าย'
                     : mode === 'reader' && readerGuidance
+
                         ? 'จัดกล้อง...'
                         : aiStatus === 'thinking'
                             ? 'กำลังคิด...'
@@ -313,10 +303,8 @@ export default function BlindAssistScreen() {
         <div
             data-testid="blind-assistant-shell"
             {...accessibilityNavHandlers}
-            onClick={activateBlindAudio}
-            onTouchStart={activateBlindAudio}
             onContextMenu={(event) => event.preventDefault()}
-            className="nyeta-surface flex h-dvh min-h-dvh flex-col overflow-hidden bg-[#08111F] text-[#F8FAFC]"
+            className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-black text-white"
         >
             <HapticFeedback ref={hapticRef} />
 
@@ -330,15 +318,9 @@ export default function BlindAssistScreen() {
             />
 
             <div className="flex min-h-0 flex-1 flex-col">
-
-                {cameraError && <p className="sr-only">ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตการใช้งานกล้องในเบราว์เซอร์</p>}
-
-                <ModeSwitcher mode={mode} switchMode={switchMode} />
+                {cameraError && <p className="sr-only">ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้อง</p>}
 
                 <section
-                    id={`blind-mode-${mode}-panel`}
-                    role="tabpanel"
-                    aria-labelledby={`blind-mode-${mode}-tab`}
                     className={expandCameraPreview
                         ? 'flex min-h-0 flex-1 overflow-hidden'
                         : 'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2'}
@@ -373,44 +355,46 @@ export default function BlindAssistScreen() {
                         {mode === 'assistant' && showCapturedText && <ChatHistory aiMessages={aiMessages} />}
 
                         {mode === 'reader' && showCapturedText && (
-                            <section className="bg-[#0F1B2D] px-5 py-6" aria-label="เนื้อหาเอกสาร">
-                                <h2 className="text-lg font-semibold text-[#6FE8FF]">เอกสารพร้อมแล้ว</h2>
-                                <p className="mt-3 whitespace-pre-wrap text-lg leading-8 text-[#F8FAFC]">{docText}</p>
-                                {isReading && <p className="mt-4 text-sm font-medium text-[#6FE8FF]">กำลังอ่านออกเสียง...</p>}
+                            <section className="mx-4 mt-4 rounded-xl bg-[#1C1C1E] px-5 py-6" aria-label="เนื้อหาเอกสาร">
+                                <h2 className="text-[17px] font-semibold text-white">เอกสารพร้อมแล้ว</h2>
+                                <p className="mt-3 whitespace-pre-wrap text-[17px] leading-relaxed text-[#EBEBF5]">{docText}</p>
+                                {isReading && <p className="mt-4 text-[13px] font-medium text-[#0A84FF]">กำลังอ่านออกเสียง...</p>}
                             </section>
                         )}
                     </div>
                 </section>
 
-                <ControlBar
-                    mode={mode}
-                    aiReady={aiReady}
-                    aiStatus={aiStatus}
-                    isSpeaking={isSpeaking}
-                    isListening={isListening}
-                    docText={docText}
-                    isReading={isReading}
-                    isProcessingDoc={isDocProcessing}
-                    currencyResult={currencyResult}
-                    currencyScanning={currencyScanning}
-                    currencyMonitoring={currencyMonitoring}
-                    totalAmount={totalAmount}
-                    hasAssistantMessages={aiMessages.length > 0}
-                    isBlocked={currencyBlocked}
-                    readerAligned={readerAligned}
-                    onCapture={captureAndAsk}
-                    onStopSpeaking={stopSpeaking}
-                    onStartListening={toggleListening}
-                    onStopListening={toggleListening}
-                    onCurrencyCapture={captureCurrency}
-                    onReplayCurrencyDetails={replayCurrencyDetails}
-                    onClearTotal={clearTotal}
-                    onClearMessages={clearMessages}
-                    onReadDocument={readDocument}
-                    onReplayDocument={replayDocument}
-                    onStopReading={stopReading}
-                />
+                <div className="shrink-0 bg-black pt-2">
+                    <ControlBar
+                        mode={mode}
+                        aiReady={aiReady}
+                        aiStatus={aiStatus}
+                        isSpeaking={isSpeaking}
+                        isListening={isListening}
+                        docText={docText}
+                        isReading={isReading}
+                        isProcessingDoc={isDocProcessing}
+                        currencyResult={currencyResult}
+                        currencyScanning={currencyScanning}
+                        currencyMonitoring={currencyMonitoring}
+                        totalAmount={totalAmount}
+                        hasAssistantMessages={aiMessages.length > 0}
+                        isBlocked={currencyBlocked}
+                        readerAligned={readerAligned}
+                        onCapture={captureAndAsk}
+                        onStopSpeaking={stopSpeaking}
+                        onStartListening={toggleListening}
+                        onStopListening={toggleListening}
+                        onCurrencyCapture={captureCurrency}
+                        onReplayCurrencyDetails={replayCurrencyDetails}
+                        onClearTotal={clearTotal}
+                        onClearMessages={clearMessages}
+                        onReadDocument={readDocument}
+                        onReplayDocument={replayDocument}
+                        onStopReading={stopReading}
+                    />
+                </div>
             </div>
         </div>
     );
-}
+});

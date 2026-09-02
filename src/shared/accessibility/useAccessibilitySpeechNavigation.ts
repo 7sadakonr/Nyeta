@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import speechManager from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 
 export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
   'a[href]',
@@ -33,13 +33,14 @@ export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
 const SAME_CONTROL_DEDUP_MS = 250;
 
 type NavigationCallback = () => void;
+
 /**
  * Coordinates app TTS with keyboard, touch, and assistive-technology navigation.
  * Browsers do not expose VoiceOver speech state, so this deliberately reacts only
  * to real interaction/focus events and never attempts VoiceOver detection.
  */
 export function useAccessibilitySpeechNavigation(
-  onNavigation?: NavigationCallback,
+  onNavigation?: NavigationCallback
 ) {
   const lastInteractionRef = useRef<{ element: Element; at: number } | null>(null);
 
@@ -61,7 +62,9 @@ export function useAccessibilitySpeechNavigation(
     if (previous?.element === element && now - previous.at < SAME_CONTROL_DEDUP_MS) return;
 
     lastInteractionRef.current = { element, at: now };
-    speechManager?.interruptForAccessibilityNavigation();
+    
+    speechController.notifyUserNavigation();
+    
     onNavigation?.();
   }, [onNavigation]);
 

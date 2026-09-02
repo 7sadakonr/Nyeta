@@ -3,15 +3,12 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { beginListeningSession, endListeningSession, speak } = vi.hoisted(() => ({
-  beginListeningSession: vi.fn(() => true),
-  endListeningSession: vi.fn(),
-  speak: vi.fn(),
+const { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio } = vi.hoisted(() => ({
+    speak: vi.fn(), stop: vi.fn(), beginListening: vi.fn(() => true), endListening: vi.fn(), notifyUserNavigation: vi.fn(), getSnapshot: vi.fn(), unlockAudio: vi.fn()
 }));
 
-vi.mock('@/shared/accessibility/speechManager', () => ({
-  default: { beginListeningSession, endListeningSession, speak },
-  Priority: { CRITICAL: 4 },
+vi.mock('@/shared/accessibility/speechController', () => ({
+    speechController: { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio }
 }));
 
 import { useSpeechInput } from '@/features/blind-assistant/hooks/useSpeechInput';
@@ -35,8 +32,8 @@ class MockRecognition {
 describe('useSpeechInput', () => {
   beforeEach(() => {
     vi.stubGlobal('SpeechRecognition', MockRecognition);
-    beginListeningSession.mockClear();
-    endListeningSession.mockClear();
+    beginListening.mockClear();
+    endListening.mockClear();
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -47,7 +44,7 @@ describe('useSpeechInput', () => {
     const recognition = MockRecognition.latest!;
 
     act(() => result.current.toggleListening());
-    expect(beginListeningSession).toHaveBeenCalledOnce();
+    expect(beginListening).toHaveBeenCalledOnce();
     expect(recognition.start).toHaveBeenCalledOnce();
 
     act(() => recognition.onresult?.({ results: [{ 0: { transcript: 'ถามหน่อย' }, isFinal: true }] }));
@@ -57,7 +54,7 @@ describe('useSpeechInput', () => {
     expect(recognition.stop).toHaveBeenCalledOnce();
 
     act(() => recognition.onend?.());
-    expect(endListeningSession).toHaveBeenCalledOnce();
+    expect(endListening).toHaveBeenCalledOnce();
     expect(onResult).toHaveBeenCalledExactlyOnceWith('ถามหน่อย');
   });
 });

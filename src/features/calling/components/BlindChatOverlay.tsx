@@ -1,23 +1,27 @@
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 import { playBeep } from '@/shared/accessibility/audio';
 
 export interface BlindChatOverlayProps {
     latestMessage: { from?: string; text?: string } | null;
     onSendMessage: (text: string) => void;
+    audioReady?: boolean;
 }
 
-export default function BlindChatOverlay({ latestMessage, onSendMessage }: BlindChatOverlayProps) {
+export default function BlindChatOverlay({ latestMessage, onSendMessage, audioReady = false }: BlindChatOverlayProps) {
     const [isListening, setIsListening] = useState<boolean>(false);
     const recognitionRef = useRef<any>(null);
+    const lastHandledMessageRef = useRef<{ from?: string; text?: string } | null>(null);
 
     // TTS: Speak the incoming message
     useEffect(() => {
+        if (latestMessage === lastHandledMessageRef.current) return;
+        lastHandledMessageRef.current = latestMessage;
         if (latestMessage && latestMessage.from === 'volunteer') {
             const text = latestMessage.text;
-            
+
             // Play notification sound
             playBeep(600, 0.1);
             if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
@@ -27,15 +31,13 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
             }
 
             // Speak the text
-            if (text) {
-                speechManager?.speak(text, {
-                    priority: Priority.HIGH,
-                    owner: 'volunteer-message',
-                    rate: 1.0,
+            if (audioReady && text) {
+                speechController.speak(text, {
+                    channel: 'result',
                 });
             }
         }
-    }, [latestMessage]);
+    }, [audioReady, latestMessage]);
 
     // Setup Speech Recognition
     useEffect(() => {
@@ -59,15 +61,22 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                 recognition.onerror = (event: any) => {
                     console.error('Speech recognition error', event.error);
                     setIsListening(false);
+                    speechController.endListening();
                 };
                 
                 recognition.onend = () => {
                     setIsListening(false);
+                    speechController.endListening();
                 };
                 
                 recognitionRef.current = recognition;
             }
         }
+        return () => {
+            try { recognitionRef.current?.abort(); } catch {}
+            recognitionRef.current = null;
+            speechController.endListening();
+        };
     }, [onSendMessage]);
 
     const startListening = () => {
@@ -79,9 +88,15 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage }: Blind
                     navigator.vibrate([50, 50, 50]);
                 } catch {}
             }
+
+            speechController.beginListening(); const accepted = true;
+
+            if (!accepted) return;
+
             try {
                 recognitionRef.current.start();
             } catch (e) {
+                speechController.endListening();
                 console.error(e);
             }
         }

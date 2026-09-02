@@ -39,10 +39,10 @@ interface ActionButtonProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const ActionButton = React.forwardRef<HTMLDivElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, className = '', children, onClick, ...props }, ref) {
     const toneClass = tone === 'primary'
-        ? 'bg-[#2563EB] text-white shadow-[0_10px_24px_rgba(37,99,235,0.22)] hover:bg-[#1D4ED8]'
+        ? 'bg-[#0A84FF] text-white active:bg-[#0070DF]'
         : tone === 'danger'
-            ? 'border border-[#FECACA] bg-[#FFF1F2] text-[#B91C1C] hover:bg-[#FFE4E6]'
-            : 'border border-[#DBE7F5] bg-[#F8FBFF] text-[#0F172A] hover:bg-[#EFF6FF]';
+            ? 'bg-[#3A1418] text-[#FF453A] active:bg-[#4A1A1F]'
+            : 'bg-[#2C2C2E] text-white active:bg-[#3A3A3C]';
 
     const disabled = props.disabled;
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -57,7 +57,7 @@ const ActionButton = React.forwardRef<HTMLDivElement, ActionButtonProps>(functio
             ref={ref}
             role="button"
             tabIndex={disabled ? -1 : 0}
-            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-14 items-center justify-center rounded-none px-4 text-[15px] font-bold transition-[background-color,transform,box-shadow] cursor-pointer active:scale-[0.985] ${disabled ? 'cursor-not-allowed opacity-45' : ''} ${toneClass} ${className}`}
+            className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-[3.5rem] items-center justify-center rounded-xl px-4 text-[17px] font-semibold transition-colors cursor-pointer ${disabled ? 'cursor-not-allowed opacity-40' : ''} ${toneClass} ${className}`}
             onClick={disabled ? undefined : onClick}
             onKeyDown={handleKeyDown}
             {...props}
@@ -113,17 +113,17 @@ export default function ControlBar({
     }, [canCapture, mode]);
 
     return (
-        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-[#E6EEF8] bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.05)]" role="group" aria-label="ปุ่มควบคุม">
+        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-white/[0.15] bg-black/80 px-4 pb-4 pt-3 backdrop-blur-2xl" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
                     {isListening ? (
-                        <ActionButton wide tone="danger" className="rounded-none" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
+                        <ActionButton wide tone="danger" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
                     ) : (
-                        <ActionButton ref={describeSceneRef} wide tone="primary" className="rounded-none" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
+                        <ActionButton ref={describeSceneRef} wide tone="primary" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
                     )}
                     <div className="grid grid-cols-3 gap-3">
-                        <ActionButton className="rounded-none" onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
-                        <ActionButton tone="danger" className="rounded-none" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
+                        <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
                         <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
                     </div>
                 </div>

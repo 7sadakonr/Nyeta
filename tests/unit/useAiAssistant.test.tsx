@@ -8,9 +8,12 @@ const { captureFrameFromVideo, extractGeminiText } = vi.hoisted(() => ({
   extractGeminiText: vi.fn(() => 'คำตอบจาก AI'),
 }));
 
-vi.mock('@/shared/accessibility/speechManager', () => ({
-  default: { speak: vi.fn(), cancel: vi.fn() },
-  Priority: { CRITICAL: 4 },
+const { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio } = vi.hoisted(() => ({
+    speak: vi.fn(), stop: vi.fn(), beginListening: vi.fn(), endListening: vi.fn(), notifyUserNavigation: vi.fn(), getSnapshot: vi.fn(), unlockAudio: vi.fn()
+}));
+
+vi.mock('@/shared/accessibility/speechController', () => ({
+    speechController: { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio }
 }));
 
 vi.mock('@/features/blind-assistant/client/geminiVision', () => ({

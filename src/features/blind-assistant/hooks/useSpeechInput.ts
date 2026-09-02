@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
+import { speechController } from '@/shared/accessibility/speechController';
 
 export type SpeechInputState = 'idle' | 'starting' | 'listening' | 'stopping';
 
@@ -48,7 +48,7 @@ export function useSpeechInput(
     const finishSession = useCallback(() => {
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
-        speechManager?.endListeningSession();
+        speechController.endListening();
         setState('idle');
         const finalTranscript = finalTranscriptRef.current.trim();
         const shouldSubmit = submitOnEndRef.current;
@@ -109,21 +109,14 @@ export function useSpeechInput(
         const recognition = recognitionRef.current;
         if (!recognition) {
             onFeedbackRef.current?.('error');
-            speechManager?.speak('เบราว์เซอร์นี้ไม่รองรับการสั่งงานด้วยเสียง', {
-                priority: Priority.CRITICAL,
-                owner: 'speech-input',
-                dedupe: true,
+            speechController.speak('เบราว์เซอร์นี้ไม่รองรับไมค์ กรุณาใช้ Chrome หรือ Safari ครับ', {
+                channel: 'critical',
             });
             return;
         }
         if (sessionActiveRef.current || state !== 'idle') return;
-        const accepted = speechManager?.beginListeningSession({
-            abortRecognition: () => {
-                submitOnEndRef.current = false;
-                try { recognition.abort(); } catch {}
-            },
-        }) ?? false;
-        if (!accepted) return;
+        
+        speechController.beginListening();
 
         finalTranscriptRef.current = '';
         submitOnEndRef.current = true;

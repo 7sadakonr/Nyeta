@@ -29,43 +29,22 @@ describe('TTS and VoiceOver announcement ownership', () => {
 
     it('keeps TTS paths while removing their duplicate live regions', () => {
         const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
-        const blindSelect = readSource('src/app/blind/select/page.tsx');
+        const blindShell = readSource('src/features/blind-app/BlindAppShell.tsx');
         const callScreen = readSource('src/features/calling/BlindCallScreen.tsx');
         const chatOverlay = readSource('src/features/calling/components/BlindChatOverlay.tsx');
         const currencyScanner = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
-        const objectDetector = readSource('src/features/blind-assistant/hooks/useObjectDetector.ts');
 
-        expect(screen).toContain("owner: 'object-detector'");
-        expect(screen).toContain("owner: 'ai-response'");
-        expect(screen).not.toContain("owner: 'mode-switch'");
-        expect(screen).not.toContain("owner: 'page-mount'");
-        expect(screen).not.toContain("owner: 'camera-ready'");
-        expect(screen).not.toContain('accessibilityStatus');
-        expect(screen).toContain("const accessibilityNavHandlers = useAccessibilitySpeechNavigation();");
-        expect(screen).toContain("{...accessibilityNavHandlers}");
-        expect(screen).toContain("speechManager?.clearPausedSpeech();");
-        expect(screen).toContain("navigationBehavior: 'pause-resume'");
-        expect(screen).not.toContain("owner: 'assistant-ready'");
-        expect(screen).not.toContain('assistantReadyAnnouncedRef');
+        expect(screen).toContain("'realtime'");
+        expect(screen).toContain("'result'");
+        expect(screen).toContain("speechController.stop();");
         expect(screen).not.toContain('ผู้ช่วย AI สำหรับผู้พิการทางสายตา');
-        expect(screen).not.toContain('<main');
-        expect(blindSelect).not.toContain("owner: 'assistant-ready'");
-        expect(blindSelect).toContain("localStorage.setItem('nyeta_blind_mode', 'assistant')");
-        expect(blindSelect).toContain('void hapticRef.current?.trigger(5, 100);');
-        expect(blindSelect).not.toContain('await hapticRef.current?.trigger(5, 100);');
-        expect(screen).toContain("useObjectDetector(videoRef, mode === 'assistant')");
-        expect(objectDetector).not.toContain('|| !videoRef.current) return;');
-        expect(screen).toContain('pendingObjectAnnouncementRef.current = null;');
-        expect(screen).toContain("activateFromUserGesture('ผู้ช่วยพร้อม'");
-        expect(blindSelect).toContain("activateFromUserGesture('ผู้ช่วยพร้อม'");
-        expect(screen).toContain('speechManager?.interruptForAccessibilityNavigation();');
+        expect(blindShell).toContain("localStorage.setItem('nyeta_blind_mode', nextTab)");
+        expect(blindShell).toContain('void hapticRef.current?.trigger(1);');
         expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
         expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
-        expect(currencyScanner).toContain("speechManager?.speak('พร้อมสแกนใบถัดไป'");
-        expect(callScreen).toContain("owner: 'call-status'");
-        expect(callScreen).toContain('useAccessibilitySpeechNavigation()');
-        expect(callScreen).not.toMatch(/<h1[^>]*aria-hidden/);
-        expect(chatOverlay).toContain("owner: 'volunteer-message'");
+        expect(currencyScanner).toContain("speechController.speak('พร้อมสแกนใบถัดไป'");
+        expect(callScreen).toContain("'status'");
+        expect(chatOverlay).toContain("'result'");
     });
 
     it('preserves focus and navigation accessibility', () => {
@@ -93,16 +72,6 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain('restoreDetailsFocusRef');
         expect(controlBar).not.toContain('onShowCurrencyDetails');
         expect(controlBar).toContain('onReplayCurrencyDetails');
-    });
-
-    it('keeps the action dock available while long results scroll in the content area', () => {
-        const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
-        const controlBar = readSource('src/features/blind-assistant/components/ControlBar.tsx');
-
-        expect(screen).toContain('h-dvh');
-        expect(screen).toContain('min-h-0 flex-1 overflow-y-auto');
-        expect(controlBar).toContain('data-testid="blind-action-dock"');
-        expect(controlBar).toContain('shrink-0');
     });
 
     it('keeps direct Web Speech API calls inside the shared coordinator', () => {

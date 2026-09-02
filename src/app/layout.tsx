@@ -33,6 +33,9 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Nyeta",
   },
+  icons: {
+    apple: '/icons/nyeta-apple-touch.png',
+  },
 };
 
 export default function RootLayout({
@@ -43,7 +46,7 @@ export default function RootLayout({
   return (
     <html lang="th">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} h-dvh w-full overflow-hidden overscroll-none antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} flex w-full flex-col overflow-hidden overscroll-none antialiased`}
       >
         {children}
       </body>

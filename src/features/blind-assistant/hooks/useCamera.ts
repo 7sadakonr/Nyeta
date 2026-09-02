@@ -15,6 +15,8 @@ export function useCamera(): UseCameraResult {
     const [error, setError] = useState<any>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    const mountedRef = useRef(false);
+    const operationIdRef = useRef(0);
 
     useEffect(() => {
         streamRef.current = stream;
@@ -68,6 +70,8 @@ export function useCamera(): UseCameraResult {
     }, [stream]);
 
     const initCamera = useCallback(async () => {
+        const operationId = operationIdRef.current + 1;
+        operationIdRef.current = operationId;
         setIsReady(false);
         setError(null);
         try {
@@ -79,15 +83,24 @@ export function useCamera(): UseCameraResult {
                     aspectRatio: { ideal: 16 / 9 },
                 }
             });
+            // A tab switch can unmount this feature while the permission prompt is open.
+            // Never retain a stream which resolves after that switch.
+            if (!mountedRef.current || operationId !== operationIdRef.current) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                return;
+            }
+            streamRef.current = mediaStream;
             setStream(mediaStream);
             requestWakeLock();
         } catch (err) {
+            if (!mountedRef.current || operationId !== operationIdRef.current) return;
             console.warn('Camera Init Error:', err);
             setError(err);
         }
     }, []);
 
     const stopCamera = useCallback(() => {
+        operationIdRef.current += 1;
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
@@ -115,7 +128,10 @@ export function useCamera(): UseCameraResult {
 
     // Release wake lock and stop tracks on unmount
     useEffect(() => {
+        mountedRef.current = true;
         return () => {
+            mountedRef.current = false;
+            operationIdRef.current += 1;
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }

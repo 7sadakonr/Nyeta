@@ -88,6 +88,12 @@ describe('Gemini Contents Validation & Sanitization', () => {
 });
 
 describe('Gemini Request Body Validation & Parameter Clamping', () => {
+    it('should reject an empty Gemini request body', () => {
+        const result = validateRequestBody({});
+        expect(result.valid).toBe(false);
+        expect(result.status).toBe(400);
+    });
+
     it('should clamp maxTokens and temperature to valid bounds', () => {
         const clamped1 = clampGenerationConfig(5000, 2.5);
         expect(clamped1.maxOutputTokens).toBe(1500);

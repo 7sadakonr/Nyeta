@@ -1,24 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import speechManager from '@/shared/accessibility/speechManager';
+import { useSyncExternalStore } from 'react';
+import { speechController } from '@/shared/accessibility/speechController';
+import type { SpeechSnapshot } from '@/shared/accessibility/speechController';
 
-export function useSpeechStatus(): boolean {
-    const [isSpeaking, setIsSpeaking] = useState<boolean>(() => speechManager?.isSpeaking ?? false);
-
-    useEffect(() => {
-        if (!speechManager) return;
-        const handleStatusChange = () => {
-            setIsSpeaking(speechManager?.isSpeaking ?? false);
-        };
-
-        const unsubscribe = speechManager.subscribe(handleStatusChange);
-        return () => {
-            if (typeof unsubscribe === 'function') {
-                unsubscribe();
-            }
-        };
-    }, []);
-
-    return isSpeaking;
+export function useSpeechStatus(): SpeechSnapshot {
+    return useSyncExternalStore(
+        (notify) => {
+            if (!speechController) return () => {};
+            return speechController.subscribe(notify);
+        },
+        () => speechController.getSnapshot(),
+        () => ({
+            state: 'idle',
+            channel: null,
+            isSpeaking: false,
+            isListening: false,
+            isQuiet: false,
+        })
+    );
 }

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback, RefObject } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/features/blind-assistant/client/pageEdgeDetection';
 import { callGeminiVision, captureFrameFromVideo } from '@/features/blind-assistant/client/geminiVision';
-import speechManager, { Priority } from '@/shared/accessibility/speechManager';
-import { SpeechCategory } from '@/shared/types/speech';
+import { speechController } from '@/shared/accessibility/speechController';
+
 import { AssistantStatus, BoundingBox, QuadCorners } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
 
@@ -24,6 +24,7 @@ export function useDocumentReader(
     videoRef: RefObject<HTMLVideoElement | null>,
     enabled: boolean,
     isReady: boolean,
+    audioReady: boolean,
     aiStatus: AssistantStatus,
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void
@@ -37,7 +38,18 @@ export function useDocumentReader(
     const [pageCorners, setPageCorners] = useState<QuadCorners | null>(null);
 
     const docTextRef = useRef<string>(docText);
+    const audioReadyRef = useRef(audioReady);
+    const pendingDocumentSpeechRef = useRef<string | null>(null);
     useEffect(() => { docTextRef.current = docText; }, [docText]);
+    audioReadyRef.current = audioReady;
+
+    useEffect(() => {
+        if (!audioReady || !enabled || !pendingDocumentSpeechRef.current) return;
+        const text = pendingDocumentSpeechRef.current;
+        pendingDocumentSpeechRef.current = null;
+        const accepted = true; speechController.speak(text, { channel: 'result' });
+        if (accepted) setIsReading(true);
+    }, [audioReady, enabled]);
 
     const lastSpokenPageRef = useRef<string>('');
     const alignedCountRef = useRef<number>(0);
@@ -45,6 +57,7 @@ export function useDocumentReader(
     const pageOverlayActiveRef = useRef<boolean>(false);
     const scanBusyRef = useRef<boolean>(false);
     const autoCaptureFiredRef = useRef<boolean>(false);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     const consecutiveGuidanceRef = useRef<number>(0);
     const guidanceCandidateRef = useRef<string>('');
@@ -59,12 +72,7 @@ export function useDocumentReader(
         if (isProcessing || !enabled) return;
         if (!isReady || !videoRef.current) {
             feedback?.('error');
-            speechManager?.speak('กล้องกำลังเริ่มต้น กรุณารอสักครู่ครับ', {
-                priority: Priority.CRITICAL,
-                category: SpeechCategory.CRITICAL,
-                owner: 'document-reader',
-                scope: 'blind:reader',
-            });
+            if (audioReadyRef.current) speechController.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', { channel: 'critical' });
             return;
         }
 
@@ -73,56 +81,49 @@ export function useDocumentReader(
             const imageDataUrl = captureFrameFromVideo(videoRef.current, { maxDimension: 1024, quality: 0.75 });
             if (!imageDataUrl) {
                 feedback?.('error');
-                speechManager?.speak('ยังจับภาพเอกสารไม่ได้ กรุณาถือกล้องให้นิ่งแล้วลองใหม่ครับ', {
-                    priority: Priority.CRITICAL,
-                    category: SpeechCategory.CRITICAL,
-                    owner: 'document-reader',
-                    scope: 'blind:reader',
-                });
+                if (audioReadyRef.current) speechController.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
                 setIsProcessing(false);
                 return;
             }
 
             autoCaptureFiredRef.current = true;
-            speechManager?.cancel({ owner: 'page-guidance' });
+            speechController.stop();
             setIsReading(false);
             feedback?.('capture');
             addLog?.('Capturing document...');
             setDocText('กำลังอ่านเอกสาร รอสักครู่...');
 
+            abortControllerRef.current?.abort();
+            const controller = new AbortController();
+            abortControllerRef.current = controller;
             const text = await callGeminiVision({
                 mode: 'reader',
                 imageDataUrl,
                 userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
                 maxTokens: 1500,
                 temperature: 0,
+                signal: controller.signal,
             });
 
             setDocText(text);
             feedback?.('success');
 
-            setIsReading(true);
-            speechManager?.speak(text, {
-                priority: Priority.RESULT,
-                category: SpeechCategory.TASK,
-                owner: 'document-reader',
-                scope: 'blind:reader',
-                rate: 1.0,
-                chunk: true,
-                onEnd: () => setIsReading(false),
-            });
+            const speechOptions = { channel: 'result' } as const;
+            if (audioReadyRef.current) {
+                const accepted = true; speechController.speak(text, { channel: 'result' });
+                if (accepted) setIsReading(true);
+            } else {
+                pendingDocumentSpeechRef.current = text;
+            }
         } catch (error: any) {
+            if (error?.name === 'AbortError') return;
             console.error('Read document error:', error);
             setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
-            speechManager?.speak('เกิดข้อผิดพลาดในการอ่านเอกสาร กรุณาลองใหม่อีกครั้งครับ', {
-                priority: Priority.CRITICAL,
-                category: SpeechCategory.CRITICAL,
-                owner: 'document-reader',
-                scope: 'blind:reader',
-            });
+            if (audioReadyRef.current) speechController.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', { channel: 'critical' });
         } finally {
+            abortControllerRef.current = null;
             setIsProcessing(false);
         }
     }, [isReady, isProcessing, enabled, videoRef, feedback, addLog]);
@@ -162,16 +163,8 @@ export function useDocumentReader(
             }
 
             if (text.includes('ตรงแล้ว')) return;
-            speechManager?.speak(text, {
-                priority: Priority.GUIDANCE,
-                category: SpeechCategory.REALTIME,
-                owner: 'page-guidance',
-                scope: 'blind:reader',
-                realtimeKey: 'page-guidance',
-                rate: 1.1,
-                dedupe: true,
-                cooldown: 1200,
-            });
+            if (!audioReadyRef.current) return;
+            speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 });
             lastSpokenPageRef.current = text;
         };
 
@@ -228,16 +221,8 @@ export function useDocumentReader(
                         autoCaptureFiredRef.current = true;
                         alignedCountRef.current = 0;
                         feedback?.('success');
-                        speechManager?.cancel({ owner: 'page-guidance' });
-                        speechManager?.speak('ตรงแล้ว กำลังถ่ายเอกสาร', {
-                            priority: Priority.ACTION,
-                            category: SpeechCategory.TASK,
-                            owner: 'document-reader',
-                            scope: 'blind:reader',
-                            rate: 1.1,
-                            interrupt: true,
-                            dedupe: true,
-                        });
+                        speechController.stop();
+                        if (audioReadyRef.current) speechController.speak('ตรงแล้ว กำลังถ่ายเอกสาร', { channel: 'result' });
                         readDocumentRef.current?.();
                     }
                 } else if (!result.aligned) {
@@ -269,37 +254,38 @@ export function useDocumentReader(
 
     const replayDocument = useCallback(() => {
         if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
-        speechManager?.cancel({ owner: 'document-reader' });
-        setIsReading(true);
-        speechManager?.speak(docText, {
-            priority: Priority.RESULT,
-            category: SpeechCategory.TASK,
-            owner: 'document-reader',
-            scope: 'blind:reader',
-            rate: 1.0,
-            chunk: true,
-            navigationBehavior: 'pause-resume',
-            onEnd: () => setIsReading(false),
-        });
+        speechController.stop();
+        if (audioReadyRef.current) {
+            const accepted = true; speechController.speak(docText, { channel: 'result' });
+            if (accepted) setIsReading(true);
+        }
         feedback?.('success');
     }, [docText, feedback]);
 
     const resetDocument = useCallback(() => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
         setDocText('');
         setIsReading(false);
+        pendingDocumentSpeechRef.current = null;
         autoCaptureFiredRef.current = false;
-        speechManager?.clearPausedSpeech();
-        speechManager?.stopByOwner('document-reader');
-        speechManager?.stopByOwner('page-guidance');
+        
+        speechController.stop();
+        
     }, []);
 
     const stopReading = useCallback(() => {
-        speechManager?.clearPausedSpeech();
-        speechManager?.stopByOwner('document-reader');
-        speechManager?.stopByOwner('page-guidance');
+        
+        speechController.stop();
+        
         setIsReading(false);
         feedback?.('success');
     }, [feedback]);
+
+    useEffect(() => () => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+    }, []);
 
     return {
         docText,

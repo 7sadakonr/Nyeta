@@ -80,6 +80,47 @@ describe('ControlBar', () => {
         expect(queryByRole('button', { name: /ฟังยอดรวม/ })).toBeNull();
     });
 
+    it('allows clearing a detected banknote even when the accumulated total is zero', () => {
+        const onClearTotal = vi.fn();
+        const { getByRole } = render(
+            <ControlBar
+                mode="currency"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={{
+                    captureId: 1,
+                    source: 'gemini',
+                    total: 100,
+                    signature: 'note-100-1',
+                    items: [{ type: 'note', value: 100, quantity: 1, locations: ['center'] }],
+                }}
+                currencyScanning={false}
+                currencyMonitoring
+                totalAmount={0}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={onClearTotal}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(getByRole('button', { name: /ล้างยอดเงินสะสม ปัจจุบัน 0 บาท/ }));
+
+        expect(onClearTotal).toHaveBeenCalledOnce();
+    });
+
     it('starts a manual currency scan when the take-photo action is pressed', () => {
         const onCurrencyCapture = vi.fn();
         const { getByRole } = render(

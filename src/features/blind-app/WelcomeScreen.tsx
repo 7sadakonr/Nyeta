@@ -29,12 +29,7 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
             // Release the devices immediately so the actual app hooks can claim them
             stream.getTracks().forEach(track => track.stop());
             
-            speechController.speak('อนุญาตสำเร็จ กำลังเข้าสู่แอป', { channel: 'status' });
-            
-            // Slight delay so the user hears the success message before the heavy app mounts
-            setTimeout(() => {
-                onStart();
-            }, 600);
+            onStart();
         } catch (err) {
             console.error('Permission denied:', err);
             const msg = 'ไม่สามารถเข้าถึงกล้องหรือไมโครโฟนได้ กรุณาอนุญาตในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่อีกครั้งครับ';
@@ -65,7 +60,7 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
             </button>
 
             {error && (
-                <p className="mt-8 text-center text-lg font-semibold text-red-400" role="alert" aria-live="assertive">
+                <p className="mt-8 text-center text-lg font-semibold text-red-400">
                     {error}
                 </p>
             )}

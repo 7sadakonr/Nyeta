@@ -48,26 +48,36 @@ describe('speechController navigation quiet policy', () => {
         vi.resetModules();
     });
 
-    it('drops all non-critical speech during navigation quiet mode', () => {
+    it('drops realtime and status speech during navigation quiet mode', () => {
         const realtimeEnd = vi.fn();
         const statusEnd = vi.fn();
-        const resultEnd = vi.fn();
 
         speechController.notifyUserNavigation();
         const realtimeAccepted = speechController.speak('ขยับกล้องไปทางซ้าย', { channel: 'realtime', onEnd: realtimeEnd });
         const statusAccepted = speechController.speak('กำลังประมวลผล', { channel: 'status', onEnd: statusEnd });
-        const resultAccepted = speechController.speak('ผลลัพธ์ใหม่', { channel: 'result', onEnd: resultEnd });
 
         expect(utterances).toHaveLength(0);
         expect(realtimeAccepted).toBe(false);
         expect(statusAccepted).toBe(false);
-        expect(resultAccepted).toBe(false);
         expect(realtimeEnd).toHaveBeenCalledWith(false);
         expect(statusEnd).toHaveBeenCalledWith(false);
-        expect(resultEnd).toHaveBeenCalledWith(false);
 
         speechController.speak('ไม่สามารถเปิดกล้องได้', { channel: 'critical' });
         expect(utterances.map((utterance) => utterance.text)).toEqual(['ไม่สามารถเปิดกล้องได้']);
+    });
+
+    it('replaces an interrupted result with a newer result received during navigation', () => {
+        speechController.speak('ผลลัพธ์เดิม', { channel: 'result' });
+        speechController.notifyUserNavigation();
+        const accepted = speechController.speak('ผลลัพธ์ใหม่', { channel: 'result' });
+
+        vi.advanceTimersByTime(3500);
+
+        expect(accepted).toBe(true);
+        expect(utterances.map((utterance) => utterance.text)).toEqual([
+            'ผลลัพธ์เดิม',
+            'ผลลัพธ์ใหม่',
+        ]);
     });
 
     it('does not replay pending unlock speech after navigation interrupts it', () => {
@@ -93,6 +103,39 @@ describe('speechController navigation quiet policy', () => {
         speechController.speak('ผลลัพธ์หลังผู้ใช้หยุดเลื่อน', { channel: 'result' });
 
         expect(utterances.map((utterance) => utterance.text)).toEqual(['ผลลัพธ์หลังผู้ใช้หยุดเลื่อน']);
+    });
+
+    it('resumes an interrupted result after VoiceOver navigation becomes quiet', () => {
+        speechController.speak('คำตอบที่กำลังอ่านอยู่', { channel: 'result' });
+        speechController.notifyUserNavigation();
+
+        vi.advanceTimersByTime(3500);
+
+        expect(utterances.map((utterance) => utterance.text)).toEqual([
+            'คำตอบที่กำลังอ่านอยู่',
+            'คำตอบที่กำลังอ่านอยู่',
+        ]);
+    });
+
+    it('resumes a long result from the interrupted chunk', () => {
+        const longResult = Array.from({ length: 80 }, (_, index) => `คำ${index}`).join(' ');
+        speechController.speak(longResult, { channel: 'result' });
+        const interruptedChunk = utterances[0].text;
+
+        speechController.notifyUserNavigation();
+        vi.advanceTimersByTime(3500);
+
+        expect(utterances[1].text).toBe(interruptedChunk);
+    });
+
+    it('does not resume a result after the user stops speech', () => {
+        speechController.speak('ข้อความที่ผู้ใช้หยุดเอง', { channel: 'result' });
+        speechController.notifyUserNavigation();
+        speechController.stop();
+
+        vi.advanceTimersByTime(3500);
+
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ข้อความที่ผู้ใช้หยุดเอง']);
     });
 
 });

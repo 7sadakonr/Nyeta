@@ -58,6 +58,8 @@ class SpeechController {
     // Callbacks for the currently active request
     private _currentOnStart: (() => void) | null = null;
     private _currentOnEnd: ((completed?: boolean) => void) | null = null;
+    private _currentSpeechOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> | null = null;
+    private _resumeAfterNavigation: { text: string; options: Omit<SpeechOptions, 'onStart' | 'onEnd'> } | null = null;
     
     // Internal deduplication and tracking
     private _lastRealtimeGuidance: string | null = null;
@@ -118,8 +120,25 @@ class SpeechController {
         }
 
         if (this._isQuiet() && options.channel !== 'critical') {
+            if (options.channel === 'result') {
+                this._resumeAfterNavigation = {
+                    text: cleanText,
+                    options: {
+                        channel: options.channel,
+                        key: options.key,
+                        rate: options.rate,
+                        lang: options.lang,
+                        dedupeMs: options.dedupeMs,
+                    },
+                };
+                return true;
+            }
             options.onEnd?.(false);
             return false;
+        }
+
+        if (options.channel === 'critical') {
+            this._resumeAfterNavigation = null;
         }
 
         if (options.channel === 'realtime') {
@@ -150,6 +169,13 @@ class SpeechController {
         this._currentChannel = options.channel;
         this._currentOnStart = options.onStart || null;
         this._currentOnEnd = options.onEnd || null;
+        this._currentSpeechOptions = {
+            channel: options.channel,
+            key: options.key,
+            rate: options.rate,
+            lang: options.lang,
+            dedupeMs: options.dedupeMs,
+        };
 
         if (!this._audioUnlocked) {
             this._pendingUnlockSpeech = { text: cleanText, options };
@@ -170,6 +196,7 @@ class SpeechController {
     }
 
     public stop(): void {
+        this._resumeAfterNavigation = null;
         const hasPendingSpeech = this._state === 'speaking' ||
             this._pendingUnlockSpeech !== null ||
             this._activeUtterance !== null ||
@@ -185,6 +212,7 @@ class SpeechController {
     }
 
     public notifyUserNavigation(): void {
+        this._captureResultForResume();
         this._cancelInternal();
         this._activeRequest++;
         
@@ -200,11 +228,18 @@ class SpeechController {
             if (this._state === 'screen-reader-quiet') {
                 this._state = 'idle';
             }
-            this.notify();
+            const pendingResult = this._resumeAfterNavigation;
+            this._resumeAfterNavigation = null;
+            if (pendingResult) {
+                this.speak(pendingResult.text, pendingResult.options);
+            } else {
+                this.notify();
+            }
         }, ACCESSIBILITY_QUIET_DURATION_MS);
     }
 
     public beginListening(): void {
+        this._resumeAfterNavigation = null;
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
@@ -222,6 +257,20 @@ class SpeechController {
         return this._quietTimer !== null;
     }
 
+    private _captureResultForResume(): void {
+        if (this._currentChannel !== 'result' || !this._currentSpeechOptions) return;
+
+        const remainingText = this._chunks.length > 0
+            ? this._chunks.slice(this._chunkIndex).join(' ')
+            : this._activeUtterance?.text;
+        if (!remainingText) return;
+
+        this._resumeAfterNavigation = {
+            text: remainingText,
+            options: { ...this._currentSpeechOptions },
+        };
+    }
+
     private _cancelInternal(): void {
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             try {
@@ -233,6 +282,7 @@ class SpeechController {
         const onEnd = this._currentOnEnd;
         this._currentOnEnd = null;
         this._currentOnStart = null;
+        this._currentSpeechOptions = null;
         this._currentChannel = null;
         this._activeUtterance = null;
         this._chunks = [];
@@ -364,6 +414,7 @@ class SpeechController {
         const cb = this._currentOnEnd;
         this._currentOnEnd = null;
         this._currentOnStart = null;
+        this._currentSpeechOptions = null;
         this._currentChannel = null;
         this._activeUtterance = null;
         this._chunks = [];

@@ -34,7 +34,6 @@ class SpeechController {
         this._audioUnlocked = true;
         try {
             if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-                // If it's already working, just resume to be safe
                 window.speechSynthesis.resume();
                 return;
             }
@@ -49,7 +48,7 @@ class SpeechController {
             const utterance = new SpeechSynthesisUtterance('');
             utterance.volume = 0;
             window.speechSynthesis.speak(utterance);
-        } catch (e) {}
+        } catch {}
     }
 
     private _state: SpeechState = 'idle';
@@ -59,6 +58,8 @@ class SpeechController {
     // Callbacks for the currently active request
     private _currentOnStart: (() => void) | null = null;
     private _currentOnEnd: ((completed?: boolean) => void) | null = null;
+    private _currentSpeechOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> | null = null;
+    private _resumeAfterNavigation: { text: string; options: Omit<SpeechOptions, 'onStart' | 'onEnd'> } | null = null;
     
     // Internal deduplication and tracking
     private _lastRealtimeGuidance: string | null = null;
@@ -101,36 +102,43 @@ class SpeechController {
         return this._lastSnapshot;
     }
 
-    public speak(text: string, options: SpeechOptions): void {
-        if (!this._audioUnlocked) {
-            this._pendingUnlockSpeech = { text, options };
-        }
+    public speak(text: string, options: SpeechOptions): boolean {
         if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
             options.onEnd?.(false);
-            return;
+            return false;
         }
 
         const cleanText = text.trim();
         if (!cleanText) {
             options.onEnd?.(false);
-            return;
+            return false;
         }
 
         if (this._state === 'listening' && options.channel !== 'critical') {
             options.onEnd?.(false);
-            return;
+            return false;
         }
 
-        if (this._state === 'screen-reader-quiet' && options.channel !== 'critical') {
-            if (options.channel === 'result' || options.channel === 'status') {
-                if (this._quietTimer) {
-                    clearTimeout(this._quietTimer);
-                    this._quietTimer = null;
-                }
-            } else {
-                options.onEnd?.(false);
-                return;
+        if (this._isQuiet() && options.channel !== 'critical') {
+            if (options.channel === 'result') {
+                this._resumeAfterNavigation = {
+                    text: cleanText,
+                    options: {
+                        channel: options.channel,
+                        key: options.key,
+                        rate: options.rate,
+                        lang: options.lang,
+                        dedupeMs: options.dedupeMs,
+                    },
+                };
+                return true;
             }
+            options.onEnd?.(false);
+            return false;
+        }
+
+        if (options.channel === 'critical') {
+            this._resumeAfterNavigation = null;
         }
 
         if (options.channel === 'realtime') {
@@ -142,7 +150,7 @@ class SpeechController {
                     (now - this._lastRealtimeTime) < (options.dedupeMs || 1000)
                 ) {
                     options.onEnd?.(false);
-                    return;
+                    return false;
                 }
                 this._lastRealtimeGuidance = options.key;
                 this._lastRealtimeTime = now;
@@ -161,6 +169,17 @@ class SpeechController {
         this._currentChannel = options.channel;
         this._currentOnStart = options.onStart || null;
         this._currentOnEnd = options.onEnd || null;
+        this._currentSpeechOptions = {
+            channel: options.channel,
+            key: options.key,
+            rate: options.rate,
+            lang: options.lang,
+            dedupeMs: options.dedupeMs,
+        };
+
+        if (!this._audioUnlocked) {
+            this._pendingUnlockSpeech = { text: cleanText, options };
+        }
         
         this.notify();
 
@@ -173,20 +192,27 @@ class SpeechController {
         } else {
             this._speakDirect(cleanText, requestId, { rate, lang });
         }
+        return true;
     }
 
     public stop(): void {
+        this._resumeAfterNavigation = null;
+        const hasPendingSpeech = this._state === 'speaking' ||
+            this._pendingUnlockSpeech !== null ||
+            this._activeUtterance !== null ||
+            this._chunks.length > 0;
+        if (!hasPendingSpeech) return;
+
+        this._cancelInternal();
+        this._activeRequest++; // Invalidate
         if (this._state === 'speaking') {
-            this._cancelInternal();
-            this._state = 'idle';
-            this._activeRequest++; // Invalidate
-            this.notify();
+            this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
         }
+        this.notify();
     }
 
     public notifyUserNavigation(): void {
-        if (this._state === 'listening') return; // Don't interrupt mic logic
-        
+        this._captureResultForResume();
         this._cancelInternal();
         this._activeRequest++;
         
@@ -198,14 +224,22 @@ class SpeechController {
         }
         
         this._quietTimer = setTimeout(() => {
+            this._quietTimer = null;
             if (this._state === 'screen-reader-quiet') {
                 this._state = 'idle';
+            }
+            const pendingResult = this._resumeAfterNavigation;
+            this._resumeAfterNavigation = null;
+            if (pendingResult) {
+                this.speak(pendingResult.text, pendingResult.options);
+            } else {
                 this.notify();
             }
         }, ACCESSIBILITY_QUIET_DURATION_MS);
     }
 
     public beginListening(): void {
+        this._resumeAfterNavigation = null;
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
@@ -214,9 +248,27 @@ class SpeechController {
 
     public endListening(): void {
         if (this._state === 'listening') {
-            this._state = 'idle';
+            this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
             this.notify();
         }
+    }
+
+    private _isQuiet(): boolean {
+        return this._quietTimer !== null;
+    }
+
+    private _captureResultForResume(): void {
+        if (this._currentChannel !== 'result' || !this._currentSpeechOptions) return;
+
+        const remainingText = this._chunks.length > 0
+            ? this._chunks.slice(this._chunkIndex).join(' ')
+            : this._activeUtterance?.text;
+        if (!remainingText) return;
+
+        this._resumeAfterNavigation = {
+            text: remainingText,
+            options: { ...this._currentSpeechOptions },
+        };
     }
 
     private _cancelInternal(): void {
@@ -230,9 +282,13 @@ class SpeechController {
         const onEnd = this._currentOnEnd;
         this._currentOnEnd = null;
         this._currentOnStart = null;
+        this._currentSpeechOptions = null;
         this._currentChannel = null;
         this._activeUtterance = null;
         this._chunks = [];
+        this._chunkIndex = 0;
+        this._chunkOptions = null;
+        this._pendingUnlockSpeech = null;
         
         if (onEnd) {
             try {
@@ -358,10 +414,13 @@ class SpeechController {
         const cb = this._currentOnEnd;
         this._currentOnEnd = null;
         this._currentOnStart = null;
+        this._currentSpeechOptions = null;
         this._currentChannel = null;
         this._activeUtterance = null;
         this._chunks = [];
-        this._state = 'idle';
+        this._chunkIndex = 0;
+        this._chunkOptions = null;
+        this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
         this.notify();
         
         if (cb) {

@@ -164,8 +164,9 @@ export function useDocumentReader(
 
             if (text.includes('ตรงแล้ว')) return;
             if (!audioReadyRef.current) return;
-            speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 });
-            lastSpokenPageRef.current = text;
+            if (speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 })) {
+                lastSpokenPageRef.current = text;
+            }
         };
 
         const clearPageOverlay = () => {

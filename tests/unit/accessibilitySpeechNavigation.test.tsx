@@ -30,14 +30,15 @@ describe('accessibility speech navigation delegation', () => {
     fireEvent.keyDown(button, { key: 'Enter' });
     expect(notifyUserNavigation).toHaveBeenCalledTimes(1);
   });
-  it('renews navigation for a different focusable control but ignores static content', () => {
+  it('ignores the first interactive focus after mount but interrupts subsequent VoiceOver focus changes', () => {
     const onNavigation = vi.fn();
     const { getByRole, getByTestId } = render(<NavigationHarness onNavigation={onNavigation} />);
     fireEvent.focusIn(getByTestId('static'));
     fireEvent.focusIn(getByRole('button'));
+    expect(notifyUserNavigation).not.toHaveBeenCalled();
     fireEvent.focusIn(getByRole('tab'));
-    expect(notifyUserNavigation).toHaveBeenCalledTimes(2);
-    expect(onNavigation).toHaveBeenCalledTimes(2);
+    expect(notifyUserNavigation).toHaveBeenCalledTimes(1);
+    expect(onNavigation).toHaveBeenCalledTimes(1);
   });
 
 });

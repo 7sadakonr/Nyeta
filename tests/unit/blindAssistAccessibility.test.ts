@@ -38,8 +38,12 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).toContain("'result'");
         expect(screen).toContain("speechController.stop();");
         expect(screen).not.toContain('ผู้ช่วย AI สำหรับผู้พิการทางสายตา');
+        expect(screen).not.toContain('AI ผู้ช่วย พร้อม');
+        expect(screen).not.toContain('โหมดอ่านเอกสาร พร้อม');
+        expect(screen).not.toContain('โหมดสแกนธนบัตร พร้อม');
         expect(blindShell).toContain("localStorage.setItem('nyeta_blind_mode', nextTab)");
         expect(blindShell).toContain('void hapticRef.current?.trigger(1);');
+        expect(blindShell).not.toContain('กรุณาวางสายก่อนเปลี่ยนเมนู');
         expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
         expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
         expect(currencyScanner).toContain("speechController.speak('พร้อมสแกนใบถัดไป'");
@@ -72,6 +76,8 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain('restoreDetailsFocusRef');
         expect(controlBar).not.toContain('onShowCurrencyDetails');
         expect(controlBar).toContain('onReplayCurrencyDetails');
+        expect(screen).not.toContain('useAccessibilitySpeechNavigation');
+        expect(readSource('src/features/calling/BlindCallScreen.tsx')).not.toContain('useAccessibilitySpeechNavigation');
     });
 
     it('keeps direct Web Speech API calls inside the shared coordinator', () => {

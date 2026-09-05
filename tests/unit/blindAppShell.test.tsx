@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
+let audioReady = false;
 const { speak, stop, notifyUserNavigation, unlockAudio } = vi.hoisted(() => ({
     speak: vi.fn(),
     stop: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('@/features/blind-assistant/BlindAssistScreen', async () => {
             ref: React.ForwardedRef<{ prepareForCall: () => void }>,
         ) {
             React.useImperativeHandle(ref, () => ({ prepareForCall: assistantPrepareForCall }));
-            return <div data-testid="mock-assistant">{mode}:{audioReady ? 'ready' : 'waiting'}</div>;
+            return <button type="button" data-testid="mock-assistant">{mode}:{audioReady ? 'ready' : 'waiting'}</button>;
         }),
     };
 });
@@ -42,28 +43,47 @@ vi.mock('@/features/blind-app/PwaControls', () => ({ default: () => null }));
 vi.mock('@/shared/accessibility/speechController', () => ({
     speechController: { speak, stop, notifyUserNavigation, unlockAudio }
 }));
+vi.mock('@/shared/hooks/useSpeechStatus', () => ({
+    useSpeechStatus: () => ({
+        state: 'idle',
+        channel: null,
+        audioReady,
+        isSpeaking: false,
+        isListening: false,
+        isQuiet: false,
+    }),
+}));
 
 import BlindAppShell from '@/features/blind-app/BlindAppShell';
 
 describe('BlindAppShell', () => {
-    beforeEach(() => document.documentElement.style.removeProperty('--app-h'));
+    beforeEach(() => {
+        audioReady = false;
+        document.documentElement.style.removeProperty('--app-h');
+    });
     afterEach(() => vi.clearAllMocks());
 
-    it('renders four accessible tabs and only the selected assistant mode', () => {
+    it('keeps entry silent while delegating navigation from content and tabs once', () => {
         const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 
         expect(getByRole('tablist', { name: 'เมนูหลักสำหรับผู้พิการทางสายตา' })).toBeTruthy();
-        expect(getByRole('tab', { name: 'AI' }).getAttribute('aria-selected')).toBe('true');
-        expect(getByRole('tab', { name: 'เงิน' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByRole('tab', { name: 'อ่าน' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByRole('tab', { name: 'อาสา' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByTestId('mock-assistant').textContent).toBe('assistant:ready'); // Because audioReady is always true now in the new code
+        expect(getByRole('tab', { name: 'AI ผู้ช่วย' }).getAttribute('aria-selected')).toBe('true');
+        expect(getByRole('tab', { name: 'สแกนธนบัตร' }).getAttribute('aria-controls')).toBe('blind-app-panel');
+        expect(getByRole('tab', { name: 'อ่านเอกสาร' }).getAttribute('aria-controls')).toBe('blind-app-panel');
+        expect(getByRole('tab', { name: 'ขอความช่วยเหลือจากอาสา' }).getAttribute('aria-controls')).toBe('blind-app-panel');
+        expect(getByTestId('mock-assistant').textContent).toBe('assistant:ready');
         expect(queryByTestId('mock-call')).toBeNull();
+        expect(speak).not.toHaveBeenCalledWith('ผู้ช่วยพร้อม', { channel: 'status' });
 
-        fireEvent.click(getByRole('tab', { name: 'เงิน' }));
+        fireEvent.focusIn(getByTestId('mock-assistant'));
+        expect(notifyUserNavigation).not.toHaveBeenCalled();
+
+        fireEvent.focusIn(getByRole('tab', { name: 'สแกนธนบัตร' }));
+        expect(notifyUserNavigation).toHaveBeenCalledTimes(1);
+        fireEvent.click(getByRole('tab', { name: 'สแกนธนบัตร' }));
         expect(getByTestId('mock-assistant').textContent).toBe('currency:ready');
         expect(queryByTestId('mock-call')).toBeNull();
-        expect(notifyUserNavigation).not.toHaveBeenCalled();
+        expect(speak).toHaveBeenCalledWith('สแกนธนบัตร', { channel: 'status' });
     });
 
     it('anchors the shell to the viewport without bottom safe-area padding in tab content', () => {
@@ -84,15 +104,16 @@ describe('BlindAppShell', () => {
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {
         const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 
-        fireEvent.click(getByRole('tab', { name: 'อาสา' }));
+        fireEvent.click(getByRole('tab', { name: 'ขอความช่วยเหลือจากอาสา' }));
         expect(assistantPrepareForCall).toHaveBeenCalledTimes(1);
         expect(queryByTestId('mock-assistant')).toBeNull();
         fireEvent.click(getByTestId('mock-call'));
 
-        const currencyTab = getByRole('tab', { name: 'เงิน' });
+        const currencyTab = getByRole('tab', { name: 'สแกนธนบัตร' });
         expect(currencyTab.getAttribute('aria-disabled')).toBe('true');
         fireEvent.click(currencyTab);
         expect(getByTestId('mock-call')).toBeTruthy();
         expect(callPrepareForExit).not.toHaveBeenCalled();
+        expect(speak).not.toHaveBeenCalledWith('กรุณาวางสายก่อนเปลี่ยนเมนู', expect.anything());
     });
 });

@@ -134,7 +134,7 @@ export default function ControlBar({
                     <ActionButton wide tone="primary" disabled={!aiReady || currencyScanning} onClick={onCurrencyCapture} aria-label="ถ่ายเองเพื่อสแกนเงินตอนนี้">ถ่ายเอง</ActionButton>
                     <div className="grid grid-cols-2 gap-3">
                         <ActionButton disabled={!currencyResult} onClick={onReplayCurrencyDetails} aria-label="ฟังรายละเอียดเงินล่าสุด">ฟังรายละเอียด</ActionButton>
-                        <ActionButton tone="danger" disabled={totalAmount === 0} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
+                        <ActionButton tone="danger" disabled={totalAmount === 0 && !currencyResult} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
                     </div>
                 </div>
             )}

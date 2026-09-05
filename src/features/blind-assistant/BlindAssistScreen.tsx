@@ -14,7 +14,6 @@ import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentR
 import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
 import { speechController } from '@/shared/accessibility/speechController';
 
-import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
 import { isImportantTargetingEvent } from '@/features/blind-assistant/client/objectTargeting';
@@ -63,19 +62,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         return () => stopCamera();
     }, [initCamera, stopCamera]);
     
-        const hasAnnouncedReadyRef = useRef(false);
-
-    useEffect(() => {
-        if (aiReady && !hasAnnouncedReadyRef.current) {
-            hasAnnouncedReadyRef.current = true;
-            let tabName = 'AI ผู้ช่วย พร้อม';
-            if (mode === 'reader') tabName = 'โหมดอ่านเอกสาร พร้อม';
-            else if (mode === 'currency') tabName = 'โหมดสแกนธนบัตร พร้อม';
-            
-            speechController.speak(tabName, { channel: 'status' });
-        }
-    }, [aiReady, mode]);
-
     // Announce camera access error if any
 
     useEffect(() => {
@@ -85,6 +71,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             });
         }
     }, [cameraError]);
+
+    const { isSpeaking, isQuiet: isSpeechQuiet } = useSpeechStatus();
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
@@ -153,24 +141,24 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             return;
         }
 
-        speechController.speak(pending.text, {
+        if (!pending.important && isSpeechQuiet) return;
+
+        const didSpeak = speechController.speak(pending.text, {
             channel: pending.important ? 'result' : 'realtime',
             key: 'object-guidance',
             rate: 1.2,
             dedupeMs: pending.important ? 0 : 1200,
         });
         
-        if (pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
+        if (didSpeak && pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
             pendingObjectAnnouncementRef.current = null;
         }
-    }, [mode, targetPhase, targetingEvent]);
+    }, [isSpeechQuiet, mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
     }, []);
-
-    const accessibilityNavHandlers = useAccessibilitySpeechNavigation();
 
     // B. AI Assistant
     const {
@@ -181,8 +169,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         clearMessages,
         stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
-
-    const { isSpeaking } = useSpeechStatus();
 
     // C. Speech Input
     const {
@@ -302,7 +288,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     return (
         <div
             data-testid="blind-assistant-shell"
-            {...accessibilityNavHandlers}
             onContextMenu={(event) => event.preventDefault()}
             className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-black text-white"
         >

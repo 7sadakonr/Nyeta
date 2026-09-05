@@ -8,7 +8,6 @@ import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';
 import { speechController } from '@/shared/accessibility/speechController';
-import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { playEarcon } from '@/shared/accessibility/audio';
 
 const STATUS_SPEECH: Record<string, string> = {
@@ -44,7 +43,6 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         dataChannel
     });
     const [latestMessage, setLatestMessage] = useState<{ from?: string; text?: string } | null>(null);
-    const accessibilitySpeechNavigation = useAccessibilitySpeechNavigation();
 
     useEffect(() => {
         if (!dataChannel) return;
@@ -134,7 +132,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         'พร้อมเรียกอาสาสมัคร';
 
     return (
-        <div {...accessibilitySpeechNavigation} className="flex h-full w-full flex-col bg-black text-white relative overflow-hidden font-sans">
+        <div className="flex h-full w-full flex-col bg-black text-white relative overflow-hidden font-sans">
             <HapticFeedback ref={hapticRef} />
 
             {/* Hidden media elements */}

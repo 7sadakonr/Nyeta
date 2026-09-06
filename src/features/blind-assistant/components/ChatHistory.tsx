@@ -49,7 +49,6 @@ function MessageContent({
 
 export default function ChatHistory({ aiMessages, resultRegionProps, latestResultRef }: ChatHistoryProps) {
     const latestMessage = aiMessages[aiMessages.length - 1];
-    const previousMessages = aiMessages.slice(0, -1);
 
     if (!latestMessage) return null;
 
@@ -76,25 +75,6 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
                     />
                 </div>
             </div>
-
-            {previousMessages.length > 0 && (
-                <details className="rounded-xl bg-[#1C1C1E] px-5 py-4">
-                    <summary tabIndex={-1} className="min-h-8 cursor-pointer text-[15px] font-semibold text-[#8E8E93]">ดูประวัติการสนทนา</summary>
-                    <ul className="mt-4 space-y-3 border-t border-white/[0.15] pt-4" aria-label="ประวัติการสนทนา">
-                        {previousMessages.map((message, index) => {
-                            const prevId = message.id || `prev-${index}`;
-                            return (
-                                <li key={prevId} className="pb-3 last:pb-0">
-                                    <MessageContent
-                                        message={message}
-                                        blockId={`${prevId}-block-0`}
-                                    />
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </details>
-            )}
         </section>
     );
 }

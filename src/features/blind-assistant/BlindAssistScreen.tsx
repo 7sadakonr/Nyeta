@@ -203,8 +203,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     // Be My Eyes capture flow:
     // Preflight check -> stop active speech -> start processing earcon -> suppress guidance persistently -> send request
     const handleCaptureAndAsk = useCallback(async (customPrompt?: string | null) => {
-        if (aiStatus === 'thinking') return;
-
         if (!aiReady) {
             speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
                 channel: 'critical',
@@ -235,7 +233,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } finally {
             stopWaitingSound();
         }
-    }, [aiReady, aiStatus, captureAndAsk, feedback, stopWaitingSound]);
+    }, [aiReady, captureAndAsk, feedback, stopWaitingSound]);
 
     // เลื่อน focus กลับไปที่จุดเริ่มต้นของผลลัพธ์เพื่ออ่านใหม่ตามที่ผู้ใช้สั่ง
     const handleReadAgain = useCallback(() => {
@@ -276,7 +274,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
         useCallback((text: string) => {
-            feedback('success');
+            feedback('capture');
             handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {

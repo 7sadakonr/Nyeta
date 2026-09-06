@@ -7,7 +7,7 @@ import { EarconType } from '@/shared/accessibility/audio';
 export interface UseAiAssistantResult {
     status: AssistantStatus;
     messages: AssistantMessage[];
-    captureAndAsk: (customPrompt?: string | null) => Promise<void>;
+    captureAndAsk: (customPrompt?: string | null) => Promise<boolean>;
     askTextOnly: (userText: string) => Promise<void>;
     clearMessages: () => void;
     stopSpeaking: () => void;
@@ -36,13 +36,13 @@ export function useAiAssistant(
         };
     }, []);
 
-    const captureAndAsk = useCallback(async (customPrompt: string | null = null) => {
-        if (statusRef.current === 'thinking') return;
+    const captureAndAsk = useCallback(async (customPrompt: string | null = null): Promise<boolean> => {
+        if (statusRef.current === 'thinking') return false;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
             speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', { channel: 'critical' });
             feedback?.('error');
-            return;
+            return false;
         }
 
         if (abortControllerRef.current) {
@@ -67,7 +67,7 @@ export function useAiAssistant(
                 addLog?.('Error: No video stream');
                 setStatus('idle');
                 feedback?.('error');
-                return;
+                return false;
             }
 
             const imageDataUrl = captureFrameFromVideo(videoRef.current, {
@@ -80,7 +80,7 @@ export function useAiAssistant(
                 setStatus('idle');
                 feedback?.('error');
                 speechController.speak('จับภาพไม่ได้ ลองถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
-                return;
+                return false;
             }
 
             const base64Data = imageDataUrl.split(',')[1];
@@ -90,7 +90,12 @@ export function useAiAssistant(
                 ? `(พูด): "${customPrompt}"`
                 : 'ช่วยบรรยายภาพนี้อย่างละเอียดให้เห็นภาพชัดเจน ทั้งภาพรวม รายละเอียดสิ่งของ ตำแหน่งทิศทาง สีสัน และสิ่งรอบข้าง';
 
-            const newUserMessage: AssistantMessage = { role: 'user', content: userQuestion, image: imageDataUrl };
+            const newUserMessage: AssistantMessage = {
+                id: `user-${Date.now()}`,
+                role: 'user',
+                content: userQuestion,
+                image: imageDataUrl,
+            };
             setMessages(prev => [...prev, newUserMessage]);
 
             setStatus('thinking');
@@ -121,10 +126,10 @@ export function useAiAssistant(
             if (!response.ok) {
                 if (response.status === 429) {
                     const msg = 'ระบบยุ่งมาก กรุณารอ 30 วินาทีแล้วลองใหม่ครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
                     feedback?.('error');
                     setStatus('idle');
-                    return;
+                    return true;
                 }
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -132,32 +137,34 @@ export function useAiAssistant(
             const data = await response.json();
             if (data.error) {
                 const msg = 'เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ';
-                setMessages(current => [...current, { role: 'ai', content: msg }]);
+                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
                 feedback?.('error');
             } else {
                 const replyText = extractGeminiText(data);
                 if (replyText) {
-                    setMessages(current => [...current, { role: 'ai', content: replyText }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: replyText }]);
                     feedback?.('success');
                 } else {
                     const msg = 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
                     feedback?.('error');
                 }
             }
+            return true;
         } catch (error: any) {
             if (error.name === 'AbortError') {
                 if (timedOut) {
                     const msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ';
-                    setMessages(current => [...current, { role: 'ai', content: msg }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
                     feedback?.('error');
                 }
-                return;
+                return true;
             }
             console.error('Capture Error:', error);
             const msg = 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่ครับ';
-            setMessages(current => [...current, { role: 'ai', content: msg }]);
+            setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
             feedback?.('error');
+            return true;
         } finally {
             clearTimeout(timeoutId);
             setStatus('idle');

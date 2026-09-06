@@ -56,7 +56,7 @@ describe('useResultRegionSuppression', () => {
         expect(speechController.isGuidanceSuppressed).toBe(true);
     });
 
-    it('unsuppresses guidance after leaving the result region with debounce', () => {
+    it('keeps guidance suppressed after leaving the result region', () => {
         const { getByTestId } = render(
             <div>
                 <TestResultRegion />
@@ -70,43 +70,13 @@ describe('useResultRegionSuppression', () => {
         fireEvent.focus(child1);
         expect(speechController.isGuidanceSuppressed).toBe(true);
 
-        // Blur with relatedTarget outside container
+        // Blur with relatedTarget outside container (e.g. user swiped to ControlBar)
         fireEvent.blur(child1, { relatedTarget: outside });
 
-        // Immediately still suppressed because of 150ms debounce
+        // Guidance must remain suppressed persistently
         expect(speechController.isGuidanceSuppressed).toBe(true);
 
-        // Advance 100ms: still debouncing
-        vi.advanceTimersByTime(100);
-        expect(speechController.isGuidanceSuppressed).toBe(true);
-
-        // Advance past 150ms: unsuppressed
-        vi.advanceTimersByTime(60);
-        expect(speechController.isGuidanceSuppressed).toBe(false);
-    });
-
-    it('cancels exit debounce if focus re-enters within the debounce window', () => {
-        const { getByTestId } = render(<TestResultRegion />);
-        const child1 = getByTestId('child-1');
-        const child2 = getByTestId('child-2');
-
-        fireEvent.focus(child1);
-        expect(speechController.isGuidanceSuppressed).toBe(true);
-
-        // Simulate touch gesture where relatedTarget is null
-        fireEvent.blur(child1, { relatedTarget: null });
-        expect(speechController.isGuidanceSuppressed).toBe(true);
-
-        // Advance 100ms (before 150ms debounce fires)
-        vi.advanceTimersByTime(100);
-
-        // Focus next paragraph inside container
-        fireEvent.focus(child2);
-
-        // Advance past the original 150ms
-        vi.advanceTimersByTime(100);
-
-        // Remains suppressed because focus re-entered
+        vi.advanceTimersByTime(500);
         expect(speechController.isGuidanceSuppressed).toBe(true);
     });
 

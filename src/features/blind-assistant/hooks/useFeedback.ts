@@ -26,6 +26,8 @@ export function useFeedback(hapticRef: RefObject<HapticFeedbackHandle | null>): 
         } else if (type === 'end') {
             playEarcon('end');
             hapticRef.current?.trigger(1);
+        } else if (type === 'button') {
+            playEarcon('button');
         }
     }, [hapticRef]);
 

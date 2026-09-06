@@ -11,7 +11,9 @@ function getAudioContext(): AudioContext {
     return _audioCtx;
 }
 
-export type EarconType = 'ring' | 'connect' | 'disconnect' | 'error' | 'bell' | string;
+export type EarconType = 'ring' | 'connect' | 'disconnect' | 'error' | 'bell' | 'processing' | string;
+
+let _activeProcessingStop: (() => void) | null = null;
 
 export function playEarcon(type?: EarconType): void {
     try {
@@ -47,6 +49,10 @@ export function playEarcon(type?: EarconType): void {
                 _playSingleTone(ctx, 700, 0.04, 0.12, now);
                 break;
             }
+            case 'processing': {
+                _playSingleTone(ctx, 600, 0.05, 0.06, now);
+                break;
+            }
             default: {
                 _playSingleTone(ctx, 440, 0.15, 0.15, now);
                 break;
@@ -54,6 +60,71 @@ export function playEarcon(type?: EarconType): void {
         }
     } catch {
         /* noop */
+    }
+}
+
+/**
+ * Starts a non-speech periodic earcon loop while awaiting AI processing.
+ * Plays a gentle pulse at intervals (default: 2200ms) after an initial delay
+ * so it doesn't collide with the capture shutter sound.
+ * Returns a cleanup function that cancels all active timers and stops looping.
+ */
+export function startProcessingEarcon(intervalMs = 2200): () => void {
+    if (_activeProcessingStop) {
+        _activeProcessingStop();
+        _activeProcessingStop = null;
+    }
+
+    if (typeof window === 'undefined') {
+        return () => {};
+    }
+
+    let isRunning = true;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+    let initialTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const playPulse = () => {
+        if (!isRunning) return;
+        try {
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+            _playSingleTone(ctx, 600, 0.05, 0.06, now);
+        } catch {
+            /* noop */
+        }
+    };
+
+    // Initial delay so the processing loop doesn't overlap with the capture shutter tone
+    initialTimeoutId = setTimeout(() => {
+        if (!isRunning) return;
+        playPulse();
+        timerId = setInterval(playPulse, intervalMs);
+    }, 1200);
+
+    const stop = () => {
+        if (!isRunning) return;
+        isRunning = false;
+        if (initialTimeoutId) {
+            clearTimeout(initialTimeoutId);
+            initialTimeoutId = null;
+        }
+        if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+        }
+        if (_activeProcessingStop === stop) {
+            _activeProcessingStop = null;
+        }
+    };
+
+    _activeProcessingStop = stop;
+    return stop;
+}
+
+export function stopProcessingEarcon(): void {
+    if (_activeProcessingStop) {
+        _activeProcessingStop();
+        _activeProcessingStop = null;
     }
 }
 

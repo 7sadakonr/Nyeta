@@ -14,6 +14,7 @@ import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentR
 import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
 import { speechController } from '@/shared/accessibility/speechController';
 import { useResultRegionSuppression } from '@/shared/accessibility/useResultRegionSuppression';
+import { startProcessingEarcon, stopProcessingEarcon } from '@/shared/accessibility/audio';
 
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
@@ -50,6 +51,15 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
     const { resultRegionProps, resetSuppression } = useResultRegionSuppression();
+
+    const stopProcessingRef = useRef<(() => void) | null>(null);
+    const stopWaitingSound = useCallback(() => {
+        if (stopProcessingRef.current) {
+            stopProcessingRef.current();
+            stopProcessingRef.current = null;
+        }
+        stopProcessingEarcon();
+    }, []);
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -94,12 +104,20 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const lastHapticEventIdRef = useRef(0);
     const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string; important: boolean; candidate: boolean } | null>(null);
 
+    // Drop pending object guidance immediately when guidance suppression activates
+    useEffect(() => {
+        return speechController.subscribeGuidanceSuppressed(() => {
+            if (speechController.isGuidanceSuppressed) {
+                pendingObjectAnnouncementRef.current = null;
+            }
+        });
+    }, []);
+
     useEffect(() => {
         if (mode !== 'assistant' || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
         lastHapticEventIdRef.current = targetingEvent.id;
 
-
-        if (targetingEvent.type === 'candidate-reset') {
+        if (targetingEvent.type === 'candidate-reset' || speechController.isGuidanceSuppressed) {
             pendingObjectAnnouncementRef.current = null;
             return;
         }
@@ -132,6 +150,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [mode, targetingEvent]);
 
     useEffect(() => {
+        if (speechController.isGuidanceSuppressed) {
+            pendingObjectAnnouncementRef.current = null;
+            return;
+        }
+
         const pending = pendingObjectAnnouncementRef.current;
         const eventIsCurrent = !!targetingEvent && targetingEvent.id === pending?.eventId;
         const phaseMatches = pending?.important
@@ -158,20 +181,85 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [isSpeechQuiet, mode, targetPhase, targetingEvent]);
 
     useEffect(() => () => {
+        stopWaitingSound();
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
+        speechController.setGuidanceSuppressed(false);
         resetSuppression();
-    }, [resetSuppression]);
+    }, [resetSuppression, stopWaitingSound]);
 
     // B. AI Assistant
     const {
         status: aiStatus,
         messages: aiMessages,
         captureAndAsk,
-        askTextOnly,
         clearMessages,
         stopSpeaking
     } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
+
+    const latestResultRef = useRef<HTMLParagraphElement | null>(null);
+    const lastFocusedMessageIdRef = useRef<string | null>(null);
+    const lastResultBlockRef = useRef<string | null>(null);
+
+    // Be My Eyes capture flow:
+    // Preflight check -> stop active speech -> start processing earcon -> suppress guidance persistently -> send request
+    const handleCaptureAndAsk = useCallback(async (customPrompt?: string | null) => {
+        if (aiStatus === 'thinking') return;
+
+        if (!aiReady) {
+            speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
+                channel: 'critical',
+            });
+            feedback('error');
+            return;
+        }
+
+        // Preflight passed: stop current guidance immediately
+        speechController.stop();
+
+        // Start processing earcon loop
+        stopWaitingSound();
+        stopProcessingRef.current = startProcessingEarcon();
+
+        // Suppress guidance persistently
+        speechController.setGuidanceSuppressed(true);
+
+        try {
+            const captured = await captureAndAsk(customPrompt);
+            if (!captured) {
+                // Frame capture failed before request started
+                stopWaitingSound();
+                speechController.setGuidanceSuppressed(false);
+            }
+        } catch {
+            stopWaitingSound();
+        } finally {
+            stopWaitingSound();
+        }
+    }, [aiReady, aiStatus, captureAndAsk, feedback, stopWaitingSound]);
+
+    // One-shot focus on new AI message without re-focusing on subsequent re-renders
+    useEffect(() => {
+        if (aiMessages.length === 0) {
+            lastFocusedMessageIdRef.current = null;
+            lastResultBlockRef.current = null;
+            return;
+        }
+
+        const latestMessage = aiMessages[aiMessages.length - 1];
+        if (latestMessage && latestMessage.role === 'ai') {
+            const msgId = latestMessage.id || `ai-${aiMessages.length - 1}`;
+            if (lastFocusedMessageIdRef.current !== msgId) {
+                lastFocusedMessageIdRef.current = msgId;
+                stopWaitingSound();
+                requestAnimationFrame(() => {
+                    if (latestResultRef.current) {
+                        latestResultRef.current.focus();
+                    }
+                });
+            }
+        }
+    }, [aiMessages, stopWaitingSound]);
 
     // C. Speech Input
     const {
@@ -183,8 +271,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     } = useSpeechInput(
         useCallback((text: string) => {
             feedback('success');
-            askTextOnly(text);
-        }, [askTextOnly, feedback]),
+            handleCaptureAndAsk(text);
+        }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
             if (type === 'start') feedback('capture');
         }, [feedback])
@@ -224,27 +312,43 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     useEffect(() => {
         if (previousModeRef.current === mode) return;
         cancelListening();
+        stopWaitingSound();
+        lastFocusedMessageIdRef.current = null;
+        lastResultBlockRef.current = null;
+        pendingObjectAnnouncementRef.current = null;
         speechController.stop();
+        speechController.setGuidanceSuppressed(false);
         resetSuppression();
         if (mode !== 'reader') resetDocument();
         if (mode !== 'assistant') setVoiceTranscript('');
         previousModeRef.current = mode;
-    }, [cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript]);
+    }, [cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript, stopWaitingSound]);
 
     const prepareForCall = useCallback(() => {
         cancelListening();
+        stopWaitingSound();
+        lastFocusedMessageIdRef.current = null;
+        lastResultBlockRef.current = null;
+        pendingObjectAnnouncementRef.current = null;
         stopSpeaking();
         stopReading();
         resetDocument();
         stopCamera();
         speechController.stop();
+        speechController.setGuidanceSuppressed(false);
         resetSuppression();
-    }, [cancelListening, resetDocument, resetSuppression, stopCamera, stopReading, stopSpeaking]);
+    }, [cancelListening, resetDocument, resetSuppression, stopCamera, stopReading, stopSpeaking, stopWaitingSound]);
 
     const handleClearMessages = useCallback(() => {
+        stopWaitingSound();
+        lastFocusedMessageIdRef.current = null;
+        lastResultBlockRef.current = null;
+        pendingObjectAnnouncementRef.current = null;
+        speechController.stop();
+        speechController.setGuidanceSuppressed(false);
         resetSuppression();
         clearMessages();
-    }, [clearMessages, resetSuppression]);
+    }, [clearMessages, resetSuppression, stopWaitingSound]);
 
     useImperativeHandle(ref, () => ({ prepareForCall }), [prepareForCall]);
 
@@ -330,7 +434,14 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         />
 
                         {mode === 'assistant' && showCapturedText && (
-                            <ChatHistory aiMessages={aiMessages} resultRegionProps={resultRegionProps} />
+                            <ChatHistory
+                                aiMessages={aiMessages}
+                                resultRegionProps={resultRegionProps}
+                                latestResultRef={latestResultRef}
+                                onBlockFocus={(blockId) => {
+                                    lastResultBlockRef.current = blockId;
+                                }}
+                            />
                         )}
 
                         {mode === 'reader' && showCapturedText && (
@@ -365,7 +476,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         hasAssistantMessages={aiMessages.length > 0}
                         isBlocked={currencyBlocked}
                         readerAligned={readerAligned}
-                        onCapture={captureAndAsk}
+                        onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
                         onStartListening={toggleListening}
                         onStopListening={toggleListening}

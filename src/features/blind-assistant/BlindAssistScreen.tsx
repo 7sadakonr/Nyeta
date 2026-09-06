@@ -274,7 +274,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
         useCallback((text: string) => {
-            feedback('success');
+            feedback('capture');
             handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {

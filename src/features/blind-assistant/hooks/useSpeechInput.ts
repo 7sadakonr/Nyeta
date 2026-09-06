@@ -43,7 +43,6 @@ export function useSpeechInput(
     const submitOnEndRef = useRef(false);
     const isExplicitStopRef = useRef(false);
     const sessionActiveRef = useRef(false);
-    const fallbackTimerRef = useRef<any>(null);
 
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
@@ -52,10 +51,6 @@ export function useSpeechInput(
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
         isExplicitStopRef.current = false;
-        if (fallbackTimerRef.current) {
-            clearTimeout(fallbackTimerRef.current);
-            fallbackTimerRef.current = null;
-        }
         speechController.endListening();
         setState('idle');
 
@@ -74,7 +69,8 @@ export function useSpeechInput(
                 rec.onresult = null;
                 rec.onerror = null;
                 rec.onend = null;
-                rec.abort();
+                rec.stop?.();
+                rec.abort?.();
             } catch {}
             recognitionRef.current = null;
         }
@@ -88,7 +84,7 @@ export function useSpeechInput(
         if (!SpeechRecognition) return null;
 
         const recognition = new SpeechRecognition();
-        recognition.continuous = true;
+        recognition.continuous = false;
         recognition.interimResults = true;
         recognition.lang = 'th-TH';
 
@@ -138,7 +134,7 @@ export function useSpeechInput(
 
         recognition.onend = () => {
             if (isExplicitStopRef.current) {
-                finishSession();
+                if (sessionActiveRef.current) finishSession();
                 return;
             }
             if (sessionActiveRef.current) {
@@ -147,7 +143,7 @@ export function useSpeechInput(
                 } catch {
                     setTimeout(() => {
                         if (sessionActiveRef.current && !isExplicitStopRef.current) {
-                            try { recognition.start(); } catch {}
+                            try { recognition.start(); } catch { finishSession(); }
                         }
                     }, 200);
                 }
@@ -207,22 +203,7 @@ export function useSpeechInput(
         isExplicitStopRef.current = true;
         submitOnEndRef.current = true;
 
-        const recognition = recognitionRef.current;
-        if (!recognition) {
-            finishSession();
-            return;
-        }
-
-        if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-        fallbackTimerRef.current = setTimeout(() => {
-            finishSession();
-        }, 250);
-
-        try {
-            recognition.stop();
-        } catch {
-            finishSession();
-        }
+        finishSession();
     }, [finishSession]);
 
     const cancelListening = useCallback(() => {
@@ -230,10 +211,6 @@ export function useSpeechInput(
         isExplicitStopRef.current = false;
         interimTranscriptRef.current = '';
         finalTranscriptRef.current = '';
-        if (fallbackTimerRef.current) {
-            clearTimeout(fallbackTimerRef.current);
-            fallbackTimerRef.current = null;
-        }
         if (!sessionActiveRef.current) return;
         const recognition = recognitionRef.current;
         try { recognition?.abort(); } catch {}
@@ -247,7 +224,6 @@ export function useSpeechInput(
 
     useEffect(() => {
         return () => {
-            if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
             submitOnEndRef.current = false;
             isExplicitStopRef.current = false;
             interimTranscriptRef.current = '';

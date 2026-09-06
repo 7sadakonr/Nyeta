@@ -41,9 +41,9 @@ describe('useSpeechInput', () => {
   it('toggles recognition and submits its final transcript only after the session ends', () => {
     const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechInput(onResult));
-    const recognition = MockRecognition.latest!;
 
     act(() => result.current.toggleListening());
+    const recognition = MockRecognition.latest!;
     expect(beginListening).toHaveBeenCalledOnce();
     expect(recognition.start).toHaveBeenCalledOnce();
 
@@ -61,9 +61,9 @@ describe('useSpeechInput', () => {
   it('does not auto-submit on premature onend and only submits when stopListening is explicitly invoked', () => {
     const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechInput(onResult));
-    const recognition = MockRecognition.latest!;
 
     act(() => result.current.startListening());
+    const recognition = MockRecognition.latest!;
     expect(beginListening).toHaveBeenCalledOnce();
 
     act(() => recognition.onresult?.({ results: [{ 0: { transcript: 'นี่คืออะไร' }, isFinal: true }] }));

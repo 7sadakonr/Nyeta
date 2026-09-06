@@ -37,7 +37,6 @@ export function useAiAssistant(
     }, []);
 
     const captureAndAsk = useCallback(async (customPrompt: string | null = null): Promise<boolean> => {
-        if (statusRef.current === 'thinking') return false;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
             speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', { channel: 'critical' });

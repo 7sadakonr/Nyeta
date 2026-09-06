@@ -39,17 +39,8 @@ export function useDocumentReader(
 
     const docTextRef = useRef<string>(docText);
     const audioReadyRef = useRef(audioReady);
-    const pendingDocumentSpeechRef = useRef<string | null>(null);
     useEffect(() => { docTextRef.current = docText; }, [docText]);
     audioReadyRef.current = audioReady;
-
-    useEffect(() => {
-        if (!audioReady || !enabled || !pendingDocumentSpeechRef.current) return;
-        const text = pendingDocumentSpeechRef.current;
-        pendingDocumentSpeechRef.current = null;
-        const accepted = true; speechController.speak(text, { channel: 'result' });
-        if (accepted) setIsReading(true);
-    }, [audioReady, enabled]);
 
     const lastSpokenPageRef = useRef<string>('');
     const alignedCountRef = useRef<number>(0);
@@ -108,13 +99,7 @@ export function useDocumentReader(
             setDocText(text);
             feedback?.('success');
 
-            const speechOptions = { channel: 'result' } as const;
-            if (audioReadyRef.current) {
-                const accepted = true; speechController.speak(text, { channel: 'result' });
-                if (accepted) setIsReading(true);
-            } else {
-                pendingDocumentSpeechRef.current = text;
-            }
+            // Do not auto-speak OCR document text; VoiceOver will read from the semantic DOM.
         } catch (error: any) {
             if (error?.name === 'AbortError') return;
             console.error('Read document error:', error);
@@ -164,8 +149,9 @@ export function useDocumentReader(
 
             if (text.includes('ตรงแล้ว')) return;
             if (!audioReadyRef.current) return;
-            speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 });
-            lastSpokenPageRef.current = text;
+            if (speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 })) {
+                lastSpokenPageRef.current = text;
+            }
         };
 
         const clearPageOverlay = () => {
@@ -222,7 +208,7 @@ export function useDocumentReader(
                         alignedCountRef.current = 0;
                         feedback?.('success');
                         speechController.stop();
-                        if (audioReadyRef.current) speechController.speak('ตรงแล้ว กำลังถ่ายเอกสาร', { channel: 'result' });
+                        if (audioReadyRef.current) speechController.speak('ตรงแล้ว กำลังถ่ายเอกสาร', { channel: 'status' });
                         readDocumentRef.current?.();
                     }
                 } else if (!result.aligned) {
@@ -253,25 +239,17 @@ export function useDocumentReader(
     }, [enabled, isReady, videoRef, feedback]);
 
     const replayDocument = useCallback(() => {
-        if (!docText || docText.startsWith('กำลังอ่าน') || docText.startsWith('เกิดข้อผิดพลาด')) return;
-        speechController.stop();
-        if (audioReadyRef.current) {
-            const accepted = true; speechController.speak(docText, { channel: 'result' });
-            if (accepted) setIsReading(true);
-        }
-        feedback?.('success');
-    }, [docText, feedback]);
+        // Document content is read by VoiceOver; no TTS replay
+    }, []);
 
     const resetDocument = useCallback(() => {
         abortControllerRef.current?.abort();
         abortControllerRef.current = null;
         setDocText('');
         setIsReading(false);
-        pendingDocumentSpeechRef.current = null;
         autoCaptureFiredRef.current = false;
         
         speechController.stop();
-        
     }, []);
 
     const stopReading = useCallback(() => {

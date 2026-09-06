@@ -40,6 +40,83 @@ describe('ControlBar', () => {
         expect(onClearMessages).toHaveBeenCalledOnce();
     });
 
+    it('offers a read-again action when assistant messages exist and triggers onReadAgain', () => {
+        const onReadAgain = vi.fn();
+        const { getByRole, queryByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadAgain={onReadAgain}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        const readAgainBtn = getByRole('button', { name: 'อ่านใหม่' });
+        expect(readAgainBtn).toBeTruthy();
+        expect(queryByRole('button', { name: 'หยุดเสียง' })).toBeNull();
+
+        fireEvent.click(readAgainBtn);
+        expect(onReadAgain).toHaveBeenCalledOnce();
+    });
+
+    it('shows stop-speech when no assistant messages exist', () => {
+        const onStopSpeaking = vi.fn();
+        const { getByRole, queryByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages={false}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={onStopSpeaking}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        expect(queryByRole('button', { name: 'อ่านใหม่' })).toBeNull();
+        const stopBtn = getByRole('button', { name: 'หยุดเสียง' });
+        expect(stopBtn).toBeTruthy();
+
+        fireEvent.click(stopBtn);
+        expect(onStopSpeaking).toHaveBeenCalledOnce();
+    });
+
     it('offers detail playback and reset actions in currency mode', () => {
         const { getByRole, queryByRole } = render(
             <ControlBar
@@ -78,6 +155,47 @@ describe('ControlBar', () => {
         expect(getByRole('button', { name: 'ฟังรายละเอียดเงินล่าสุด' })).toBeTruthy();
         expect(getByRole('button', { name: /ล้างยอดเงินสะสม ปัจจุบัน 250 บาท/ })).toBeTruthy();
         expect(queryByRole('button', { name: /ฟังยอดรวม/ })).toBeNull();
+    });
+
+    it('allows clearing a detected banknote even when the accumulated total is zero', () => {
+        const onClearTotal = vi.fn();
+        const { getByRole } = render(
+            <ControlBar
+                mode="currency"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={{
+                    captureId: 1,
+                    source: 'gemini',
+                    total: 100,
+                    signature: 'note-100-1',
+                    items: [{ type: 'note', value: 100, quantity: 1, locations: ['center'] }],
+                }}
+                currencyScanning={false}
+                currencyMonitoring
+                totalAmount={0}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={onClearTotal}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        fireEvent.click(getByRole('button', { name: /ล้างยอดเงินสะสม ปัจจุบัน 0 บาท/ }));
+
+        expect(onClearTotal).toHaveBeenCalledOnce();
     });
 
     it('starts a manual currency scan when the take-photo action is pressed', () => {

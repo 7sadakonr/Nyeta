@@ -6,7 +6,7 @@ test.describe('Blind Assistance shell', () => {
         const shell = page.getByTestId('blind-assistant-shell');
         await expect(shell).toBeVisible();
         const assistantTab = page.getByRole('tab', { name: 'AI' });
-        const currencyTab = page.getByRole('tab', { name: 'เงิน' });
+        const currencyTab = page.getByRole('tab', { name: /สแกนธนบัตร|เงิน/ });
         const readerTab = page.getByRole('tab', { name: 'อ่าน' });
 
         await currencyTab.click();

@@ -156,18 +156,18 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
 
                 const captured: CapturedCurrency = { ...result, captureId: Date.now(), source: 'gemini' };
                 const entry: CurrencyHistoryItem = { items: captured.items, total: captured.total, signature: captured.signature, id: captured.captureId, timestamp: Date.now() };
-                const newTotal = totalRef.current + captured.total;
+                const newTotal = captured.total;
                 totalRef.current = newTotal;
-                historyRef.current = [...historyRef.current, entry];
+                historyRef.current = [entry];
                 setResult(captured);
                 setTotalAmount(newTotal);
                 setScannedHistory(historyRef.current);
-                setHintIfChanged(`รวมยอด ${captured.total} บาทแล้ว`);
+                setHintIfChanged(`ตรวจพบ ${captured.total} บาท`);
                 removalBaselineRef.current = fingerprint;
                 removalNotFoundCountRef.current = 0;
                 removalConfirmAtRef.current = 0;
                 feedback?.('success');
-                const speech = 'ครั้งนี้ ' + captured.total + ' บาท ยอดรวมสะสม ' + newTotal + ' บาท';
+                const speech = 'ครั้งนี้ ' + captured.total + ' บาท';
                 speechController.speak(speech, { channel: 'result' });
                 setPhaseIfChanged('waiting-removal');
                 return;
@@ -297,7 +297,13 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         speechController.speak(formatCurrencySpeech(result, null, true), { channel: 'result' });
         feedback?.('capture');
     }, [feedback]);
-    const clearTotal = useCallback(() => { totalRef.current = 0; historyRef.current = []; setTotalAmount(0); setScannedHistory([]); }, []);
+    const clearTotal = useCallback(() => {
+        totalRef.current = 0;
+        historyRef.current = [];
+        setTotalAmount(0);
+        setScannedHistory([]);
+        setResult(null);
+    }, [setResult]);
 
     const scannedCount = scannedHistory.reduce((count, batch) => count + batch.items.reduce((sum, item) => sum + item.quantity, 0), 0);
     const currencyScanning = phase === 'checking';

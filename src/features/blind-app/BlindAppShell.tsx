@@ -5,6 +5,7 @@ import BlindAssistScreen, { BlindAssistHandle } from '@/features/blind-assistant
 import BlindCallScreen, { BlindCallHandle } from '@/features/calling/BlindCallScreen';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 import { speechController } from '@/shared/accessibility/speechController';
+import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import BlindBottomNavigation from './BlindBottomNavigation';
 import PwaControls from './PwaControls';
 import { ACTIVE_CALL_STATUSES, ASSISTANT_TABS, BlindAppTab } from './types';
@@ -28,15 +29,12 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     const activateBlindAudio = useCallback(() => {
         speechController.unlockAudio();
     }, []);
+    const accessibilityNavigationHandlers = useAccessibilitySpeechNavigation(activateBlindAudio);
 
     const selectTab = useCallback((nextTab: BlindAppTab) => {
         if (nextTab === activeTab) return;
         if (callLocked && nextTab !== 'volunteer') {
             void hapticRef.current?.trigger(2);
-            speechController.speak('กรุณาวางสายก่อนเปลี่ยนเมนู', {
-                channel: 'status',
-                key: 'blind-tab-lock'
-            });
             return;
         }
 
@@ -90,20 +88,10 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         };
     }, []);
 
-    useEffect(() => {
-        let tabName = 'ผู้ช่วยพร้อม';
-        if (initialTab === 'reader') tabName = 'โหมดอ่านเอกสาร พร้อม';
-        else if (initialTab === 'currency') tabName = 'โหมดสแกนธนบัตร พร้อม';
-        else if (initialTab === 'volunteer') tabName = 'โหมดขอความช่วยเหลือ พร้อม';
-
-        speechController.speak(tabName, { channel: 'status' });
-    }, [initialTab]);
-
     return (
         <div
             className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-black text-white"
-            onTouchStartCapture={activateBlindAudio}
-            onClickCapture={activateBlindAudio}
+            {...accessibilityNavigationHandlers}
         >
             <HapticFeedback ref={hapticRef} />
             <PwaControls callActive={callLocked} audioReady={true} />

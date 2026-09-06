@@ -9,7 +9,7 @@ export interface ControlBarProps {
     isSpeaking: boolean;
     isListening: boolean;
     docText: string | null;
-    isReading: boolean;
+    isReading?: boolean;
     isProcessingDoc: boolean;
     currencyResult: CapturedCurrency | null;
     currencyScanning: boolean;
@@ -26,9 +26,10 @@ export interface ControlBarProps {
     onReplayCurrencyDetails: () => void;
     onClearTotal: () => void;
     onClearMessages?: () => void;
+    onReadAgain?: () => void;
     onReadDocument: () => void;
-    onReplayDocument: () => void;
-    onStopReading: () => void;
+    onReplayDocument?: () => void;
+    onStopReading?: () => void;
 }
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -89,6 +90,7 @@ export default function ControlBar({
     onReplayCurrencyDetails,
     onClearTotal,
     onClearMessages,
+    onReadAgain,
     onReadDocument,
     onReplayDocument,
     onStopReading,
@@ -123,7 +125,11 @@ export default function ControlBar({
                     )}
                     <div className="grid grid-cols-3 gap-3">
                         <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
-                        <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        {hasAssistantMessages ? (
+                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
+                        ) : (
+                            <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        )}
                         <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
                     </div>
                 </div>
@@ -134,18 +140,14 @@ export default function ControlBar({
                     <ActionButton wide tone="primary" disabled={!aiReady || currencyScanning} onClick={onCurrencyCapture} aria-label="ถ่ายเองเพื่อสแกนเงินตอนนี้">ถ่ายเอง</ActionButton>
                     <div className="grid grid-cols-2 gap-3">
                         <ActionButton disabled={!currencyResult} onClick={onReplayCurrencyDetails} aria-label="ฟังรายละเอียดเงินล่าสุด">ฟังรายละเอียด</ActionButton>
-                        <ActionButton tone="danger" disabled={totalAmount === 0} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
+                        <ActionButton tone="danger" disabled={totalAmount === 0 && !currencyResult} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
                     </div>
                 </div>
             )}
 
             {mode === 'reader' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่านออกเสียง'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : 'อ่านเอกสาร'}</ActionButton>
-                    <div className="grid grid-cols-2 gap-3">
-                        <ActionButton disabled={!docText || isReading} onClick={onReplayDocument} aria-label="อ่านซ้ำเอกสาร">อ่านซ้ำ</ActionButton>
-                        <ActionButton tone="danger" disabled={!isReading} onClick={onStopReading} aria-label="หยุดอ่านออกเสียง">หยุดอ่าน</ActionButton>
-                    </div>
+                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่าน'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : 'อ่านเอกสาร'}</ActionButton>
                 </div>
             )}
         </div>

@@ -33,4 +33,10 @@ describe('Currency auto-scan safeguards', () => {
         expect(source).toContain('removalNotFoundCountRef.current >= 2');
         expect(source).toContain('พร้อมสแกนใบถัดไป');
     });
+
+    it('replaces the previous total and history when a new currency scan succeeds', () => {
+        const source = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
+        expect(source).toContain('const newTotal = captured.total;');
+        expect(source).toContain('historyRef.current = [entry];');
+    });
 });

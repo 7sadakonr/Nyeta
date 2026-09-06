@@ -43,6 +43,7 @@ export function useAccessibilitySpeechNavigation(
   onNavigation?: NavigationCallback
 ) {
   const lastInteractionRef = useRef<{ element: Element; at: number } | null>(null);
+  const hasSeenInitialInteractiveFocusRef = useRef(false);
 
   const interruptForInteraction = useCallback((target: EventTarget | null, type?: string) => {
     if (!(target instanceof Element)) return;
@@ -51,6 +52,13 @@ export function useAccessibilitySpeechNavigation(
 
     const now = Date.now();
     const previous = lastInteractionRef.current;
+
+    // Shell mount can transfer focus to its first control. That is not VoiceOver
+    // navigation and must not cancel the activation speech that just unlocked TTS.
+    if (type === 'focus' && !hasSeenInitialInteractiveFocusRef.current) {
+      hasSeenInitialInteractiveFocusRef.current = true;
+      return;
+    }
     
     // Ignore duplicate focus events on the exact same element (e.g., from React re-renders)
     if (type === 'focus' && previous?.element === element) {

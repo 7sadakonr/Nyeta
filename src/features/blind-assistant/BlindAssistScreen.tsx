@@ -13,6 +13,7 @@ import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrency
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
 import { speechController } from '@/shared/accessibility/speechController';
+import { useResultRegionSuppression } from '@/shared/accessibility/useResultRegionSuppression';
 
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
 import { getObjectLabel } from '@/features/blind-assistant/client/objectLabels';
@@ -48,6 +49,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     // Refs
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
+    const { resultRegionProps, resetSuppression } = useResultRegionSuppression();
 
     const addLog = useCallback((msg: string) => {
         setLogs(prev => [...prev.slice(-4), msg]);
@@ -158,7 +160,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     useEffect(() => () => {
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
-    }, []);
+        resetSuppression();
+    }, [resetSuppression]);
 
     // B. AI Assistant
     const {
@@ -222,10 +225,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         if (previousModeRef.current === mode) return;
         cancelListening();
         speechController.stop();
+        resetSuppression();
         if (mode !== 'reader') resetDocument();
         if (mode !== 'assistant') setVoiceTranscript('');
         previousModeRef.current = mode;
-    }, [cancelListening, mode, resetDocument, setVoiceTranscript]);
+    }, [cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript]);
 
     const prepareForCall = useCallback(() => {
         cancelListening();
@@ -234,29 +238,17 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         resetDocument();
         stopCamera();
         speechController.stop();
-    }, [cancelListening, resetDocument, stopCamera, stopReading, stopSpeaking]);
+        resetSuppression();
+    }, [cancelListening, resetDocument, resetSuppression, stopCamera, stopReading, stopSpeaking]);
+
+    const handleClearMessages = useCallback(() => {
+        resetSuppression();
+        clearMessages();
+    }, [clearMessages, resetSuppression]);
 
     useImperativeHandle(ref, () => ({ prepareForCall }), [prepareForCall]);
 
-    // Auto-speak AI responses for blind users
-    const prevMessagesLenRef = useRef<number>(0);
-    useEffect(() => {
-        const hasNewMessage = aiMessages.length > prevMessagesLenRef.current;
-        if (!hasNewMessage) return;
-        if (mode !== 'assistant') {
-            prevMessagesLenRef.current = aiMessages.length;
-            return;
-        }
-        
-        prevMessagesLenRef.current = aiMessages.length;
-        const lastMsg = aiMessages[aiMessages.length - 1];
-        if (lastMsg?.role === 'ai' && lastMsg.content) {
-            speechController.speak(lastMsg.content, {
-                channel: 'result',
-                rate: 1.0,
-            });
-        }
-    }, [aiMessages, mode]);
+    // AI response is read by assistive technology from semantic DOM instead of auto-TTS.
 
     // Derived State
     const statusLabel = !aiReady
@@ -337,13 +329,20 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             detectedObjects={detectedObjects}
                         />
 
-                        {mode === 'assistant' && showCapturedText && <ChatHistory aiMessages={aiMessages} />}
+                        {mode === 'assistant' && showCapturedText && (
+                            <ChatHistory aiMessages={aiMessages} resultRegionProps={resultRegionProps} />
+                        )}
 
                         {mode === 'reader' && showCapturedText && (
-                            <section className="mx-4 mt-4 rounded-xl bg-[#1C1C1E] px-5 py-6" aria-label="เนื้อหาเอกสาร">
-                                <h2 className="text-[17px] font-semibold text-white">เอกสารพร้อมแล้ว</h2>
+                            <section
+                                className="mx-4 mt-4 rounded-xl bg-[#1C1C1E] px-5 py-6"
+                                aria-label="เนื้อหาเอกสาร"
+                                role="region"
+                                tabIndex={-1}
+                                {...resultRegionProps}
+                            >
+                                <h2 className="text-[17px] font-semibold text-white">เนื้อหาเอกสาร</h2>
                                 <p className="mt-3 whitespace-pre-wrap text-[17px] leading-relaxed text-[#EBEBF5]">{docText}</p>
-                                {isReading && <p className="mt-4 text-[13px] font-medium text-[#0A84FF]">กำลังอ่านออกเสียง...</p>}
                             </section>
                         )}
                     </div>
@@ -373,7 +372,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onCurrencyCapture={captureCurrency}
                         onReplayCurrencyDetails={replayCurrencyDetails}
                         onClearTotal={clearTotal}
-                        onClearMessages={clearMessages}
+                        onClearMessages={handleClearMessages}
                         onReadDocument={readDocument}
                         onReplayDocument={replayDocument}
                         onStopReading={stopReading}

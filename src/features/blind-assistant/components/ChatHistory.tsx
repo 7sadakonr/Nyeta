@@ -1,11 +1,13 @@
 'use client';
 
-'use client';
-
 import { AssistantMessage } from '@/features/blind-assistant/types/assistant';
 
 export interface ChatHistoryProps {
     aiMessages: AssistantMessage[];
+    resultRegionProps?: {
+        onFocus: (event: React.FocusEvent<HTMLElement>) => void;
+        onBlur: (event: React.FocusEvent<HTMLElement>) => void;
+    };
 }
 
 function MessageContent({ message }: { message: AssistantMessage }) {
@@ -22,18 +24,24 @@ function MessageContent({ message }: { message: AssistantMessage }) {
     );
 }
 
-export default function ChatHistory({ aiMessages }: ChatHistoryProps) {
+export default function ChatHistory({ aiMessages, resultRegionProps }: ChatHistoryProps) {
     const latestMessage = aiMessages[aiMessages.length - 1];
     const previousMessages = aiMessages.slice(0, -1);
 
     if (!latestMessage) return null;
 
     return (
-        <section className="space-y-4 px-4 pb-3 pt-4" aria-hidden="true">
+        <section
+            className="space-y-4 px-4 pb-3 pt-4"
+            aria-label="คำบรรยาย"
+            role="region"
+            tabIndex={-1}
+            {...resultRegionProps}
+        >
             <div className="rounded-xl bg-[#1C1C1E] px-5 py-5">
                 <div className="flex items-center gap-2">
-                    <span className="size-2.5 rounded-full bg-[#0A84FF]" />
-                    <h2 className="text-[15px] font-semibold text-[#0A84FF]">คำตอบล่าสุด</h2>
+                    <span className="size-2.5 rounded-full bg-[#0A84FF]" aria-hidden="true" />
+                    <h2 className="text-[15px] font-semibold text-[#0A84FF]">คำบรรยาย</h2>
                 </div>
                 <div className="mt-3">
                     <MessageContent message={latestMessage} />

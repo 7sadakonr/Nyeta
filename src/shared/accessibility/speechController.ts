@@ -28,6 +28,41 @@ class SpeechController {
     private _audioUnlocked = false;
 
     private _pendingUnlockSpeech: { text: string, options: SpeechOptions } | null = null;
+    private _guidanceSuppressed = false;
+    private _guidanceSuppressedListeners = new Set<() => void>();
+
+    /**
+     * Persistently suppress guidance (realtime/status) channels.
+     * Used when VoiceOver is focused on result regions.
+     * Critical channel is never suppressed.
+     */
+    public setGuidanceSuppressed(suppressed: boolean): void {
+        if (this._guidanceSuppressed === suppressed) return;
+        this._guidanceSuppressed = suppressed;
+
+        if (suppressed) {
+            // Cancel any active guidance speech
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+                this._cancelInternal();
+                this._activeRequest++;
+                this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+                this.notify();
+            }
+        }
+        // When unsuppressed: do not resume old speech, wait for next natural guidance
+
+        this._guidanceSuppressedListeners.forEach(listener => listener());
+    }
+
+    public get isGuidanceSuppressed(): boolean {
+        return this._guidanceSuppressed;
+    }
+
+    public subscribeGuidanceSuppressed(listener: () => void): () => void {
+        this._guidanceSuppressedListeners.add(listener);
+        return () => this._guidanceSuppressedListeners.delete(listener);
+    }
+
     
     public unlockAudio(): void {
         if (this._audioUnlocked || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -115,6 +150,11 @@ class SpeechController {
         }
 
         if (this._state === 'listening' && options.channel !== 'critical') {
+            options.onEnd?.(false);
+            return false;
+        }
+
+        if (this._guidanceSuppressed && (options.channel === 'realtime' || options.channel === 'status')) {
             options.onEnd?.(false);
             return false;
         }

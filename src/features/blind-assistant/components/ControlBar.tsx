@@ -9,7 +9,7 @@ export interface ControlBarProps {
     isSpeaking: boolean;
     isListening: boolean;
     docText: string | null;
-    isReading: boolean;
+    isReading?: boolean;
     isProcessingDoc: boolean;
     currencyResult: CapturedCurrency | null;
     currencyScanning: boolean;
@@ -27,8 +27,8 @@ export interface ControlBarProps {
     onClearTotal: () => void;
     onClearMessages?: () => void;
     onReadDocument: () => void;
-    onReplayDocument: () => void;
-    onStopReading: () => void;
+    onReplayDocument?: () => void;
+    onStopReading?: () => void;
 }
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -141,11 +141,7 @@ export default function ControlBar({
 
             {mode === 'reader' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่านออกเสียง'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : 'อ่านเอกสาร'}</ActionButton>
-                    <div className="grid grid-cols-2 gap-3">
-                        <ActionButton disabled={!docText || isReading} onClick={onReplayDocument} aria-label="อ่านซ้ำเอกสาร">อ่านซ้ำ</ActionButton>
-                        <ActionButton tone="danger" disabled={!isReading} onClick={onStopReading} aria-label="หยุดอ่านออกเสียง">หยุดอ่าน</ActionButton>
-                    </div>
+                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่าน'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : 'อ่านเอกสาร'}</ActionButton>
                 </div>
             )}
         </div>

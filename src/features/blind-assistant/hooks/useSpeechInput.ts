@@ -41,6 +41,7 @@ export function useSpeechInput(
     const finalTranscriptRef = useRef('');
     const interimTranscriptRef = useRef('');
     const submitOnEndRef = useRef(false);
+    const isExplicitStopRef = useRef(false);
     const sessionActiveRef = useRef(false);
 
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
@@ -49,6 +50,7 @@ export function useSpeechInput(
     const finishSession = useCallback(() => {
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
+        isExplicitStopRef.current = false;
         speechController.endListening();
         setState('idle');
         const finalTranscript = [finalTranscriptRef.current.trim(), interimTranscriptRef.current.trim()]
@@ -58,7 +60,7 @@ export function useSpeechInput(
         const shouldSubmit = submitOnEndRef.current;
         submitOnEndRef.current = false;
         interimTranscriptRef.current = '';
-        if (shouldSubmit && finalTranscript) onResultRef.current?.(finalTranscript);
+        if (shouldSubmit) onResultRef.current?.(finalTranscript);
     }, []);
 
     useEffect(() => {
@@ -97,6 +99,10 @@ export function useSpeechInput(
             }
         };
         recognition.onerror = (event: any) => {
+            if (isExplicitStopRef.current) {
+                // When the user explicitly clicks "หยุดและส่ง", don't discard submission due to no-speech or stop abort
+                return;
+            }
             submitOnEndRef.current = false;
             interimTranscriptRef.current = '';
             if (event.error === 'aborted') setTranscript('ยกเลิกการถามด้วยเสียง');
@@ -110,6 +116,7 @@ export function useSpeechInput(
 
         return () => {
             submitOnEndRef.current = false;
+            isExplicitStopRef.current = false;
             interimTranscriptRef.current = '';
             try { recognition.abort(); } catch {}
             finishSession();
@@ -133,12 +140,14 @@ export function useSpeechInput(
         finalTranscriptRef.current = '';
         interimTranscriptRef.current = '';
         submitOnEndRef.current = true;
+        isExplicitStopRef.current = false;
         sessionActiveRef.current = true;
         setState('starting');
         try {
             recognition.start();
         } catch {
             submitOnEndRef.current = false;
+            isExplicitStopRef.current = false;
             interimTranscriptRef.current = '';
             finishSession();
         }
@@ -148,12 +157,15 @@ export function useSpeechInput(
         const recognition = recognitionRef.current;
         if (!recognition || !sessionActiveRef.current) return;
         setState('stopping');
+        isExplicitStopRef.current = true;
+        submitOnEndRef.current = true;
         try { recognition.stop(); } catch { finishSession(); }
     }, [finishSession]);
 
     const cancelListening = useCallback(() => {
         const recognition = recognitionRef.current;
         submitOnEndRef.current = false;
+        isExplicitStopRef.current = false;
         interimTranscriptRef.current = '';
         finalTranscriptRef.current = '';
         if (!sessionActiveRef.current) return;

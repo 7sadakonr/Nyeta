@@ -86,8 +86,9 @@ export function useAiAssistant(
             const base64Data = imageDataUrl.split(',')[1];
             const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
 
-            const userQuestion = customPrompt && typeof customPrompt === 'string'
-                ? `(พูด): "${customPrompt}"`
+            const trimmedPrompt = typeof customPrompt === 'string' ? customPrompt.trim() : '';
+            const userQuestion = trimmedPrompt
+                ? `(พูด): "${trimmedPrompt}"`
                 : 'ช่วยบรรยายภาพนี้อย่างละเอียดให้เห็นภาพชัดเจน ทั้งภาพรวม รายละเอียดสิ่งของ ตำแหน่งทิศทาง สีสัน และสิ่งรอบข้าง';
 
             const newUserMessage: AssistantMessage = {

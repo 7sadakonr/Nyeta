@@ -429,26 +429,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             videoRef={videoRef}
                             cameraContainerRef={cameraContainerRef}
                             cameraHeightClass={cameraHeightClass}
-                            cocoBoxes={cocoBoxes}
-                            targetObject={targetObject}
                             pageBounds={pageBounds}
                             pageCorners={pageCorners}
                             readerAligned={readerAligned}
                             currencyBounds={currencyBounds}
                             mode={mode}
-                            objectDetectorEnabled={true}
-                            aiReady={aiReady}
                             currencyResult={currencyResult}
                             currencyScanning={currencyScanning}
                             currencyHint={currencyHint}
                             isBlocked={currencyBlocked}
-                            guidanceText={guidanceText}
-                            voiceTranscript={voiceTranscript}
-                            isListening={isListening}
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
                             showCapturedText={showCapturedText}
-                            detectedObjects={detectedObjects}
                         />
 
                         {mode === 'assistant' && showCapturedText && (

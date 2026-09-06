@@ -96,7 +96,7 @@ export function useAiAssistant(
                 content: userQuestion,
                 image: imageDataUrl,
             };
-            setMessages(prev => [...prev, newUserMessage]);
+            setMessages([newUserMessage]);
 
             setStatus('thinking');
             addLog?.('Sending to Gemini...');

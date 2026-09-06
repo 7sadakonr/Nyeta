@@ -118,13 +118,26 @@ export default function ControlBar({
         <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-white/[0.15] bg-black/80 px-4 pb-4 pt-3 backdrop-blur-2xl" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    {isListening ? (
-                        <ActionButton wide tone="danger" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
-                    ) : (
-                        <ActionButton ref={describeSceneRef} wide tone="primary" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
-                    )}
+                    <ActionButton
+                        ref={describeSceneRef}
+                        wide
+                        tone="primary"
+                        disabled={!canCapture}
+                        onClick={onCapture}
+                        aria-busy={isBusy}
+                        aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}
+                    >
+                        {isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}
+                    </ActionButton>
                     <div className="grid grid-cols-3 gap-3">
-                        <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
+                        <ActionButton
+                            tone={isListening ? 'danger' : 'secondary'}
+                            onClick={isListening ? onStopListening : onStartListening}
+                            aria-label={isListening ? 'หยุดและส่งคำถาม' : 'ถามด้วยเสียง'}
+                            aria-pressed={isListening}
+                        >
+                            {isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
+                        </ActionButton>
                         {hasAssistantMessages ? (
                             <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
                         ) : (

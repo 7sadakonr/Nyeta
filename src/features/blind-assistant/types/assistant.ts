@@ -8,6 +8,7 @@ export type AssistantMode = BlindMode;
 export type AssistantStatus = 'idle' | 'capturing' | 'thinking' | 'speaking' | 'error';
 
 export interface AssistantMessage {
+  id?: string;
   role: 'user' | 'ai' | 'model';
   content: string;
   image?: string;

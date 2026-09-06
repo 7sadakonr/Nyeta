@@ -138,4 +138,39 @@ describe('speechController navigation quiet policy', () => {
         expect(utterances.map((utterance) => utterance.text)).toEqual(['ข้อความที่ผู้ใช้หยุดเอง']);
     });
 
+    it('blocks realtime and status speech while guidance is suppressed, but allows critical', () => {
+        speechController.setGuidanceSuppressed(true);
+        expect(speechController.isGuidanceSuppressed).toBe(true);
+
+        const realtimeAccepted = speechController.speak('ขยับกล้องไปทางซ้าย', { channel: 'realtime' });
+        const statusAccepted = speechController.speak('กำลังเตรียมความพร้อม', { channel: 'status' });
+        expect(realtimeAccepted).toBe(false);
+        expect(statusAccepted).toBe(false);
+        expect(utterances).toHaveLength(0);
+
+        const criticalAccepted = speechController.speak('ไม่สามารถเปิดกล้องได้', { channel: 'critical' });
+        expect(criticalAccepted).toBe(true);
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ไม่สามารถเปิดกล้องได้']);
+    });
+
+    it('cancels active realtime speech when guidance suppression is activated', () => {
+        speechController.speak('เลื่อนซ้าย', { channel: 'realtime' });
+        expect(utterances).toHaveLength(1);
+
+        speechController.setGuidanceSuppressed(true);
+        expect(window.speechSynthesis.cancel).toHaveBeenCalled();
+
+        // Unsuppressing does not resume old speech
+        speechController.setGuidanceSuppressed(false);
+        expect(utterances).toHaveLength(1);
+    });
+
+    it('allows new guidance speech after unsuppression without resuming old speech', () => {
+        speechController.setGuidanceSuppressed(true);
+        speechController.setGuidanceSuppressed(false);
+
+        const accepted = speechController.speak('ขยับกล้องขึ้น', { channel: 'realtime' });
+        expect(accepted).toBe(true);
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ขยับกล้องขึ้น']);
+    });
 });

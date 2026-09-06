@@ -40,6 +40,83 @@ describe('ControlBar', () => {
         expect(onClearMessages).toHaveBeenCalledOnce();
     });
 
+    it('offers a read-again action when assistant messages exist and triggers onReadAgain', () => {
+        const onReadAgain = vi.fn();
+        const { getByRole, queryByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadAgain={onReadAgain}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        const readAgainBtn = getByRole('button', { name: 'อ่านใหม่' });
+        expect(readAgainBtn).toBeTruthy();
+        expect(queryByRole('button', { name: 'หยุดเสียง' })).toBeNull();
+
+        fireEvent.click(readAgainBtn);
+        expect(onReadAgain).toHaveBeenCalledOnce();
+    });
+
+    it('shows stop-speech when no assistant messages exist', () => {
+        const onStopSpeaking = vi.fn();
+        const { getByRole, queryByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages={false}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={onStopSpeaking}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        expect(queryByRole('button', { name: 'อ่านใหม่' })).toBeNull();
+        const stopBtn = getByRole('button', { name: 'หยุดเสียง' });
+        expect(stopBtn).toBeTruthy();
+
+        fireEvent.click(stopBtn);
+        expect(onStopSpeaking).toHaveBeenCalledOnce();
+    });
+
     it('offers detail playback and reset actions in currency mode', () => {
         const { getByRole, queryByRole } = render(
             <ControlBar

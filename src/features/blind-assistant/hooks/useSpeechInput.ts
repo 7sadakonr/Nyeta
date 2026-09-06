@@ -69,7 +69,7 @@ export function useSpeechInput(
         if (!SpeechRecognition) return;
 
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'th-TH';
         recognitionRef.current = recognition;
@@ -103,16 +103,35 @@ export function useSpeechInput(
                 // When the user explicitly clicks "หยุดและส่ง", don't discard submission due to no-speech or stop abort
                 return;
             }
+            if (event.error === 'no-speech') {
+                setTranscript(finalTranscriptRef.current ? `✅ ${finalTranscriptRef.current}` : 'กำลังฟัง...');
+                return;
+            }
+            if (event.error === 'aborted') {
+                setTranscript('ยกเลิกการถามด้วยเสียง');
+                return;
+            }
             submitOnEndRef.current = false;
             interimTranscriptRef.current = '';
-            if (event.error === 'aborted') setTranscript('ยกเลิกการถามด้วยเสียง');
-            else if (event.error === 'no-speech') setTranscript('ไม่ได้ยินเสียง');
-            else {
-                setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
-                onFeedbackRef.current?.('error');
-            }
+            setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
+            onFeedbackRef.current?.('error');
         };
-        recognition.onend = () => finishSession();
+        recognition.onend = () => {
+            if (isExplicitStopRef.current) {
+                finishSession();
+                return;
+            }
+            if (sessionActiveRef.current) {
+                // Keep listening until the user explicitly presses stop
+                try {
+                    recognition.start();
+                } catch {
+                    // Browser may still consider it started
+                }
+                return;
+            }
+            finishSession();
+        };
 
         return () => {
             submitOnEndRef.current = false;
@@ -139,7 +158,7 @@ export function useSpeechInput(
 
         finalTranscriptRef.current = '';
         interimTranscriptRef.current = '';
-        submitOnEndRef.current = true;
+        submitOnEndRef.current = false;
         isExplicitStopRef.current = false;
         sessionActiveRef.current = true;
         setState('starting');
@@ -155,10 +174,14 @@ export function useSpeechInput(
 
     const stopListening = useCallback(() => {
         const recognition = recognitionRef.current;
-        if (!recognition || !sessionActiveRef.current) return;
+        if (!sessionActiveRef.current) return;
         setState('stopping');
         isExplicitStopRef.current = true;
         submitOnEndRef.current = true;
+        if (!recognition) {
+            finishSession();
+            return;
+        }
         try { recognition.stop(); } catch { finishSession(); }
     }, [finishSession]);
 

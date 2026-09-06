@@ -57,4 +57,29 @@ describe('useSpeechInput', () => {
     expect(endListening).toHaveBeenCalledOnce();
     expect(onResult).toHaveBeenCalledExactlyOnceWith('ถามหน่อย');
   });
+
+  it('does not auto-submit on premature onend and only submits when stopListening is explicitly invoked', () => {
+    const onResult = vi.fn();
+    const { result } = renderHook(() => useSpeechInput(onResult));
+    const recognition = MockRecognition.latest!;
+
+    act(() => result.current.startListening());
+    expect(beginListening).toHaveBeenCalledOnce();
+
+    act(() => recognition.onresult?.({ results: [{ 0: { transcript: 'นี่คืออะไร' }, isFinal: true }] }));
+
+    // Browser prematurely fires onend without user clicking stop
+    act(() => recognition.onend?.());
+    // Must NOT submit!
+    expect(onResult).not.toHaveBeenCalled();
+    expect(endListening).not.toHaveBeenCalled();
+
+    // User explicitly clicks stop
+    act(() => result.current.stopListening());
+    expect(recognition.stop).toHaveBeenCalled();
+
+    act(() => recognition.onend?.());
+    expect(endListening).toHaveBeenCalledOnce();
+    expect(onResult).toHaveBeenCalledWith('นี่คืออะไร');
+  });
 });

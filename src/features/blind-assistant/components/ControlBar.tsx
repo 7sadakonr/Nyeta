@@ -16,10 +16,12 @@ export interface ControlBarProps {
     currencyMonitoring: boolean;
     totalAmount?: number;
     hasAssistantMessages?: boolean;
+    isGuidanceMuted?: boolean;
     isBlocked?: boolean;
     readerAligned: boolean;
     onCapture: () => void;
     onStopSpeaking: () => void;
+    onToggleGuidance?: () => void;
     onStartListening: () => void;
     onStopListening: () => void;
     onCurrencyCapture: () => void;
@@ -81,9 +83,11 @@ export default function ControlBar({
     currencyScanning,
     totalAmount = 0,
     hasAssistantMessages = false,
+    isGuidanceMuted = false,
     readerAligned,
     onCapture,
     onStopSpeaking,
+    onToggleGuidance,
     onStartListening,
     onStopListening,
     onCurrencyCapture,
@@ -141,7 +145,14 @@ export default function ControlBar({
                         {hasAssistantMessages ? (
                             <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
                         ) : (
-                            <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                            <ActionButton
+                                tone={isGuidanceMuted ? 'danger' : 'secondary'}
+                                onClick={onToggleGuidance || onStopSpeaking}
+                                aria-label={isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
+                                aria-pressed={isGuidanceMuted}
+                            >
+                                {isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
+                            </ActionButton>
                         )}
                         <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
                     </div>

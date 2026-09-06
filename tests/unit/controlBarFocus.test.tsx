@@ -117,6 +117,77 @@ describe('ControlBar', () => {
         expect(onStopSpeaking).toHaveBeenCalledOnce();
     });
 
+    it('toggles TTS guidance when onToggleGuidance is provided and displays เปิดเสียง when muted', () => {
+        const onToggleGuidance = vi.fn();
+        const { getByRole, rerender } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages={false}
+                isGuidanceMuted={false}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onToggleGuidance={onToggleGuidance}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        const stopBtn = getByRole('button', { name: 'หยุดเสียง' });
+        expect(stopBtn.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.click(stopBtn);
+        expect(onToggleGuidance).toHaveBeenCalledOnce();
+
+        rerender(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages={false}
+                isGuidanceMuted={true}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onToggleGuidance={onToggleGuidance}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        const resumeBtn = getByRole('button', { name: 'เปิดเสียง' });
+        expect(resumeBtn.getAttribute('aria-pressed')).toBe('true');
+    });
+
     it('offers detail playback and reset actions in currency mode', () => {
         const { getByRole, queryByRole } = render(
             <ControlBar

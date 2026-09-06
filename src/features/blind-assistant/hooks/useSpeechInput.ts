@@ -39,6 +39,7 @@ export function useSpeechInput(
     const onResultRef = useRef(onResult);
     const onFeedbackRef = useRef(onFeedback);
     const finalTranscriptRef = useRef('');
+    const interimTranscriptRef = useRef('');
     const submitOnEndRef = useRef(false);
     const sessionActiveRef = useRef(false);
 
@@ -50,9 +51,13 @@ export function useSpeechInput(
         sessionActiveRef.current = false;
         speechController.endListening();
         setState('idle');
-        const finalTranscript = finalTranscriptRef.current.trim();
+        const finalTranscript = [finalTranscriptRef.current.trim(), interimTranscriptRef.current.trim()]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
         const shouldSubmit = submitOnEndRef.current;
         submitOnEndRef.current = false;
+        interimTranscriptRef.current = '';
         if (shouldSubmit && finalTranscript) onResultRef.current?.(finalTranscript);
     }, []);
 
@@ -70,6 +75,7 @@ export function useSpeechInput(
         recognition.onstart = () => {
             setState('listening');
             setTranscript('กำลังฟัง...');
+            interimTranscriptRef.current = '';
             onFeedbackRef.current?.('mic-start');
         };
         recognition.onresult = (event: any) => {
@@ -80,14 +86,19 @@ export function useSpeechInput(
                 if (result.isFinal) final += result[0]?.transcript || '';
                 else interim += result[0]?.transcript || '';
             }
-            if (interim) setTranscript(`🎤 ${interim}`);
+            if (interim) {
+                interimTranscriptRef.current = interim;
+                setTranscript(`🎤 ${interim}`);
+            }
             if (final.trim()) {
                 finalTranscriptRef.current = `${finalTranscriptRef.current} ${final}`.trim();
                 setTranscript(`✅ ${finalTranscriptRef.current}`);
+                interimTranscriptRef.current = '';
             }
         };
         recognition.onerror = (event: any) => {
             submitOnEndRef.current = false;
+            interimTranscriptRef.current = '';
             if (event.error === 'aborted') setTranscript('ยกเลิกการถามด้วยเสียง');
             else if (event.error === 'no-speech') setTranscript('ไม่ได้ยินเสียง');
             else {
@@ -99,6 +110,7 @@ export function useSpeechInput(
 
         return () => {
             submitOnEndRef.current = false;
+            interimTranscriptRef.current = '';
             try { recognition.abort(); } catch {}
             finishSession();
             if (recognitionRef.current === recognition) recognitionRef.current = null;
@@ -119,6 +131,7 @@ export function useSpeechInput(
         speechController.beginListening();
 
         finalTranscriptRef.current = '';
+        interimTranscriptRef.current = '';
         submitOnEndRef.current = true;
         sessionActiveRef.current = true;
         setState('starting');
@@ -126,6 +139,7 @@ export function useSpeechInput(
             recognition.start();
         } catch {
             submitOnEndRef.current = false;
+            interimTranscriptRef.current = '';
             finishSession();
         }
     }, [finishSession, state]);
@@ -140,6 +154,8 @@ export function useSpeechInput(
     const cancelListening = useCallback(() => {
         const recognition = recognitionRef.current;
         submitOnEndRef.current = false;
+        interimTranscriptRef.current = '';
+        finalTranscriptRef.current = '';
         if (!sessionActiveRef.current) return;
         try { recognition?.abort(); } catch { finishSession(); }
     }, [finishSession]);

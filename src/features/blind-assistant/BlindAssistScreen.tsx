@@ -150,7 +150,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [mode, targetingEvent]);
 
     useEffect(() => {
-        if (speechController.isGuidanceSuppressed) {
+        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted) {
             pendingObjectAnnouncementRef.current = null;
             return;
         }
@@ -185,6 +185,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
+        speechController.setGuidanceMuted(false);
         resetSuppression();
     }, [resetSuppression, stopWaitingSound]);
 
@@ -240,6 +241,22 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         feedback('button');
         requestAnimationFrame(() => {
             latestResultRef.current?.focus({ preventScroll: false });
+        });
+    }, [feedback]);
+
+    const [isGuidanceMuted, setIsGuidanceMuted] = useState(false);
+
+    const handleToggleGuidance = useCallback(() => {
+        setIsGuidanceMuted(prev => {
+            const next = !prev;
+            speechController.setGuidanceMuted(next);
+            feedback('button');
+            if (next) {
+                speechController.speak('ปิดเสียงนำทางแล้ว', { channel: 'critical' });
+            } else {
+                speechController.speak('เปิดเสียงนำทางแล้ว', { channel: 'critical' });
+            }
+            return next;
         });
     }, [feedback]);
 
@@ -472,10 +489,12 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         currencyMonitoring={currencyMonitoring}
                         totalAmount={totalAmount}
                         hasAssistantMessages={aiMessages.length > 0}
+                        isGuidanceMuted={isGuidanceMuted}
                         isBlocked={currencyBlocked}
                         readerAligned={readerAligned}
                         onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
+                        onToggleGuidance={handleToggleGuidance}
                         onStartListening={toggleListening}
                         onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}

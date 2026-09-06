@@ -1,6 +1,7 @@
 import React from 'react';
 import { BlindMode, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
+import { MicIcon, SendIcon, Volume2Icon, VolumeXIcon, TrashIcon, RotateCcwIcon } from '@/shared/ui/icons/ControlBarIcons';
 
 export interface ControlBarProps {
     mode: BlindMode;
@@ -137,13 +138,17 @@ export default function ControlBar({
                         <ActionButton
                             tone={isListening ? 'danger' : 'secondary'}
                             onClick={isListening ? onStopListening : onStartListening}
-                            aria-label={isListening ? 'หยุดและส่งคำถาม' : 'ถามด้วยเสียง'}
+                            aria-label={isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
                             aria-pressed={isListening}
                         >
-                            {isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
+                            {isListening ? <SendIcon className="size-7" /> : <MicIcon className="size-7" />}
+                            <span className="sr-only">{isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}</span>
                         </ActionButton>
                         {hasAssistantMessages ? (
-                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
+                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">
+                                <RotateCcwIcon className="size-7" />
+                                <span className="sr-only">อ่านใหม่</span>
+                            </ActionButton>
                         ) : (
                             <ActionButton
                                 tone={isGuidanceMuted ? 'danger' : 'secondary'}
@@ -151,10 +156,14 @@ export default function ControlBar({
                                 aria-label={isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
                                 aria-pressed={isGuidanceMuted}
                             >
-                                {isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
+                                {isGuidanceMuted ? <VolumeXIcon className="size-7" /> : <Volume2Icon className="size-7" />}
+                                <span className="sr-only">{isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}</span>
                             </ActionButton>
                         )}
-                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
+                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">
+                            <TrashIcon className="size-7" />
+                            <span className="sr-only">ล้างแชท</span>
+                        </ActionButton>
                     </div>
                 </div>
             )}

@@ -10,19 +10,16 @@ export interface ChatHistoryProps {
         onBlur: (event: React.FocusEvent<HTMLElement>) => void;
     };
     latestResultRef?: React.Ref<HTMLParagraphElement>;
-    onBlockFocus?: (blockId: string) => void;
 }
 
 function MessageContent({
     message,
     contentRef,
     blockId,
-    onFocus,
 }: {
     message: AssistantMessage;
     contentRef?: React.Ref<HTMLParagraphElement>;
     blockId?: string;
-    onFocus?: (blockId: string) => void;
 }) {
     const isError = message.content.startsWith('Error') || message.content.startsWith('ขอโทษ') || message.content.startsWith('เกิดข้อผิดพลาด');
 
@@ -32,7 +29,6 @@ function MessageContent({
                 id={blockId}
                 tabIndex={-1}
                 className="text-[15px] font-medium text-[#8E8E93] outline-none"
-                onFocus={() => blockId && onFocus?.(blockId)}
             >
                 คุณส่งภาพเพื่อให้บรรยาย
             </p>
@@ -44,7 +40,6 @@ function MessageContent({
             ref={contentRef}
             id={blockId}
             tabIndex={-1}
-            onFocus={() => blockId && onFocus?.(blockId)}
             className={`whitespace-pre-wrap text-[17px] leading-relaxed outline-none ${isError ? 'text-[#FF453A]' : 'text-[#EBEBF5]'}`}
         >
             {message.content}
@@ -52,7 +47,7 @@ function MessageContent({
     );
 }
 
-export default function ChatHistory({ aiMessages, resultRegionProps, latestResultRef, onBlockFocus }: ChatHistoryProps) {
+export default function ChatHistory({ aiMessages, resultRegionProps, latestResultRef }: ChatHistoryProps) {
     const latestMessage = aiMessages[aiMessages.length - 1];
     const previousMessages = aiMessages.slice(0, -1);
 
@@ -78,7 +73,6 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
                         message={latestMessage}
                         contentRef={latestResultRef}
                         blockId={`${latestId}-block-0`}
-                        onFocus={onBlockFocus}
                     />
                 </div>
             </div>
@@ -94,7 +88,6 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
                                     <MessageContent
                                         message={message}
                                         blockId={`${prevId}-block-0`}
-                                        onFocus={onBlockFocus}
                                     />
                                 </li>
                             );

@@ -199,7 +199,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     const latestResultRef = useRef<HTMLParagraphElement | null>(null);
     const lastFocusedMessageIdRef = useRef<string | null>(null);
-    const lastResultBlockRef = useRef<string | null>(null);
 
     // Be My Eyes capture flow:
     // Preflight check -> stop active speech -> start processing earcon -> suppress guidance persistently -> send request
@@ -238,11 +237,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         }
     }, [aiReady, aiStatus, captureAndAsk, feedback, stopWaitingSound]);
 
+    // เลื่อน focus กลับไปที่จุดเริ่มต้นของผลลัพธ์เพื่ออ่านใหม่ตามที่ผู้ใช้สั่ง
+    const handleReadAgain = useCallback(() => {
+        feedback('button');
+        requestAnimationFrame(() => {
+            latestResultRef.current?.focus({ preventScroll: false });
+        });
+    }, [feedback]);
+
     // One-shot focus on new AI message without re-focusing on subsequent re-renders
     useEffect(() => {
         if (aiMessages.length === 0) {
             lastFocusedMessageIdRef.current = null;
-            lastResultBlockRef.current = null;
             return;
         }
 
@@ -314,7 +320,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         cancelListening();
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
-        lastResultBlockRef.current = null;
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
@@ -328,7 +333,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         cancelListening();
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
-        lastResultBlockRef.current = null;
         pendingObjectAnnouncementRef.current = null;
         stopSpeaking();
         stopReading();
@@ -342,7 +346,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const handleClearMessages = useCallback(() => {
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
-        lastResultBlockRef.current = null;
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
@@ -438,9 +441,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                                 aiMessages={aiMessages}
                                 resultRegionProps={resultRegionProps}
                                 latestResultRef={latestResultRef}
-                                onBlockFocus={(blockId) => {
-                                    lastResultBlockRef.current = blockId;
-                                }}
                             />
                         )}
 
@@ -484,6 +484,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onReplayCurrencyDetails={replayCurrencyDetails}
                         onClearTotal={clearTotal}
                         onClearMessages={handleClearMessages}
+                        onReadAgain={handleReadAgain}
                         onReadDocument={readDocument}
                         onReplayDocument={replayDocument}
                         onStopReading={stopReading}

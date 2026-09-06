@@ -26,6 +26,7 @@ export interface ControlBarProps {
     onReplayCurrencyDetails: () => void;
     onClearTotal: () => void;
     onClearMessages?: () => void;
+    onReadAgain?: () => void;
     onReadDocument: () => void;
     onReplayDocument?: () => void;
     onStopReading?: () => void;
@@ -89,6 +90,7 @@ export default function ControlBar({
     onReplayCurrencyDetails,
     onClearTotal,
     onClearMessages,
+    onReadAgain,
     onReadDocument,
     onReplayDocument,
     onStopReading,
@@ -123,7 +125,11 @@ export default function ControlBar({
                     )}
                     <div className="grid grid-cols-3 gap-3">
                         <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
-                        <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        {hasAssistantMessages ? (
+                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
+                        ) : (
+                            <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                        )}
                         <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
                     </div>
                 </div>

@@ -2,6 +2,7 @@
  * Document/page edge detection via Scanic (Rust/WASM contour scanner).
  */
 import { BoundingBox, Point2D, QuadCorners } from '@/features/blind-assistant/types/assistant';
+import { getVisibleVideoRegion } from './videoCoords';
 
 const MARGIN_RATIO = 0.03;
 const MAX_COVERAGE = 0.96;
@@ -241,33 +242,33 @@ function mapScanicCorners(scanCorners: any): QuadCorners | null {
     };
 }
 
-function drawVideoFrame(video: HTMLVideoElement, vw: number, vh: number): HTMLCanvasElement {
+function drawVideoFrame(video: HTMLVideoElement, sx: number, sy: number, sw: number, sh: number): HTMLCanvasElement {
     if (!_frameCanvas) {
         _frameCanvas = document.createElement('canvas');
-        _frameCanvas.width = vw;
-        _frameCanvas.height = vh;
+        _frameCanvas.width = sw;
+        _frameCanvas.height = sh;
         _frameCtx = _frameCanvas.getContext('2d', { willReadFrequently: true });
-    } else if (_frameCanvas.width !== vw || _frameCanvas.height !== vh) {
-        _frameCanvas.width = vw;
-        _frameCanvas.height = vh;
+    } else if (_frameCanvas.width !== sw || _frameCanvas.height !== sh) {
+        _frameCanvas.width = sw;
+        _frameCanvas.height = sh;
     }
 
-    _frameCtx?.drawImage(video, 0, 0, vw, vh);
+    _frameCtx?.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
     return _frameCanvas;
 }
 
 /**
  * Returns axis-aligned bounding box of detected document region.
  */
-export async function detectPageBounds(video: HTMLVideoElement | null): Promise<BoundingBox | null> {
-    const analysis = await analyzePageAlignment(video);
+export async function detectPageBounds(video: HTMLVideoElement | null, container?: HTMLElement | null): Promise<BoundingBox | null> {
+    const analysis = await analyzePageAlignment(video, container);
     return analysis?.bounds ?? null;
 }
 
 /**
  * Full page alignment analysis with 4 corners and Thai guidance.
  */
-export async function analyzePageAlignment(video: HTMLVideoElement | null): Promise<PageAnalysisResult> {
+export async function analyzePageAlignment(video: HTMLVideoElement | null, container?: HTMLElement | null): Promise<PageAnalysisResult> {
     if (!video || video.readyState < 2) {
         return notDetectedResult();
     }
@@ -282,7 +283,13 @@ export async function analyzePageAlignment(video: HTMLVideoElement | null): Prom
 
     const vw = video.videoWidth || 640;
     const vh = video.videoHeight || 480;
-    const frameCanvas = drawVideoFrame(video, vw, vh);
+    const visible = container ? getVisibleVideoRegion(video, container) : null;
+    const sx = visible ? visible.x : 0;
+    const sy = visible ? visible.y : 0;
+    const sw = visible ? visible.width : vw;
+    const sh = visible ? visible.height : vh;
+
+    const frameCanvas = drawVideoFrame(video, sx, sy, sw, sh);
 
     let scan: any;
     try {
@@ -295,10 +302,17 @@ export async function analyzePageAlignment(video: HTMLVideoElement | null): Prom
         return notDetectedResult();
     }
 
-    const corners = mapScanicCorners(scan.corners);
-    if (!corners) {
+    const rawCorners = mapScanicCorners(scan.corners);
+    if (!rawCorners) {
         return notDetectedResult();
     }
+
+    const corners: QuadCorners = {
+        tl: { x: rawCorners.tl.x + sx, y: rawCorners.tl.y + sy },
+        tr: { x: rawCorners.tr.x + sx, y: rawCorners.tr.y + sy },
+        br: { x: rawCorners.br.x + sx, y: rawCorners.br.y + sy },
+        bl: { x: rawCorners.bl.x + sx, y: rawCorners.bl.y + sy },
+    };
 
     return computeAlignmentFromCorners(corners, vw, vh);
 }

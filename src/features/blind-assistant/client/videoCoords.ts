@@ -113,19 +113,67 @@ export function mapRectToOverlay(
     return mapBboxToOverlay([rect.x, rect.y, rect.width, rect.height], videoEl, containerEl);
 }
 
+/**
+ * Computes the exact sub-rectangle of the video frame (in native video pixel coordinates)
+ * that is visible inside `containerEl` under CSS `object-fit: cover`.
+ */
+export function getVisibleVideoRegion(
+    videoEl: HTMLVideoElement | null,
+    containerEl: HTMLElement | null
+): BoundingBox | null {
+    if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) return null;
+    const vw = videoEl.videoWidth;
+    const vh = videoEl.videoHeight;
+
+    if (!containerEl || !containerEl.clientWidth || !containerEl.clientHeight) {
+        return { x: 0, y: 0, width: vw, height: vh };
+    }
+
+    const cw = containerEl.clientWidth;
+    const ch = containerEl.clientHeight;
+
+    const videoRatio = vw / vh;
+    const containerRatio = cw / ch;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = vw;
+    let sh = vh;
+
+    if (videoRatio > containerRatio) {
+        // Video is wider than container: left and right are cropped
+        sw = cw * (vh / ch);
+        sx = (vw - sw) / 2;
+    } else {
+        // Video is taller than container: top and bottom are cropped
+        sh = ch * (vw / cw);
+        sy = (vh - sh) / 2;
+    }
+
+    return {
+        x: Math.max(0, Math.round(sx)),
+        y: Math.max(0, Math.round(sy)),
+        width: Math.min(vw, Math.round(sw)),
+        height: Math.min(vh, Math.round(sh)),
+    };
+}
+
 /** Fixed center scan region used by currency detection (ratio of video dimensions). */
 export const CURRENCY_SCAN_RATIO = 0.85;
 
-export function getCurrencyScanRegion(videoEl: HTMLVideoElement | null): BoundingBox | null {
-    if (!videoEl?.videoWidth) return null;
-    const vw = videoEl.videoWidth;
-    const vh = videoEl.videoHeight;
-    const cropW = vw * CURRENCY_SCAN_RATIO;
-    const cropH = vh * CURRENCY_SCAN_RATIO;
+export function getCurrencyScanRegion(
+    videoEl: HTMLVideoElement | null,
+    containerEl?: HTMLElement | null
+): BoundingBox | null {
+    if (!videoEl?.videoWidth || !videoEl?.videoHeight) return null;
+    const base = containerEl ? getVisibleVideoRegion(videoEl, containerEl) : null;
+    const region = base || { x: 0, y: 0, width: videoEl.videoWidth, height: videoEl.videoHeight };
+    const cropW = region.width * CURRENCY_SCAN_RATIO;
+    const cropH = region.height * CURRENCY_SCAN_RATIO;
     return {
-        x: (vw - cropW) / 2,
-        y: (vh - cropH) / 2,
-        width: cropW,
-        height: cropH,
+        x: Math.round(region.x + (region.width - cropW) / 2),
+        y: Math.round(region.y + (region.height - cropH) / 2),
+        width: Math.round(cropW),
+        height: Math.round(cropH),
     };
 }

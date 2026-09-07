@@ -33,6 +33,7 @@ describe('AI camera layout', () => {
         );
 
         expect(container.firstElementChild?.className).toContain('w-full');
+        expect(container.firstElementChild?.className).toContain('rounded-2xl');
         expect(container.firstElementChild?.className).toContain('bg-[#1C1C1E]');
     });
 

@@ -10,6 +10,7 @@ import {
     TargetingEvent,
     TargetPhase,
 } from '@/features/blind-assistant/client/objectTargeting';
+import { getVisibleVideoRegion } from '@/features/blind-assistant/client/videoCoords';
 
 export interface UseObjectDetectorResult {
     isLoading: boolean;
@@ -25,6 +26,7 @@ export interface UseObjectDetectorResult {
 export function useObjectDetector(
     videoRef: RefObject<HTMLVideoElement | null>,
     enabled = false,
+    containerRef?: RefObject<HTMLElement | null>,
 ): UseObjectDetectorResult {
     const [isLoading, setIsLoading] = useState(true);
     const [detections, setDetections] = useState<DetectedObject[]>([]);
@@ -38,6 +40,7 @@ export function useObjectDetector(
     const animationFrameRef = useRef<number | null>(null);
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const targetingStateRef = useRef<ObjectTargetingState>(createInitialObjectTargetingState());
+    const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
         if (typeof window === 'undefined' || !enabled) return;
@@ -88,7 +91,34 @@ export function useObjectDetector(
             const video = videoRef.current;
             if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
                 try {
-                    const rawPredictions: DetectedObject[] = await modelRef.current.detect(video);
+                    const container = containerRef?.current || null;
+                    const visible = container ? getVisibleVideoRegion(video, container) : null;
+                    let rawPredictions: DetectedObject[];
+
+                    if (visible && (visible.width < video.videoWidth || visible.height < video.videoHeight)) {
+                        if (!detectCanvasRef.current) {
+                            detectCanvasRef.current = document.createElement('canvas');
+                        }
+                        const canvas = detectCanvasRef.current;
+                        canvas.width = visible.width;
+                        canvas.height = visible.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx?.drawImage(video, visible.x, visible.y, visible.width, visible.height, 0, 0, visible.width, visible.height);
+
+                        const predictions: DetectedObject[] = await modelRef.current.detect(canvas);
+                        rawPredictions = predictions.map(p => ({
+                            ...p,
+                            bbox: [
+                                p.bbox[0] + visible.x,
+                                p.bbox[1] + visible.y,
+                                p.bbox[2],
+                                p.bbox[3],
+                            ] as [number, number, number, number],
+                        }));
+                    } else {
+                        rawPredictions = await modelRef.current.detect(video);
+                    }
+
                     if (!isActive) return;
                     const next = advanceObjectTargeting(
                         targetingStateRef.current,
@@ -122,7 +152,7 @@ export function useObjectDetector(
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
-    }, [enabled, isLoading, videoRef]);
+    }, [containerRef, enabled, isLoading, videoRef]);
 
     return { isLoading, detections, targetObject, targetIndex, targetPhase, guidance, targetingEvent };
 }

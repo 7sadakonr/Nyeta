@@ -19,6 +19,7 @@ export function useAiAssistant(
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void,
     audioReady = false,
+    cameraContainerRef?: RefObject<HTMLElement | null>,
 ): UseAiAssistantResult {
     const [status, setStatus] = useState<AssistantStatus>('idle');
     const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -69,10 +70,15 @@ export function useAiAssistant(
                 return false;
             }
 
-            const imageDataUrl = captureFrameFromVideo(videoRef.current, {
+            const captureOptions: { container?: HTMLElement | null; maxDimension: number; quality: number } = {
                 maxDimension: 800,
                 quality: 0.70,
-            });
+            };
+            if (cameraContainerRef?.current) {
+                captureOptions.container = cameraContainerRef.current;
+            }
+
+            const imageDataUrl = captureFrameFromVideo(videoRef.current, captureOptions);
 
             if (!imageDataUrl) {
                 addLog?.('Error: Camera frame not ready');
@@ -169,7 +175,7 @@ export function useAiAssistant(
             clearTimeout(timeoutId);
             setStatus('idle');
         }
-    }, [videoRef, isReady, feedback, addLog]);
+    }, [videoRef, isReady, feedback, addLog, cameraContainerRef]);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();

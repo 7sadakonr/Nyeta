@@ -20,7 +20,7 @@
   --foreground: #ffffff;
 
   /* Dark blind-assistant surface tokens */
-  --blind-bg: #0A0F1A;
+  --blind-bg: #090909;
   --blind-surface: rgba(255, 255, 255, 0.06);
   --blind-surface-hover: rgba(255, 255, 255, 0.10);
   --blind-border: rgba(255, 255, 255, 0.10);

@@ -22,7 +22,7 @@ export default function TopNavBar({
     const statusColor = !aiReady ? 'bg-[#8E8E93]' : isWorking ? 'bg-[#0A84FF]' : 'bg-[#34C759]';
 
     return (
-        <header className="grid shrink-0 grid-cols-[1fr_auto] items-center gap-3 border-b border-white/[0.15] bg-black/80 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-2xl">
+        <header className="grid shrink-0 grid-cols-[1fr_auto] items-center gap-3 border-b border-white/[0.15] bg-[#090909]/80 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-2xl">
             <div className="min-w-0 text-center" aria-hidden="true">
                 <h1 className="text-[17px] font-semibold tracking-tight text-white">Nyeta</h1>
                 <p className="truncate text-xs text-[#8E8E93]">{statusLabel}</p>

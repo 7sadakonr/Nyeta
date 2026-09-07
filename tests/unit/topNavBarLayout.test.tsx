@@ -16,9 +16,13 @@ describe('TopNavBar safe-area layout', () => {
             />,
         );
 
-        const header = screen.getByRole('banner');
-        expect(header.className).toContain('bg-[#090909]/80');
+        const header = screen.getByRole('banner', { hidden: true });
+        expect(header.className).toContain('bg-[#090909]');
         expect(header.className).toContain('pt-[calc(env(safe-area-inset-top)+0.75rem)]');
+        expect(header.className).not.toContain('border-b');
+        expect(screen.queryByText('Nyeta')).toBeNull();
+        expect(screen.queryByText('สถานะ')).toBeNull();
+        expect(screen.queryByText('AI พร้อม')).toBeNull();
         expect(screen.queryByRole('link', { name: 'กลับหน้าหลัก' })).toBeNull();
     });
 });

@@ -372,26 +372,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     // AI response is read by assistive technology from semantic DOM instead of auto-TTS.
 
-    // Derived State
-    const statusLabel = !aiReady
-        ? 'กำลังเริ่ม...'
-        : mode === 'currency'
-            ? currencyBlocked
-                ? 'กล้องโดนบัง'
-                : currencyScanning || currencyMonitoring
-                    ? 'กำลังสแกนเงิน...'
-                    : 'พร้อมสแกน'
-            : mode === 'reader' && (isDocProcessing || aiStatus === 'thinking')
-                ? 'กำลังอ่านเอกสาร...'
-                : mode === 'reader' && readerAligned
-                    ? 'ตรงแล้ว พร้อมถ่าย'
-                    : mode === 'reader' && readerGuidance
-
-                        ? 'จัดกล้อง...'
-                        : aiStatus === 'thinking'
-                            ? 'กำลังคิด...'
-                            : 'AI พร้อม';
-
     const showCapturedText =
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
@@ -407,14 +387,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         >
             <HapticFeedback ref={hapticRef} />
 
-            <TopNavBar
-                aiReady={aiReady}
-                aiStatus={aiStatus}
-                mode={mode}
-                currencyScanning={currencyScanning}
-                currencyMonitoring={currencyMonitoring}
-                statusLabel={statusLabel}
-            />
+            <TopNavBar />
 
             <div className="flex min-h-0 flex-1 flex-col">
                 {cameraError && <p className="sr-only">ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้อง</p>}

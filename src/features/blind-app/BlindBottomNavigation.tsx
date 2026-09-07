@@ -56,7 +56,7 @@ export default function BlindBottomNavigation({ activeTab, callLocked, onSelect 
 
     return (
         <nav className="shrink-0 border-t border-white/[0.15] bg-[#090909]/80 backdrop-blur-2xl" role="tablist" aria-label="เมนูหลักสำหรับผู้พิการทางสายตา">
-            <div className="mx-auto grid max-w-xl grid-cols-4 px-2 pt-2">
+            <div className="mx-auto grid max-w-xl grid-cols-4 px-2 pt-2 pb-[max(0.25rem,env(safe-area-inset-bottom))]">
                 {TABS.map((tab, index) => {
                     const disabled = isDisabled(tab.id);
                     return (

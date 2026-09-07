@@ -27,7 +27,8 @@ export function useDocumentReader(
     audioReady: boolean,
     aiStatus: AssistantStatus,
     feedback?: (type: EarconType) => void,
-    addLog?: (msg: string) => void
+    addLog?: (msg: string) => void,
+    cameraContainerRef?: RefObject<HTMLElement | null>
 ): UseDocumentReaderResult {
     const [docText, setDocText] = useState<string>('');
     const [isReading, setIsReading] = useState<boolean>(false);
@@ -69,7 +70,14 @@ export function useDocumentReader(
 
         try {
             setIsProcessing(true);
-            const imageDataUrl = captureFrameFromVideo(videoRef.current, { maxDimension: 1024, quality: 0.75 });
+            const captureOptions: { container?: HTMLElement | null; maxDimension: number; quality: number } = {
+                maxDimension: 1024,
+                quality: 0.75,
+            };
+            if (cameraContainerRef?.current) {
+                captureOptions.container = cameraContainerRef.current;
+            }
+            const imageDataUrl = captureFrameFromVideo(videoRef.current, captureOptions);
             if (!imageDataUrl) {
                 feedback?.('error');
                 if (audioReadyRef.current) speechController.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
@@ -111,7 +119,7 @@ export function useDocumentReader(
             abortControllerRef.current = null;
             setIsProcessing(false);
         }
-    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog]);
+    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog, cameraContainerRef]);
 
     // Use a stable ref for readDocument to use inside the interval
     const readDocumentRef = useRef<() => Promise<void>>(readDocument);
@@ -181,7 +189,7 @@ export function useDocumentReader(
 
             scanBusyRef.current = true;
             try {
-                const result = await analyzePageAlignment(videoRef.current);
+                const result = await analyzePageAlignment(videoRef.current, cameraContainerRef?.current);
 
                 if (!result.detected) {
                     pageSeenCountRef.current = 0;
@@ -236,7 +244,7 @@ export function useDocumentReader(
             alignedCountRef.current = 0;
             pageSeenCountRef.current = 0;
         };
-    }, [enabled, isReady, videoRef, feedback]);
+    }, [enabled, isReady, videoRef, feedback, cameraContainerRef]);
 
     const replayDocument = useCallback(() => {
         // Document content is read by VoiceOver; no TTS replay

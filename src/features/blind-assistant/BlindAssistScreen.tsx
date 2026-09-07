@@ -94,7 +94,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         targetObject,
         targetPhase,
         targetingEvent,
-    } = useObjectDetector(videoRef, mode === 'assistant');
+    } = useObjectDetector(videoRef, mode === 'assistant', cameraContainerRef);
 
     const guidanceText = objGuidance?.message || '';
 
@@ -196,7 +196,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         captureAndAsk,
         clearMessages,
         stopSpeaking
-    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
+    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady, cameraContainerRef);
 
     const latestResultRef = useRef<HTMLParagraphElement | null>(null);
     const lastFocusedMessageIdRef = useRef<string | null>(null);
@@ -311,7 +311,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         isBlocked: currencyBlocked,
         replayCurrencyDetails,
         clearTotal
-    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog);
+    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog, cameraContainerRef);
 
     // E. Document Reader
     const {
@@ -326,7 +326,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         replayDocument,
         stopReading,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog, cameraContainerRef);
 
     // 3. Mode Switcher
     const previousModeRef = useRef<AssistantMode>(mode);
@@ -372,26 +372,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     // AI response is read by assistive technology from semantic DOM instead of auto-TTS.
 
-    // Derived State
-    const statusLabel = !aiReady
-        ? 'กำลังเริ่ม...'
-        : mode === 'currency'
-            ? currencyBlocked
-                ? 'กล้องโดนบัง'
-                : currencyScanning || currencyMonitoring
-                    ? 'กำลังสแกนเงิน...'
-                    : 'พร้อมสแกน'
-            : mode === 'reader' && (isDocProcessing || aiStatus === 'thinking')
-                ? 'กำลังอ่านเอกสาร...'
-                : mode === 'reader' && readerAligned
-                    ? 'ตรงแล้ว พร้อมถ่าย'
-                    : mode === 'reader' && readerGuidance
-
-                        ? 'จัดกล้อง...'
-                        : aiStatus === 'thinking'
-                            ? 'กำลังคิด...'
-                            : 'AI พร้อม';
-
     const showCapturedText =
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
@@ -403,28 +383,21 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         <div
             data-testid="blind-assistant-shell"
             onContextMenu={(event) => event.preventDefault()}
-            className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-black text-white"
+            className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-[#090909] text-white"
         >
             <HapticFeedback ref={hapticRef} />
 
-            <TopNavBar
-                aiReady={aiReady}
-                aiStatus={aiStatus}
-                mode={mode}
-                currencyScanning={currencyScanning}
-                currencyMonitoring={currencyMonitoring}
-                statusLabel={statusLabel}
-            />
+            <TopNavBar />
 
             <div className="flex min-h-0 flex-1 flex-col">
                 {cameraError && <p className="sr-only">ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้อง</p>}
 
                 <section
                     className={expandCameraPreview
-                        ? 'flex min-h-0 flex-1 overflow-hidden'
-                        : 'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2'}
+                        ? 'flex min-h-0 flex-1 overflow-hidden p-3 pb-0'
+                        : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-2'}
                 >
-                    <div className={`mx-auto w-full max-w-xl ${expandCameraPreview ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+                    <div className={`mx-auto w-full max-w-xl ${expandCameraPreview ? 'flex min-h-0 flex-1 flex-col' : 'space-y-3'}`}>
                         <CameraView
                             videoRef={videoRef}
                             cameraContainerRef={cameraContainerRef}
@@ -466,7 +439,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                     </div>
                 </section>
 
-                <div className="shrink-0 bg-black pt-2">
+                <div className="shrink-0 bg-[#090909] pt-2">
                     <ControlBar
                         mode={mode}
                         aiReady={aiReady}

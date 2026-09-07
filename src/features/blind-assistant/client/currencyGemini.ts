@@ -36,8 +36,8 @@ function captureFrameWithOcclusionCheck(video: HTMLVideoElement | null, options:
 export interface DetectCurrencyResult { result: CurrencyScanResult; rawText: string; }
 
 /** Capture one user-requested frame and identify every supported Thai currency item in it. */
-export async function detectCurrencyWithGemini(video: HTMLVideoElement | null, options: { signal?: AbortSignal } = {}): Promise<DetectCurrencyResult> {
-    const frame = captureFrameWithOcclusionCheck(video, { cropRegion: video ? getCurrencyScanRegion(video) : null });
+export async function detectCurrencyWithGemini(video: HTMLVideoElement | null, options: { signal?: AbortSignal; container?: HTMLElement | null } = {}): Promise<DetectCurrencyResult> {
+    const frame = captureFrameWithOcclusionCheck(video, { cropRegion: video ? getCurrencyScanRegion(video, options.container) : null });
     if (!frame) return { result: { status: 'invalid' }, rawText: '' };
     if (frame.isBlocked) return { result: { status: 'blocked' }, rawText: 'โดนบัง' };
     const text = await callGeminiVision({
@@ -58,10 +58,10 @@ const FINGERPRINT_COLUMNS = 16;
 const FINGERPRINT_ROWS = 12;
 
 /** Performs a cheap, low-resolution quality check over the currency scan region. */
-export function analyzeCurrencyFrame(video: HTMLVideoElement | null, reusableCanvas?: HTMLCanvasElement | null): CurrencyFrameAnalysis {
+export function analyzeCurrencyFrame(video: HTMLVideoElement | null, reusableCanvas?: HTMLCanvasElement | null, container?: HTMLElement | null): CurrencyFrameAnalysis {
     if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return { quality: 'invalid', fingerprint: null };
 
-    const cropRegion = getCurrencyScanRegion(video);
+    const cropRegion = getCurrencyScanRegion(video, container);
     const srcW = video.videoWidth;
     const srcH = video.videoHeight;
     const sx = cropRegion ? Math.max(0, Math.round(cropRegion.x)) : 0;

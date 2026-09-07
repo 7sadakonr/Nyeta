@@ -113,7 +113,7 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
     return (
         <div className="absolute top-20 left-4 right-4 z-40">
             {latestMessage.from === 'volunteer' && (
-                <div className="bg-black/80 backdrop-blur-md rounded-2xl p-4 shadow-2xl border-2 border-yellow-400/50">
+                <div className="bg-[#090909]/80 backdrop-blur-md rounded-2xl p-4 shadow-2xl border-2 border-yellow-400/50">
                     <p className="text-2xl font-bold text-yellow-400 mb-1">อาสาสมัคร:</p>
                     <p className="text-3xl text-white font-medium leading-tight">{latestMessage.text}</p>
                 </div>

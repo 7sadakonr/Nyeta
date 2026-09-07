@@ -1,23 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --nyeta-bg: #f4f8ff;
-  --nyeta-surface: #ffffff;
-  --nyeta-surface-elevated: #f8fbff;
+  --nyeta-bg: #090909;
+  --nyeta-surface: #121212;
+  --nyeta-surface-elevated: #181818;
   --nyeta-blue: #2563eb;
   --nyeta-blue-hover: #1d4ed8;
   --nyeta-blue-soft: #eaf4ff;
   --nyeta-cyan: #38bdf8;
   --nyeta-cyan-soft: #e0f5ff;
-  --nyeta-text: #0f172a;
-  --nyeta-text-muted: #64748b;
-  --nyeta-border: #dbe7f5;
+  --nyeta-text: #ffffff;
+  --nyeta-text-muted: #9ca3af;
+  --nyeta-border: rgba(255, 255, 255, 0.08);
   --nyeta-success: #16a34a;
   --nyeta-error: #dc2626;
   --nyeta-volunteer: #f59e0b;
   --nyeta-volunteer-accent: #fbbf24;
-  --background: var(--nyeta-bg);
-  --foreground: var(--nyeta-text);
+  --background: #090909;
+  --foreground: #ffffff;
 
   /* Dark blind-assistant surface tokens */
   --blind-bg: #0A0F1A;
@@ -32,6 +32,18 @@
   --blind-success: #22C55E;
   --blind-danger: #EF4444;
   --blind-danger-surface: rgba(239, 68, 68, 0.12);
+
+  /* Dark volunteer dashboard tokens */
+  --vol-bg: #090909;
+  --vol-surface: #121212;
+  --vol-surface-elevated: #181818;
+  --vol-border: rgba(255, 255, 255, 0.08);
+  --vol-border-hover: rgba(255, 255, 255, 0.16);
+  --vol-text: #ffffff;
+  --vol-text-muted: #9ca3af;
+  --vol-accent: #C9FD52;
+  --vol-accent-hover: #b8ec43;
+  --vol-accent-glow: rgba(201, 253, 82, 0.22);
 }
 
 @theme inline {
@@ -39,6 +51,22 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-nyeta-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-vol-bg: var(--vol-bg);
+  --color-vol-surface: var(--vol-surface);
+  --color-vol-surface-elevated: var(--vol-surface-elevated);
+  --color-vol-border: var(--vol-border);
+  --color-vol-border-hover: var(--vol-border-hover);
+  --color-vol-text: var(--vol-text);
+  --color-vol-text-muted: var(--vol-text-muted);
+  --color-vol-accent: var(--vol-accent);
+  --color-vol-accent-hover: var(--vol-accent-hover);
+  --color-vol-accent-glow: var(--vol-accent-glow);
+}
+
+html, body {
+  background-color: #090909;
+  color: #ffffff;
 }
 
 body {

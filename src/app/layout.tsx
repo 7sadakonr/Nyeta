@@ -22,7 +22,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#F4F8FF",
+  themeColor: "#090909",
 };
 
 export const metadata: Metadata = {
@@ -44,9 +44,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="th">
+    <html lang="th" className="bg-[#090909] text-white">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} flex w-full flex-col overflow-hidden overscroll-none antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoSansThai.variable} bg-[#090909] text-white flex min-h-dvh w-full flex-col overflow-hidden overscroll-none antialiased`}
       >
         {children}
       </body>

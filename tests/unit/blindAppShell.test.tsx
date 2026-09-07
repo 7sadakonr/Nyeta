@@ -100,7 +100,7 @@ describe('BlindAppShell', () => {
         expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#090909');
         expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('');
         expect(tablist.className).toContain('bg-[#090909]/80');
-        expect(tabContent.className).toContain('pb-[max(0.25rem,env(safe-area-inset-bottom))]');
+        expect(tabContent.className).toContain('pb-2');
     });
 
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {

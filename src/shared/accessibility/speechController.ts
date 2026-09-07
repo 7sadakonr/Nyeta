@@ -30,6 +30,38 @@ class SpeechController {
     private _pendingUnlockSpeech: { text: string, options: SpeechOptions } | null = null;
     private _guidanceSuppressed = false;
     private _guidanceSuppressedListeners = new Set<() => void>();
+    private _guidanceMuted = false;
+    private _guidanceMutedListeners = new Set<() => void>();
+
+    /**
+     * User-controlled mute toggle for real-time guidance channels.
+     * Unlike temporary result suppression, this persists until the user toggles it back on.
+     */
+    public setGuidanceMuted(muted: boolean): void {
+        if (this._guidanceMuted === muted) return;
+        this._guidanceMuted = muted;
+
+        if (muted) {
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+                this._cancelInternal();
+                this._activeRequest++;
+                this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+                this.notify();
+            }
+        }
+
+        this._guidanceMutedListeners.forEach(listener => listener());
+        this.notify();
+    }
+
+    public get isGuidanceMuted(): boolean {
+        return this._guidanceMuted;
+    }
+
+    public subscribeGuidanceMuted(listener: () => void): () => void {
+        this._guidanceMutedListeners.add(listener);
+        return () => this._guidanceMutedListeners.delete(listener);
+    }
 
     /**
      * Persistently suppress guidance (realtime/status) channels.
@@ -154,7 +186,7 @@ class SpeechController {
             return false;
         }
 
-        if (this._guidanceSuppressed && (options.channel === 'realtime' || options.channel === 'status')) {
+        if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status')) {
             options.onEnd?.(false);
             return false;
         }

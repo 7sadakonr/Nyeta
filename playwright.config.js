@@ -8,7 +8,8 @@ export default defineConfig({
     workers: 1,
     reporter: 'html',
     use: {
-        baseURL: 'http://localhost:3000',
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:3000',
+        ignoreHTTPSErrors: true,
         trace: 'on-first-retry',
         permissions: ['camera', 'microphone'],
     },
@@ -19,9 +20,10 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'npm run dev:http',
-        url: 'http://localhost:3000',
-        reuseExistingServer: !process.env.CI,
+        command: 'npm run dev',
+        url: 'https://localhost:3000',
+        reuseExistingServer: true,
+        ignoreHTTPSErrors: true,
         timeout: 120 * 1000,
     },
 });

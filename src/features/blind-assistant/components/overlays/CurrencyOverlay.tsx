@@ -38,7 +38,7 @@ export default function CurrencyOverlay({
 }: CurrencyOverlayProps) {
     if (!video || !container) return null;
 
-    const currencyScanRegion = getCurrencyScanRegion(video);
+    const currencyScanRegion = getCurrencyScanRegion(video, container);
     const currencyScanStyle = currencyScanRegion
         ? mapRectToOverlay(currencyScanRegion, video, container)
         : null;

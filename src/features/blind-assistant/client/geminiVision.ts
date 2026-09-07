@@ -1,4 +1,5 @@
 import { BlindMode, BoundingBox } from '@/features/blind-assistant/types/assistant';
+import { getVisibleVideoRegion } from './videoCoords';
 
 export const GEMINI_MODEL = 'gemini-3.1-flash-lite';
 
@@ -99,6 +100,7 @@ export async function callGeminiVision({
 }
 
 export interface CaptureFrameOptions {
+    container?: HTMLElement | null;
     cropRegion?: BoundingBox | null;
     maxDimension?: number;
     quality?: number;
@@ -112,21 +114,24 @@ export function captureFrameFromVideo(
     options: CaptureFrameOptions = {}
 ): string | null {
     if (!video || video.readyState < 2) return null;
-    const { cropRegion, maxDimension = 1024, quality = 0.75 } = options;
+    const { container, cropRegion, maxDimension = 1024, quality = 0.75 } = options;
 
     const srcW = video.videoWidth || 1280;
     const srcH = video.videoHeight || 720;
+
+    const visibleRegion = container ? getVisibleVideoRegion(video, container) : null;
+    const targetRegion = cropRegion || visibleRegion;
 
     let sx = 0;
     let sy = 0;
     let sw = srcW;
     let sh = srcH;
 
-    if (cropRegion) {
-        sx = Math.max(0, Math.round(cropRegion.x));
-        sy = Math.max(0, Math.round(cropRegion.y));
-        sw = Math.min(srcW - sx, Math.round(cropRegion.width));
-        sh = Math.min(srcH - sy, Math.round(cropRegion.height));
+    if (targetRegion) {
+        sx = Math.max(0, Math.round(targetRegion.x));
+        sy = Math.max(0, Math.round(targetRegion.y));
+        sw = Math.min(srcW - sx, Math.round(targetRegion.width));
+        sh = Math.min(srcH - sy, Math.round(targetRegion.height));
     }
 
     let dw = sw;

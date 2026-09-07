@@ -19,6 +19,7 @@ export function useAiAssistant(
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void,
     audioReady = false,
+    cameraContainerRef?: RefObject<HTMLElement | null>,
 ): UseAiAssistantResult {
     const [status, setStatus] = useState<AssistantStatus>('idle');
     const [messages, setMessages] = useState<AssistantMessage[]>([]);
@@ -37,7 +38,6 @@ export function useAiAssistant(
     }, []);
 
     const captureAndAsk = useCallback(async (customPrompt: string | null = null): Promise<boolean> => {
-        if (statusRef.current === 'thinking') return false;
         if (!isReady) {
             addLog?.('Warning: Camera not ready yet');
             speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', { channel: 'critical' });
@@ -70,10 +70,15 @@ export function useAiAssistant(
                 return false;
             }
 
-            const imageDataUrl = captureFrameFromVideo(videoRef.current, {
+            const captureOptions: { container?: HTMLElement | null; maxDimension: number; quality: number } = {
                 maxDimension: 800,
                 quality: 0.70,
-            });
+            };
+            if (cameraContainerRef?.current) {
+                captureOptions.container = cameraContainerRef.current;
+            }
+
+            const imageDataUrl = captureFrameFromVideo(videoRef.current, captureOptions);
 
             if (!imageDataUrl) {
                 addLog?.('Error: Camera frame not ready');
@@ -86,8 +91,9 @@ export function useAiAssistant(
             const base64Data = imageDataUrl.split(',')[1];
             const mimeType = imageDataUrl.split(';')[0].split(':')[1] || 'image/jpeg';
 
-            const userQuestion = customPrompt && typeof customPrompt === 'string'
-                ? `(พูด): "${customPrompt}"`
+            const trimmedPrompt = typeof customPrompt === 'string' ? customPrompt.trim() : '';
+            const userQuestion = trimmedPrompt
+                ? `(พูด): "${trimmedPrompt}"`
                 : 'ช่วยบรรยายภาพนี้อย่างละเอียดให้เห็นภาพชัดเจน ทั้งภาพรวม รายละเอียดสิ่งของ ตำแหน่งทิศทาง สีสัน และสิ่งรอบข้าง';
 
             const newUserMessage: AssistantMessage = {
@@ -96,7 +102,7 @@ export function useAiAssistant(
                 content: userQuestion,
                 image: imageDataUrl,
             };
-            setMessages(prev => [...prev, newUserMessage]);
+            setMessages([newUserMessage]);
 
             setStatus('thinking');
             addLog?.('Sending to Gemini...');
@@ -169,7 +175,7 @@ export function useAiAssistant(
             clearTimeout(timeoutId);
             setStatus('idle');
         }
-    }, [videoRef, isReady, feedback, addLog]);
+    }, [videoRef, isReady, feedback, addLog, cameraContainerRef]);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();

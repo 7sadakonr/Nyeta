@@ -3,10 +3,18 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { speak, unlockAudio } = vi.hoisted(() => ({ speak: vi.fn(), unlockAudio: vi.fn() }));
+const { speak, unlockAudio, playEarcon } = vi.hoisted(() => ({ 
+    speak: vi.fn(), 
+    unlockAudio: vi.fn(),
+    playEarcon: vi.fn(),
+}));
 
 vi.mock('@/shared/accessibility/speechController', () => ({
     speechController: { speak, unlockAudio },
+}));
+
+vi.mock('@/shared/accessibility/audio', () => ({
+    playEarcon,
 }));
 
 import WelcomeScreen from '@/features/blind-app/WelcomeScreen';
@@ -22,7 +30,7 @@ describe('WelcomeScreen speech ownership', () => {
 
     afterEach(() => vi.restoreAllMocks());
 
-    it('announces preparation without a second speech after permission succeeds', async () => {
+    it('plays earcon beep and speaks short unlock phrase "นัยตา" on start, then enters app', async () => {
         const onStart = vi.fn();
         const stop = vi.fn();
         vi.mocked(navigator.mediaDevices.getUserMedia).mockResolvedValue({
@@ -30,12 +38,15 @@ describe('WelcomeScreen speech ownership', () => {
         } as unknown as MediaStream);
         const { getByRole } = render(<WelcomeScreen onStart={onStart} />);
 
+        expect(speak).not.toHaveBeenCalled();
+
         fireEvent.click(getByRole('button', { name: 'เริ่มใช้งาน และอนุญาตกล้อง' }));
 
+        expect(playEarcon).toHaveBeenCalledWith('button');
         expect(unlockAudio).toHaveBeenCalledWith();
-        expect(speak).toHaveBeenCalledWith('กำลังเตรียมความพร้อม กรุณารอสักครู่', { channel: 'status' });
+        expect(speak).toHaveBeenCalledWith('นัยตา', { channel: 'status' });
         await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
-        expect(speak).not.toHaveBeenCalledWith('อนุญาตสำเร็จ กำลังเข้าสู่แอป', { channel: 'status' });
+        expect(onStart).toHaveBeenCalledTimes(1);
     });
 
     it('uses critical Web TTS without a duplicate live region for permission errors', async () => {

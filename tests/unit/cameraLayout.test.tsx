@@ -28,12 +28,12 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
                 mode="assistant"
-                aiReady
                 currencyResult={null}
             />,
         );
 
         expect(container.firstElementChild?.className).toContain('w-full');
+        expect(container.firstElementChild?.className).toContain('rounded-2xl');
         expect(container.firstElementChild?.className).toContain('bg-[#1C1C1E]');
     });
 
@@ -46,8 +46,6 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="flex-1"
                 mode="assistant"
-                aiReady
-                objectDetectorEnabled
                 currencyResult={null}
             />,
         );
@@ -64,7 +62,6 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
                 mode="currency"
-                aiReady
                 currencyResult={null}
             />,
         );
@@ -81,7 +78,6 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
                 mode="currency"
-                aiReady
                 currencyResult={{
                     captureId: 1,
                     source: 'gemini',
@@ -102,7 +98,7 @@ describe('AI camera layout', () => {
         expect(screen.queryByText('ยอดรวม')).toBeNull();
     });
 
-    it('keeps transient camera guidance out of the accessibility tree', () => {
+    it('keeps transient camera guidance out of the accessibility tree and cleans assistant mode overlay', () => {
         const videoRef = createRef<HTMLVideoElement>();
         const cameraContainerRef = createRef<HTMLDivElement>();
         const { rerender } = render(
@@ -110,23 +106,7 @@ describe('AI camera layout', () => {
                 videoRef={videoRef}
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
-                mode="assistant"
-                aiReady
-                objectDetectorEnabled
-                guidanceText="ขยับกล้องไปทางซ้าย"
-                currencyResult={null}
-            />,
-        );
-
-        expect(screen.getByText('ขยับกล้องไปทางซ้าย').closest('[aria-hidden="true"]')).not.toBeNull();
-
-        rerender(
-            <CameraView
-                videoRef={videoRef}
-                cameraContainerRef={cameraContainerRef}
-                cameraHeightClass="h-80"
                 mode="reader"
-                aiReady
                 readerGuidance="ขยับเข้าใกล้เอกสารอีกหน่อย"
                 currencyResult={null}
             />,
@@ -140,7 +120,6 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
                 mode="currency"
-                aiReady
                 currencyScanning
                 currencyResult={null}
             />,
@@ -154,12 +133,10 @@ describe('AI camera layout', () => {
                 cameraContainerRef={cameraContainerRef}
                 cameraHeightClass="h-80"
                 mode="assistant"
-                aiReady
-                objectDetectorEnabled
                 currencyResult={null}
             />,
         );
 
-        expect(screen.getByText('บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง').closest('[aria-hidden="true"]')).not.toBeNull();
+        expect(screen.queryByText('บรรยายสิ่งที่เห็น หรือกดถามด้วยเสียง')).toBeNull();
     });
 });

@@ -67,8 +67,8 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(controlBar).toContain('role="group" aria-label="ปุ่มควบคุม"');
         expect(controlBar).toContain('aria-pressed={isListening}');
         expect(controlBar).not.toMatch(/on(?:Mouse|Touch)(?:Down|Up|Start|End|Leave)=/);
-        expect(chatHistory).toContain('aria-label="ประวัติการสนทนา"');
-        expect(chatHistory).toContain('<details');
+        expect(chatHistory).toContain('aria-label="คำบรรยาย"');
+        expect(chatHistory).not.toContain('<details');
         expect(chatHistory).not.toContain('tabIndex={0}');
         expect(topNav).toContain('aria-hidden="true"');
         expect(screen).not.toContain('role="dialog"');

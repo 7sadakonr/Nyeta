@@ -64,18 +64,18 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     }, [activeTab, callLocked]);
 
     useEffect(() => {
-        document.documentElement.style.backgroundColor = '#000000';
-        document.body.style.backgroundColor = '#000000';
+        document.documentElement.style.backgroundColor = '#090909';
+        document.body.style.backgroundColor = '#090909';
         
         let metaThemeColor = document.querySelector('meta[name="theme-color"]');
         let oldThemeColor = '';
         if (metaThemeColor) {
             oldThemeColor = metaThemeColor.getAttribute('content') || '';
-            metaThemeColor.setAttribute('content', '#000000');
+            metaThemeColor.setAttribute('content', '#090909');
         } else {
             metaThemeColor = document.createElement('meta');
             metaThemeColor.setAttribute('name', 'theme-color');
-            metaThemeColor.setAttribute('content', '#000000');
+            metaThemeColor.setAttribute('content', '#090909');
             document.head.appendChild(metaThemeColor);
         }
 
@@ -90,7 +90,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
 
     return (
         <div
-            className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-black text-white"
+            className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-[#090909] text-white"
             {...accessibilityNavigationHandlers}
         >
             <HapticFeedback ref={hapticRef} />

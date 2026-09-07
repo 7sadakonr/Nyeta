@@ -1,6 +1,7 @@
 import React from 'react';
 import { BlindMode, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
+import { MicIcon, SendIcon, Volume2Icon, VolumeXIcon, TrashIcon, RotateCcwIcon } from '@/shared/ui/icons/ControlBarIcons';
 
 export interface ControlBarProps {
     mode: BlindMode;
@@ -16,10 +17,12 @@ export interface ControlBarProps {
     currencyMonitoring: boolean;
     totalAmount?: number;
     hasAssistantMessages?: boolean;
+    isGuidanceMuted?: boolean;
     isBlocked?: boolean;
     readerAligned: boolean;
     onCapture: () => void;
     onStopSpeaking: () => void;
+    onToggleGuidance?: () => void;
     onStartListening: () => void;
     onStopListening: () => void;
     onCurrencyCapture: () => void;
@@ -81,9 +84,11 @@ export default function ControlBar({
     currencyScanning,
     totalAmount = 0,
     hasAssistantMessages = false,
+    isGuidanceMuted = false,
     readerAligned,
     onCapture,
     onStopSpeaking,
+    onToggleGuidance,
     onStartListening,
     onStopListening,
     onCurrencyCapture,
@@ -115,22 +120,50 @@ export default function ControlBar({
     }, [canCapture, mode]);
 
     return (
-        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 border-t border-white/[0.15] bg-black/80 px-4 pb-4 pt-3 backdrop-blur-2xl" role="group" aria-label="ปุ่มควบคุม">
+        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#090909]/80 px-4 pb-4 pt-3 backdrop-blur-2xl" role="group" aria-label="ปุ่มควบคุม">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    {isListening ? (
-                        <ActionButton wide tone="danger" onClick={onStopListening} aria-label="หยุดและส่งคำถาม" aria-pressed="true">หยุดและส่ง</ActionButton>
-                    ) : (
-                        <ActionButton ref={describeSceneRef} wide tone="primary" disabled={!canCapture} onClick={onCapture} aria-busy={isBusy} aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}>{isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}</ActionButton>
-                    )}
+                    <ActionButton
+                        ref={describeSceneRef}
+                        wide
+                        tone="primary"
+                        disabled={!canCapture}
+                        onClick={onCapture}
+                        aria-busy={isBusy}
+                        aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}
+                    >
+                        {isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}
+                    </ActionButton>
                     <div className="grid grid-cols-3 gap-3">
-                        <ActionButton onClick={isListening ? onStopListening : onStartListening} aria-label={isListening ? 'กำลังฟัง กดอีกครั้งเพื่อหยุดและส่งคำถาม' : 'ถามด้วยเสียง'} aria-pressed={isListening}>{isListening ? 'กำลังฟัง...' : 'ถามด้วยเสียง'}</ActionButton>
+                        <ActionButton
+                            tone={isListening ? 'danger' : 'secondary'}
+                            onClick={isListening ? onStopListening : onStartListening}
+                            aria-label={isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
+                            aria-pressed={isListening}
+                        >
+                            {isListening ? <SendIcon className="size-7" /> : <MicIcon className="size-7" />}
+                            <span className="sr-only">{isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}</span>
+                        </ActionButton>
                         {hasAssistantMessages ? (
-                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">อ่านใหม่</ActionButton>
+                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">
+                                <RotateCcwIcon className="size-7" />
+                                <span className="sr-only">อ่านใหม่</span>
+                            </ActionButton>
                         ) : (
-                            <ActionButton tone="danger" disabled={!isSpeaking} onClick={onStopSpeaking} aria-label="หยุดเสียง">หยุดเสียง</ActionButton>
+                            <ActionButton
+                                tone={isGuidanceMuted ? 'danger' : 'secondary'}
+                                onClick={onToggleGuidance || onStopSpeaking}
+                                aria-label={isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
+                                aria-pressed={isGuidanceMuted}
+                            >
+                                {isGuidanceMuted ? <VolumeXIcon className="size-7" /> : <Volume2Icon className="size-7" />}
+                                <span className="sr-only">{isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}</span>
+                            </ActionButton>
                         )}
-                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">ล้างแชท</ActionButton>
+                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">
+                            <TrashIcon className="size-7" />
+                            <span className="sr-only">ล้างแชท</span>
+                        </ActionButton>
                     </div>
                 </div>
             )}

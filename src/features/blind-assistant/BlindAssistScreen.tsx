@@ -94,7 +94,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         targetObject,
         targetPhase,
         targetingEvent,
-    } = useObjectDetector(videoRef, mode === 'assistant');
+    } = useObjectDetector(videoRef, mode === 'assistant', cameraContainerRef);
 
     const guidanceText = objGuidance?.message || '';
 
@@ -150,7 +150,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [mode, targetingEvent]);
 
     useEffect(() => {
-        if (speechController.isGuidanceSuppressed) {
+        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted) {
             pendingObjectAnnouncementRef.current = null;
             return;
         }
@@ -185,6 +185,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
+        speechController.setGuidanceMuted(false);
         resetSuppression();
     }, [resetSuppression, stopWaitingSound]);
 
@@ -195,7 +196,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         captureAndAsk,
         clearMessages,
         stopSpeaking
-    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady);
+    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady, cameraContainerRef);
 
     const latestResultRef = useRef<HTMLParagraphElement | null>(null);
     const lastFocusedMessageIdRef = useRef<string | null>(null);
@@ -203,8 +204,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     // Be My Eyes capture flow:
     // Preflight check -> stop active speech -> start processing earcon -> suppress guidance persistently -> send request
     const handleCaptureAndAsk = useCallback(async (customPrompt?: string | null) => {
-        if (aiStatus === 'thinking') return;
-
         if (!aiReady) {
             speechController.speak('กล้องยังไม่พร้อม กรุณารอ 2-3 วินาทีแล้วลองกดใหม่ครับ', {
                 channel: 'critical',
@@ -235,13 +234,29 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } finally {
             stopWaitingSound();
         }
-    }, [aiReady, aiStatus, captureAndAsk, feedback, stopWaitingSound]);
+    }, [aiReady, captureAndAsk, feedback, stopWaitingSound]);
 
     // เลื่อน focus กลับไปที่จุดเริ่มต้นของผลลัพธ์เพื่ออ่านใหม่ตามที่ผู้ใช้สั่ง
     const handleReadAgain = useCallback(() => {
         feedback('button');
         requestAnimationFrame(() => {
             latestResultRef.current?.focus({ preventScroll: false });
+        });
+    }, [feedback]);
+
+    const [isGuidanceMuted, setIsGuidanceMuted] = useState(false);
+
+    const handleToggleGuidance = useCallback(() => {
+        setIsGuidanceMuted(prev => {
+            const next = !prev;
+            speechController.setGuidanceMuted(next);
+            feedback('button');
+            if (next) {
+                speechController.speak('ปิดเสียงนำทางแล้ว', { channel: 'critical' });
+            } else {
+                speechController.speak('เปิดเสียงนำทางแล้ว', { channel: 'critical' });
+            }
+            return next;
         });
     }, [feedback]);
 
@@ -276,7 +291,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
         useCallback((text: string) => {
-            feedback('success');
+            feedback('capture');
             handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
@@ -296,7 +311,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         isBlocked: currencyBlocked,
         replayCurrencyDetails,
         clearTotal
-    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog);
+    } = useCurrencyScanner(videoRef, mode === 'currency', aiReady, audioReady, feedback, addLog, cameraContainerRef);
 
     // E. Document Reader
     const {
@@ -311,7 +326,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         replayDocument,
         stopReading,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog, cameraContainerRef);
 
     // 3. Mode Switcher
     const previousModeRef = useRef<AssistantMode>(mode);
@@ -357,26 +372,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     // AI response is read by assistive technology from semantic DOM instead of auto-TTS.
 
-    // Derived State
-    const statusLabel = !aiReady
-        ? 'กำลังเริ่ม...'
-        : mode === 'currency'
-            ? currencyBlocked
-                ? 'กล้องโดนบัง'
-                : currencyScanning || currencyMonitoring
-                    ? 'กำลังสแกนเงิน...'
-                    : 'พร้อมสแกน'
-            : mode === 'reader' && (isDocProcessing || aiStatus === 'thinking')
-                ? 'กำลังอ่านเอกสาร...'
-                : mode === 'reader' && readerAligned
-                    ? 'ตรงแล้ว พร้อมถ่าย'
-                    : mode === 'reader' && readerGuidance
-
-                        ? 'จัดกล้อง...'
-                        : aiStatus === 'thinking'
-                            ? 'กำลังคิด...'
-                            : 'AI พร้อม';
-
     const showCapturedText =
         (mode === 'reader' && !!docText) ||
         (mode === 'assistant' && aiMessages.length > 0);
@@ -388,52 +383,37 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         <div
             data-testid="blind-assistant-shell"
             onContextMenu={(event) => event.preventDefault()}
-            className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-black text-white"
+            className="nyeta-surface flex flex-1 h-full w-full flex-col overflow-hidden bg-[#090909] text-white"
         >
             <HapticFeedback ref={hapticRef} />
 
-            <TopNavBar
-                aiReady={aiReady}
-                aiStatus={aiStatus}
-                mode={mode}
-                currencyScanning={currencyScanning}
-                currencyMonitoring={currencyMonitoring}
-                statusLabel={statusLabel}
-            />
+            <TopNavBar />
 
             <div className="flex min-h-0 flex-1 flex-col">
                 {cameraError && <p className="sr-only">ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้อง</p>}
 
                 <section
                     className={expandCameraPreview
-                        ? 'flex min-h-0 flex-1 overflow-hidden'
-                        : 'min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2'}
+                        ? 'flex min-h-0 flex-1 overflow-hidden p-3 pb-0'
+                        : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-2'}
                 >
-                    <div className={`mx-auto w-full max-w-xl ${expandCameraPreview ? 'flex min-h-0 flex-1 flex-col' : ''}`}>
+                    <div className={`mx-auto w-full max-w-xl ${expandCameraPreview ? 'flex min-h-0 flex-1 flex-col' : 'space-y-3'}`}>
                         <CameraView
                             videoRef={videoRef}
                             cameraContainerRef={cameraContainerRef}
                             cameraHeightClass={cameraHeightClass}
-                            cocoBoxes={cocoBoxes}
-                            targetObject={targetObject}
                             pageBounds={pageBounds}
                             pageCorners={pageCorners}
                             readerAligned={readerAligned}
                             currencyBounds={currencyBounds}
                             mode={mode}
-                            objectDetectorEnabled={true}
-                            aiReady={aiReady}
                             currencyResult={currencyResult}
                             currencyScanning={currencyScanning}
                             currencyHint={currencyHint}
                             isBlocked={currencyBlocked}
-                            guidanceText={guidanceText}
-                            voiceTranscript={voiceTranscript}
-                            isListening={isListening}
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
                             showCapturedText={showCapturedText}
-                            detectedObjects={detectedObjects}
                         />
 
                         {mode === 'assistant' && showCapturedText && (
@@ -459,7 +439,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                     </div>
                 </section>
 
-                <div className="shrink-0 bg-black pt-2">
+                <div className="shrink-0 bg-[#090909] pt-2">
                     <ControlBar
                         mode={mode}
                         aiReady={aiReady}
@@ -474,10 +454,12 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         currencyMonitoring={currencyMonitoring}
                         totalAmount={totalAmount}
                         hasAssistantMessages={aiMessages.length > 0}
+                        isGuidanceMuted={isGuidanceMuted}
                         isBlocked={currencyBlocked}
                         readerAligned={readerAligned}
                         onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
+                        onToggleGuidance={handleToggleGuidance}
                         onStartListening={toggleListening}
                         onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}

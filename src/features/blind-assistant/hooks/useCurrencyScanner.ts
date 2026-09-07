@@ -25,7 +25,15 @@ const AUTO_REQUEST_INTERVAL_MS = 3250;
 const BLOCKED_ANNOUNCEMENT_MS = 2000;
 const NETWORK_BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
 
-export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>, enabled: boolean, isReady: boolean, audioReady: boolean, feedback?: (type: EarconType) => void, addLog?: (msg: string) => void): UseCurrencyScannerResult {
+export function useCurrencyScanner(
+    videoRef: RefObject<HTMLVideoElement | null>,
+    enabled: boolean,
+    isReady: boolean,
+    audioReady: boolean,
+    feedback?: (type: EarconType) => void,
+    addLog?: (msg: string) => void,
+    cameraContainerRef?: RefObject<HTMLElement | null>
+): UseCurrencyScannerResult {
     const [currencyResult, setCurrencyResult] = useState<CapturedCurrency | null>(null);
     const [phase, setPhase] = useState<CurrencyScanPhase>('idle');
     const [currencyHint, setCurrencyHint] = useState('');
@@ -138,7 +146,10 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         setPhaseIfChanged('checking');
 
         try {
-            const { result } = await detectCurrencyWithGemini(videoRef.current, { signal: controller.signal });
+            const { result } = await detectCurrencyWithGemini(videoRef.current, {
+                signal: controller.signal,
+                container: cameraContainerRef?.current,
+            });
             if (requestRef.current !== token || token.generation !== generationRef.current || !isActive()) return;
 
             networkFailureCountRef.current = 0;
@@ -210,12 +221,12 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         } finally {
             if (requestRef.current === token) requestRef.current = null;
         }
-    }, [addLog, feedback, finishRemoval, isActive, markBlocked, setHintIfChanged, setPhaseIfChanged, setResult, videoRef]);
+    }, [addLog, cameraContainerRef, feedback, finishRemoval, isActive, markBlocked, setHintIfChanged, setPhaseIfChanged, setResult, videoRef]);
 
     const monitorFrame = useCallback((source: RequestSource = 'auto') => {
         if (!isActive() || requestRef.current) return;
         if (!canvasRef.current && typeof document !== 'undefined') canvasRef.current = document.createElement('canvas');
-        const analysis = analyzeCurrencyFrame(videoRef.current, canvasRef.current);
+        const analysis = analyzeCurrencyFrame(videoRef.current, canvasRef.current, cameraContainerRef?.current);
         if (analysis.quality === 'blocked') {
             markBlocked();
             return;
@@ -239,7 +250,7 @@ export function useCurrencyScanner(videoRef: RefObject<HTMLVideoElement | null>,
         if (source === 'manual' || !lastProbeFingerprintRef.current || sceneChanged || fallbackDue) {
             void requestProbe(source, analysis.fingerprint, 'searching');
         }
-    }, [clearBlocked, isActive, markBlocked, requestProbe, videoRef]);
+    }, [cameraContainerRef, clearBlocked, isActive, markBlocked, requestProbe, videoRef]);
 
     useEffect(() => {
         const enterCurrentState = () => {

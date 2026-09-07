@@ -132,7 +132,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         'พร้อมเรียกอาสาสมัคร';
 
     return (
-        <div className="flex h-full w-full flex-col bg-black text-white relative overflow-hidden font-sans">
+        <div className="flex h-full w-full flex-col bg-[#090909] text-white relative overflow-hidden font-sans">
             <HapticFeedback ref={hapticRef} />
 
             {/* Hidden media elements */}

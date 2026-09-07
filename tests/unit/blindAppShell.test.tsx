@@ -86,7 +86,7 @@ describe('BlindAppShell', () => {
         expect(speak).toHaveBeenCalledWith('สแกนธนบัตร', { channel: 'status' });
     });
 
-    it('anchors the shell to the viewport without bottom safe-area padding in tab content', () => {
+    it('anchors the shell to the viewport with standard tabbar placement', () => {
         const { container, getByRole } = render(<BlindAppShell initialTab="assistant" />);
 
         const shell = container.firstElementChild as HTMLElement;
@@ -95,10 +95,12 @@ describe('BlindAppShell', () => {
 
         expect(shell.className).toContain('fixed');
         expect(shell.className).toContain('inset-0');
+        expect(shell.className).toContain('bg-[#090909]');
+        expect(document.documentElement.style.backgroundColor).toBe('rgb(9, 9, 9)');
+        expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#090909');
         expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('');
-        expect(tablist.className).toContain('bg-black/80');
-        expect(tabContent.className).not.toContain('pb-');
-        expect(tabContent.className).not.toContain('safe-area-inset-bottom');
+        expect(tablist.className).toContain('bg-[#090909]/80');
+        expect(tabContent.className).toContain('pb-2');
     });
 
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {

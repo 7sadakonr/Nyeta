@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
 import { playEarcon } from '@/shared/accessibility/audio';
+
+const ORIENTATION_SPEECH_DEBOUNCE_MS = 600;
 
 /**
  * PortraitGuardian
@@ -12,6 +14,12 @@ import { playEarcon } from '@/shared/accessibility/audio';
  */
 export default function PortraitGuardian() {
     const [isLandscape, setIsLandscape] = useState(false);
+    const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const handleTouchInteraction = () => {
+        speechController.stop();
+        speechController.notifyUserNavigation();
+    };
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -26,9 +34,21 @@ export default function PortraitGuardian() {
                 if (!prev && landscapeDetected) {
                     speechController.setOrientationBlocked(true);
                     playEarcon('error');
-                    speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+
+                    // Debounce speech so iOS VoiceOver's native system announcement ("Landscape") finishes first
+                    if (announceTimerRef.current) {
+                        clearTimeout(announceTimerRef.current);
+                    }
+                    announceTimerRef.current = setTimeout(() => {
+                        speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+                    }, ORIENTATION_SPEECH_DEBOUNCE_MS);
                 } else if (prev && !landscapeDetected) {
+                    if (announceTimerRef.current) {
+                        clearTimeout(announceTimerRef.current);
+                        announceTimerRef.current = null;
+                    }
                     speechController.setOrientationBlocked(false);
+                    speechController.stop();
                 }
                 return landscapeDetected;
             });
@@ -49,7 +69,13 @@ export default function PortraitGuardian() {
         window.addEventListener('orientationchange', checkOrientation);
 
         return () => {
+            if (announceTimerRef.current) {
+                clearTimeout(announceTimerRef.current);
+                announceTimerRef.current = null;
+            }
             speechController.setOrientationBlocked(false);
+            speechController.stop();
+
             if (mediaQuery.removeEventListener) {
                 mediaQuery.removeEventListener('change', handleMediaChange);
             } else {
@@ -62,9 +88,11 @@ export default function PortraitGuardian() {
 
     return (
         <aside
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
+            aria-modal="true"
+            aria-label="แจ้งเตือนการใช้งานในแนวตั้ง"
+            onPointerDownCapture={handleTouchInteraction}
+            onTouchStartCapture={handleTouchInteraction}
+            onFocusCapture={handleTouchInteraction}
             className={`${isLandscape ? 'flex' : 'hidden'} portrait-guardian-auto fixed inset-0 z-[99999] flex-col items-center justify-center bg-[#090909] px-6 text-center text-white select-none backdrop-blur-md`}
         >
             <div className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-400">

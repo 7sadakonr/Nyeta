@@ -24,7 +24,11 @@ export function useOrientationLock(): void {
 
         void lockPortrait();
 
-        // Also attempt re-locking when window regains focus or visibility
+        // Also attempt re-locking on user gesture (required by most browsers) or visibility change
+        const handleInteraction = () => {
+            void lockPortrait();
+        };
+
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 void lockPortrait();
@@ -32,8 +36,12 @@ export function useOrientationLock(): void {
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('click', handleInteraction, { passive: true });
+        window.addEventListener('touchend', handleInteraction, { passive: true });
         return () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('click', handleInteraction);
+            window.removeEventListener('touchend', handleInteraction);
         };
     }, []);
 }

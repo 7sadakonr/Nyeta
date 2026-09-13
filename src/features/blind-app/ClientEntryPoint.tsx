@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import WelcomeScreen from './WelcomeScreen';
 import BlindAppShell from './BlindAppShell';
+import PortraitGuardian from '@/shared/ui/PortraitGuardian';
 import type { BlindAppTab } from './types';
 
 interface ClientEntryPointProps {
@@ -19,9 +20,14 @@ export default function ClientEntryPoint({ initialTab }: ClientEntryPointProps) 
         }
     }, []);
 
-    if (!started) {
-        return <WelcomeScreen onStart={() => setStarted(true)} />;
-    }
-
-    return <BlindAppShell initialTab={initialTab} />;
+    return (
+        <>
+            <PortraitGuardian />
+            {!started ? (
+                <WelcomeScreen onStart={() => setStarted(true)} />
+            ) : (
+                <BlindAppShell initialTab={initialTab} />
+            )}
+        </>
+    );
 }

@@ -290,3 +290,5 @@ npm run test:e2e
 Rajamangala University of Technology Suvarnabhumi, Huntra Campus
 
 Developed by [@7sadakonr](https://github.com/7sadakonr)
+          by [@TT_Thiti](https://github.com/TTthiti01)
+          by [@pskcode2004](https://github.com/pskcode2004)

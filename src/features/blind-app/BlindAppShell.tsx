@@ -6,6 +6,8 @@ import BlindCallScreen, { BlindCallHandle } from '@/features/calling/BlindCallSc
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
+import { useOrientationLock } from '@/shared/hooks/useOrientationLock';
+import { playEarcon } from '@/shared/accessibility/audio';
 import BlindBottomNavigation from './BlindBottomNavigation';
 import PwaControls from './PwaControls';
 import { ACTIVE_CALL_STATUSES, ASSISTANT_TABS, BlindAppTab } from './types';
@@ -19,6 +21,8 @@ const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] 
     (ASSISTANT_TABS as readonly string[]).includes(tab);
 
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
+    useOrientationLock();
+
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
     const assistantRef = useRef<BlindAssistHandle | null>(null);
@@ -49,10 +53,26 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
 
         let tabName = '';
         switch(nextTab) {
-            case 'assistant': tabName = 'AI ผู้ช่วย'; break;
-            case 'reader': tabName = 'อ่านเอกสาร'; break;
-            case 'currency': tabName = 'สแกนธนบัตร'; break;
-            case 'volunteer': tabName = 'ขอความช่วยเหลือ'; break;
+            case 'assistant': {
+                playEarcon('mode-assistant');
+                tabName = 'AI ผู้ช่วย';
+                break;
+            }
+            case 'reader': {
+                playEarcon('mode-reader');
+                tabName = 'อ่านเอกสาร';
+                break;
+            }
+            case 'currency': {
+                playEarcon('mode-currency');
+                tabName = 'สแกนธนบัตร';
+                break;
+            }
+            case 'volunteer': {
+                playEarcon('mode-volunteer');
+                tabName = 'ขอความช่วยเหลือ';
+                break;
+            }
         }
         speechController.speak(tabName, { channel: 'status' });
 

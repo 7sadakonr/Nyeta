@@ -80,6 +80,7 @@ body {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  touch-action: manipulation;
 }
 
 .nyeta-surface * {
@@ -111,3 +112,10 @@ body {
     animation-iteration-count: 1 !important;
   }
 }
+
+@media screen and (orientation: landscape) and (max-height: 600px) {
+  .portrait-guardian-auto {
+    display: flex !important;
+  }
+}
+

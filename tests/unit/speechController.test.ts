@@ -173,4 +173,35 @@ describe('speechController navigation quiet policy', () => {
         expect(accepted).toBe(true);
         expect(utterances.map((utterance) => utterance.text)).toEqual(['ขยับกล้องขึ้น']);
     });
+
+    it('blocks all non-critical speech when orientation is blocked, but allows critical', () => {
+        speechController.setOrientationBlocked(true);
+        expect(speechController.isOrientationBlocked).toBe(true);
+
+        const realtimeAccepted = speechController.speak('พบขวดน้ำ', { channel: 'realtime' });
+        const resultAccepted = speechController.speak('แบงก์ยี่สิบบาท', { channel: 'result' });
+        const statusAccepted = speechController.speak('AI ผู้ช่วย', { channel: 'status' });
+
+        expect(realtimeAccepted).toBe(false);
+        expect(resultAccepted).toBe(false);
+        expect(statusAccepted).toBe(false);
+        expect(utterances).toHaveLength(0);
+
+        const criticalAccepted = speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+        expect(criticalAccepted).toBe(true);
+        expect(utterances.map((u) => u.text)).toEqual(['กรุณาหมุนโทรศัพท์เป็นแนวตั้ง']);
+    });
+
+    it('does not allow non-critical speech to interrupt while critical speech is actively speaking', () => {
+        speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+        expect(utterances).toHaveLength(1);
+
+        const realtimeAccepted = speechController.speak('พบเก้าอี้', { channel: 'realtime' });
+        const statusAccepted = speechController.speak('เชื่อมต่อแล้ว', { channel: 'status' });
+
+        expect(realtimeAccepted).toBe(false);
+        expect(statusAccepted).toBe(false);
+        // Only the critical speech was spoken
+        expect(utterances).toHaveLength(1);
+    });
 });

@@ -11,9 +11,22 @@ function getAudioContext(): AudioContext {
     return _audioCtx;
 }
 
-export type EarconType = 'ring' | 'connect' | 'disconnect' | 'error' | 'bell' | 'processing' | string;
+export type EarconType =
+    | 'ring'
+    | 'connect'
+    | 'disconnect'
+    | 'error'
+    | 'bell'
+    | 'processing'
+    | 'ding'
+    | 'mode-assistant'
+    | 'mode-currency'
+    | 'mode-reader'
+    | 'mode-volunteer'
+    | string;
 
 let _activeProcessingStop: (() => void) | null = null;
+let _activeRingStop: (() => void) | null = null;
 
 export function playEarcon(type?: EarconType): void {
     try {
@@ -21,6 +34,26 @@ export function playEarcon(type?: EarconType): void {
         const now = ctx.currentTime;
 
         switch (type) {
+            case 'mode-assistant': {
+                // Rising 3-tone futuristic chord for AI assistant (C5 -> E5 -> C6)
+                _playThreeTone(ctx, 523, 659, 1046, 0.08, 0.25, now);
+                break;
+            }
+            case 'mode-currency': {
+                // Bright 2-tone metallic clink for currency scanner (E6 -> A6)
+                _playTwoTone(ctx, 1318, 1760, 0.07, 0.28, now);
+                break;
+            }
+            case 'mode-reader': {
+                // Warm, calm resonant 2-tone chime for document reader (A4 -> E5)
+                _playTwoTone(ctx, 440, 659, 0.12, 0.25, now);
+                break;
+            }
+            case 'mode-volunteer':
+            case 'ding': {
+                _playTwoTone(ctx, 880, 1175, 0.12, 0.35, now);
+                break;
+            }
             case 'success': {
                 _playTwoTone(ctx, 523, 659, 0.12, 0.15, now);
                 break;
@@ -125,6 +158,62 @@ export function stopProcessingEarcon(): void {
     if (_activeProcessingStop) {
         _activeProcessingStop();
         _activeProcessingStop = null;
+    }
+}
+
+/**
+ * Starts a periodic ringing earcon loop while calling/waiting for a volunteer.
+ * Plays a loud, clear ringing tone every intervalMs (default: 2500ms).
+ */
+export function startRingEarcon(intervalMs = 2500): () => void {
+    if (_activeRingStop) {
+        _activeRingStop();
+        _activeRingStop = null;
+    }
+
+    if (typeof window === 'undefined') {
+        return () => {};
+    }
+
+    let isRunning = true;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+
+    const playRing = () => {
+        if (!isRunning) return;
+        try {
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+            // Louder two-tone ring for waiting state
+            _playTwoTone(ctx, 880, 1047, 0.18, 0.45, now);
+        } catch {
+            /* noop */
+        }
+    };
+
+    // Play initial ring immediately
+    playRing();
+    timerId = setInterval(playRing, intervalMs);
+
+    const stop = () => {
+        if (!isRunning) return;
+        isRunning = false;
+        if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+        }
+        if (_activeRingStop === stop) {
+            _activeRingStop = null;
+        }
+    };
+
+    _activeRingStop = stop;
+    return stop;
+}
+
+export function stopRingEarcon(): void {
+    if (_activeRingStop) {
+        _activeRingStop();
+        _activeRingStop = null;
     }
 }
 

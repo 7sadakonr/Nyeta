@@ -8,7 +8,7 @@ import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';
 import { speechController } from '@/shared/accessibility/speechController';
-import { playEarcon } from '@/shared/accessibility/audio';
+import { playEarcon, startRingEarcon, stopRingEarcon } from '@/shared/accessibility/audio';
 
 const STATUS_SPEECH: Record<string, string> = {
     calling: 'กำลังเรียกอาสาสมัคร กรุณารอสักครู่',
@@ -72,12 +72,13 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         const statusChanged = previousStatusRef.current !== status;
         previousStatusRef.current = status;
         if (!statusChanged) return;
+        stopRingEarcon();
         onStatusChange?.(status);
         const message = status === 'error' ? (error || STATUS_SPEECH.error) : STATUS_SPEECH[status];
         if (message) speak(message);
 
         if (status === 'calling') {
-            playEarcon('ring');
+            startRingEarcon();
             hapticRef.current?.startContinuous();
         } else {
             hapticRef.current?.stopContinuous();
@@ -97,7 +98,10 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
             hapticRef.current?.trigger(1);
         }
         const haptic = hapticRef.current;
-        return () => haptic?.stopContinuous();
+        return () => {
+            stopRingEarcon();
+            haptic?.stopContinuous();
+        };
     }, [status, error, speak, onStatusChange]);
 
     const isActive = status === 'calling' || status === 'connecting' || status === 'connected';
@@ -111,6 +115,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
 
     const prepareForExit = useCallback(() => {
         endCall(false);
+        stopRingEarcon();
         hapticRef.current?.stopContinuous();
         speechController.stop();
     }, [endCall]);
@@ -118,6 +123,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
     useImperativeHandle(ref, () => ({ prepareForExit }), [prepareForExit]);
 
     useEffect(() => () => {
+        stopRingEarcon();
         hapticRef.current?.stopContinuous();
         speechController.stop();
     }, []);
@@ -182,7 +188,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
                 {!isActive ? (
                     <button
                         type="button"
-                        onClick={() => { onStatusChange?.('calling'); reset(); startCall(); }}
+                        onClick={() => { playEarcon('ding'); onStatusChange?.('calling'); reset(); startCall(); }}
                         className="w-full py-4 rounded-xl text-[17px] font-semibold bg-[#0A84FF] text-white active:bg-[#007AFF] transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#0A84FF]/40"
                         aria-label={isFinished ? 'เรียกอาสาสมัครอีกครั้ง' : 'เรียกอาสาสมัคร'}
                     >

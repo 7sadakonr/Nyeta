@@ -6,6 +6,8 @@ import BlindCallScreen, { BlindCallHandle } from '@/features/calling/BlindCallSc
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
+import { useOrientationLock } from '@/shared/hooks/useOrientationLock';
+import { playEarcon } from '@/shared/accessibility/audio';
 import BlindBottomNavigation from './BlindBottomNavigation';
 import PwaControls from './PwaControls';
 import { ACTIVE_CALL_STATUSES, ASSISTANT_TABS, BlindAppTab } from './types';
@@ -19,6 +21,8 @@ const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] 
     (ASSISTANT_TABS as readonly string[]).includes(tab);
 
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
+    useOrientationLock();
+
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
     const assistantRef = useRef<BlindAssistHandle | null>(null);
@@ -45,6 +49,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
             setCallStatus('idle');
         } else if (nextTab === 'volunteer') {
             assistantRef.current?.prepareForCall();
+            playEarcon('ding');
         }
 
         let tabName = '';

@@ -11,9 +11,10 @@ function getAudioContext(): AudioContext {
     return _audioCtx;
 }
 
-export type EarconType = 'ring' | 'connect' | 'disconnect' | 'error' | 'bell' | 'processing' | string;
+export type EarconType = 'ring' | 'connect' | 'disconnect' | 'error' | 'bell' | 'processing' | 'ding' | string;
 
 let _activeProcessingStop: (() => void) | null = null;
+let _activeRingStop: (() => void) | null = null;
 
 export function playEarcon(type?: EarconType): void {
     try {
@@ -21,6 +22,10 @@ export function playEarcon(type?: EarconType): void {
         const now = ctx.currentTime;
 
         switch (type) {
+            case 'ding': {
+                _playTwoTone(ctx, 880, 1175, 0.12, 0.35, now);
+                break;
+            }
             case 'success': {
                 _playTwoTone(ctx, 523, 659, 0.12, 0.15, now);
                 break;
@@ -125,6 +130,62 @@ export function stopProcessingEarcon(): void {
     if (_activeProcessingStop) {
         _activeProcessingStop();
         _activeProcessingStop = null;
+    }
+}
+
+/**
+ * Starts a periodic ringing earcon loop while calling/waiting for a volunteer.
+ * Plays a loud, clear ringing tone every intervalMs (default: 2500ms).
+ */
+export function startRingEarcon(intervalMs = 2500): () => void {
+    if (_activeRingStop) {
+        _activeRingStop();
+        _activeRingStop = null;
+    }
+
+    if (typeof window === 'undefined') {
+        return () => {};
+    }
+
+    let isRunning = true;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+
+    const playRing = () => {
+        if (!isRunning) return;
+        try {
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+            // Louder two-tone ring for waiting state
+            _playTwoTone(ctx, 880, 1047, 0.18, 0.45, now);
+        } catch {
+            /* noop */
+        }
+    };
+
+    // Play initial ring immediately
+    playRing();
+    timerId = setInterval(playRing, intervalMs);
+
+    const stop = () => {
+        if (!isRunning) return;
+        isRunning = false;
+        if (timerId) {
+            clearInterval(timerId);
+            timerId = null;
+        }
+        if (_activeRingStop === stop) {
+            _activeRingStop = null;
+        }
+    };
+
+    _activeRingStop = stop;
+    return stop;
+}
+
+export function stopRingEarcon(): void {
+    if (_activeRingStop) {
+        _activeRingStop();
+        _activeRingStop = null;
     }
 }
 

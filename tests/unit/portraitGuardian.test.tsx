@@ -3,13 +3,14 @@
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { speak, playEarcon } = vi.hoisted(() => ({
+const { speak, playEarcon, setOrientationBlocked } = vi.hoisted(() => ({
     speak: vi.fn(),
     playEarcon: vi.fn(),
+    setOrientationBlocked: vi.fn(),
 }));
 
 vi.mock('@/shared/accessibility/speechController', () => ({
-    speechController: { speak },
+    speechController: { speak, setOrientationBlocked },
 }));
 
 vi.mock('@/shared/accessibility/audio', () => ({
@@ -54,6 +55,7 @@ describe('PortraitGuardian', () => {
         const { getByRole } = render(<PortraitGuardian />);
         const alert = getByRole('alert');
         expect(alert.className).toContain('flex');
+        expect(setOrientationBlocked).toHaveBeenCalledWith(true);
         expect(speak).toHaveBeenCalledWith('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
         expect(playEarcon).toHaveBeenCalledWith('error');
     });

@@ -95,6 +95,31 @@ class SpeechController {
         return () => this._guidanceSuppressedListeners.delete(listener);
     }
 
+    private _orientationBlocked = false;
+
+    /**
+     * Suppress all non-critical speech when the device is oriented incorrectly (e.g. landscape).
+     * Prevents any camera/detection speech from interfering with the orientation warning.
+     */
+    public setOrientationBlocked(blocked: boolean): void {
+        if (this._orientationBlocked === blocked) return;
+        this._orientationBlocked = blocked;
+
+        if (blocked) {
+            // Immediately stop any non-critical speech
+            if (this._currentChannel !== 'critical') {
+                this._cancelInternal();
+                this._activeRequest++;
+                this._state = 'idle';
+                this.notify();
+            }
+        }
+    }
+
+    public get isOrientationBlocked(): boolean {
+        return this._orientationBlocked;
+    }
+
     
     public unlockAudio(): void {
         if (this._audioUnlocked || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -177,6 +202,16 @@ class SpeechController {
 
         const cleanText = text.trim();
         if (!cleanText) {
+            options.onEnd?.(false);
+            return false;
+        }
+
+        if (this._orientationBlocked && options.channel !== 'critical') {
+            options.onEnd?.(false);
+            return false;
+        }
+
+        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical') {
             options.onEnd?.(false);
             return false;
         }

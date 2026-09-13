@@ -24,8 +24,11 @@ export default function PortraitGuardian() {
             const landscapeDetected: boolean = Boolean(isHorizontal && isPhoneHeight && isTouch);
             setIsLandscape((prev) => {
                 if (!prev && landscapeDetected) {
+                    speechController.setOrientationBlocked(true);
                     playEarcon('error');
                     speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+                } else if (prev && !landscapeDetected) {
+                    speechController.setOrientationBlocked(false);
                 }
                 return landscapeDetected;
             });
@@ -46,6 +49,7 @@ export default function PortraitGuardian() {
         window.addEventListener('orientationchange', checkOrientation);
 
         return () => {
+            speechController.setOrientationBlocked(false);
             if (mediaQuery.removeEventListener) {
                 mediaQuery.removeEventListener('change', handleMediaChange);
             } else {

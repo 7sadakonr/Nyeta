@@ -55,6 +55,39 @@ describe('Ring and Ding Earcons', () => {
         expect(createdOscillators[1].start).toHaveBeenCalled();
     });
 
+    it('plays mode-assistant earcon with rising 3-tone arpeggio', () => {
+        createdOscillators = [];
+        playEarcon('mode-assistant');
+        expect(createdOscillators.length).toBe(3);
+        expect(createdOscillators[0].frequency.value).toBe(523);
+        expect(createdOscillators[1].frequency.value).toBe(659);
+        expect(createdOscillators[2].frequency.value).toBe(1046);
+    });
+
+    it('plays mode-currency earcon with bright metallic 2-tone clink', () => {
+        createdOscillators = [];
+        playEarcon('mode-currency');
+        expect(createdOscillators.length).toBe(2);
+        expect(createdOscillators[0].frequency.value).toBe(1318);
+        expect(createdOscillators[1].frequency.value).toBe(1760);
+    });
+
+    it('plays mode-reader earcon with warm resonant 2-tone chime', () => {
+        createdOscillators = [];
+        playEarcon('mode-reader');
+        expect(createdOscillators.length).toBe(2);
+        expect(createdOscillators[0].frequency.value).toBe(440);
+        expect(createdOscillators[1].frequency.value).toBe(659);
+    });
+
+    it('plays mode-volunteer earcon matching calling bell tones', () => {
+        createdOscillators = [];
+        playEarcon('mode-volunteer');
+        expect(createdOscillators.length).toBe(2);
+        expect(createdOscillators[0].frequency.value).toBe(880);
+        expect(createdOscillators[1].frequency.value).toBe(1175);
+    });
+
     it('starts ringing earcon immediately and repeats on interval', () => {
         const stop = startRingEarcon(2500);
 

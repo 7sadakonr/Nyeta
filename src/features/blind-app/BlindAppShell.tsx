@@ -49,15 +49,30 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
             setCallStatus('idle');
         } else if (nextTab === 'volunteer') {
             assistantRef.current?.prepareForCall();
-            playEarcon('ding');
         }
 
         let tabName = '';
         switch(nextTab) {
-            case 'assistant': tabName = 'AI ผู้ช่วย'; break;
-            case 'reader': tabName = 'อ่านเอกสาร'; break;
-            case 'currency': tabName = 'สแกนธนบัตร'; break;
-            case 'volunteer': tabName = 'ขอความช่วยเหลือ'; break;
+            case 'assistant': {
+                playEarcon('mode-assistant');
+                tabName = 'AI ผู้ช่วย';
+                break;
+            }
+            case 'reader': {
+                playEarcon('mode-reader');
+                tabName = 'อ่านเอกสาร';
+                break;
+            }
+            case 'currency': {
+                playEarcon('mode-currency');
+                tabName = 'สแกนธนบัตร';
+                break;
+            }
+            case 'volunteer': {
+                playEarcon('mode-volunteer');
+                tabName = 'ขอความช่วยเหลือ';
+                break;
+            }
         }
         speechController.speak(tabName, { channel: 'status' });
 

@@ -156,6 +156,7 @@ class SpeechController {
     // Internal deduplication and tracking
     private _lastRealtimeGuidance: string | null = null;
     private _lastRealtimeTime: number = 0;
+    private _pendingRealtime: { text: string; options: SpeechOptions } | null = null;
     private _quietTimer: ReturnType<typeof setTimeout> | null = null;
     
     // Listeners for React reactive hooks
@@ -206,12 +207,17 @@ class SpeechController {
             return false;
         }
 
-        if (this._orientationBlocked && options.channel !== 'critical') {
-            options.onEnd?.(false);
-            return false;
-        }
+        const PRIORITY: Record<SpeechChannel, number> = {
+            critical: 4,
+            result: 3,
+            status: 2,
+            realtime: 1
+        };
 
-        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical') {
+        const currentPriority = this._currentChannel ? PRIORITY[this._currentChannel] : 0;
+        const newPriority = PRIORITY[options.channel];
+
+        if (this._orientationBlocked && options.channel !== 'critical') {
             options.onEnd?.(false);
             return false;
         }
@@ -248,9 +254,32 @@ class SpeechController {
             this._resumeAfterNavigation = null;
         }
 
+        if (this._state === 'speaking') {
+            if (newPriority < currentPriority) {
+                options.onEnd?.(false);
+                return false;
+            }
+            if (newPriority === currentPriority && options.channel === 'realtime') {
+                if (options.key) {
+                    const now = Date.now();
+                    if (this._lastRealtimeGuidance === options.key && (now - this._lastRealtimeTime) < (options.dedupeMs || 1000)) {
+                        options.onEnd?.(false);
+                        return false;
+                    }
+                    this._lastRealtimeGuidance = options.key;
+                    this._lastRealtimeTime = now;
+                }
+                
+                if (this._pendingRealtime) {
+                    try { this._pendingRealtime.options.onEnd?.(false); } catch {}
+                }
+                this._pendingRealtime = { text: cleanText, options };
+                return true;
+            }
+        }
+
         if (options.channel === 'realtime') {
             if (options.key) {
-                // Deduplicate realtime
                 const now = Date.now();
                 if (
                     this._lastRealtimeGuidance === options.key &&
@@ -396,6 +425,12 @@ class SpeechController {
         this._chunkIndex = 0;
         this._chunkOptions = null;
         this._pendingUnlockSpeech = null;
+
+        if (this._pendingRealtime) {
+            const pr = this._pendingRealtime;
+            this._pendingRealtime = null;
+            try { pr.options.onEnd?.(false); } catch (e) {}
+        }
         
         if (onEnd) {
             try {
@@ -527,8 +562,21 @@ class SpeechController {
         this._chunks = [];
         this._chunkIndex = 0;
         this._chunkOptions = null;
-        this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
-        this.notify();
+
+        const pendingRt = this._pendingRealtime;
+        this._pendingRealtime = null;
+
+        const canSpeakPending = pendingRt && !this._guidanceMuted && !this._guidanceSuppressed && !this._orientationBlocked && !this._isQuiet();
+        if (canSpeakPending) {
+            this._state = 'idle';
+            this.speak(pendingRt.text, pendingRt.options);
+        } else {
+            if (pendingRt) {
+                try { pendingRt.options.onEnd?.(false); } catch {}
+            }
+            this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+            this.notify();
+        }
         
         if (cb) {
             try {

@@ -20,6 +20,8 @@ export interface CameraViewProps {
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
     showCapturedText?: boolean;
+    /** iOS voice-media suspension: frozen camera frame shown while mic is active */
+    frozenFrameUrl?: string | null;
 }
 
 export default function CameraView({
@@ -38,6 +40,7 @@ export default function CameraView({
     aiStatus = 'idle',
     readerGuidance = '',
     showCapturedText = false,
+    frozenFrameUrl = null,
 }: CameraViewProps) {
     return (
         <div
@@ -52,6 +55,14 @@ export default function CameraView({
                 className="absolute inset-0 h-full w-full object-cover"
                 aria-hidden="true"
             />
+            {frozenFrameUrl && (
+                <img
+                    src={frozenFrameUrl}
+                    alt=""
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 z-[2] h-full w-full object-cover"
+                />
+            )}
             <DetectionOverlay
                 videoRef={videoRef}
                 containerRef={cameraContainerRef}

@@ -237,9 +237,6 @@ export function useSpeechInput(
         sessionActiveRef.current = true;
         setState('starting');
 
-        // Switch audio session to play-and-record before starting microphone
-        setWebAudioSession('play-and-record');
-
         const recognition = createRecognition();
         recognitionRef.current = recognition;
 

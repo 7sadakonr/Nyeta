@@ -61,4 +61,53 @@ describe('useCamera', () => {
         expect(stop).toHaveBeenCalledOnce();
         expect(result.current.stream).toBeNull();
     });
+
+    it('suspendForVoice stops active tracks and clears stream without throwing', async () => {
+        const stopTrack = vi.fn();
+        const activeStream = {
+            getTracks: () => [{ stop: stopTrack }],
+            getVideoTracks: () => [{ stop: stopTrack, readyState: 'live' }],
+        } as unknown as MediaStream;
+        const getUserMedia = vi.fn().mockResolvedValue(activeStream);
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia },
+        });
+
+        const { result } = renderHook(() => useCamera());
+        await act(async () => {
+            await result.current.initCamera();
+        });
+
+        act(() => {
+            result.current.suspendForVoice();
+        });
+
+        expect(stopTrack).toHaveBeenCalled();
+        expect(result.current.stream).toBeNull();
+        expect(result.current.isReady).toBe(false);
+    });
+
+    it('captureSnapshot returns null when video has no dimensions', () => {
+        const { result } = renderHook(() => useCamera());
+        expect(result.current.captureSnapshot()).toBeNull();
+    });
+
+    it('resumeFromVoice reinitializes camera stream', async () => {
+        const getUserMedia = vi.fn().mockResolvedValue({
+            getTracks: () => [],
+            getVideoTracks: () => [],
+        });
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia },
+        });
+
+        const { result } = renderHook(() => useCamera());
+        await act(async () => {
+            await result.current.resumeFromVoice();
+        });
+
+        expect(getUserMedia).toHaveBeenCalled();
+    });
 });

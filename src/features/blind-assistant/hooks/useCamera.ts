@@ -8,11 +8,19 @@ export interface UseCameraResult {
     error: any;
     initCamera: () => Promise<void>;
     stopCamera: () => void;
+    /** iOS voice-media suspension: capture current frame as dataURL */
+    captureSnapshot: () => string | null;
+    /** iOS voice-media suspension: stop tracks without triggering watchdog */
+    suspendForVoice: () => void;
+    /** iOS voice-media suspension: reopen camera and wait for first real frame */
+    resumeFromVoice: () => Promise<void>;
 }
 
 const REOPEN_COOLDOWN_MS = 3000;
 const MAX_REOPEN_RETRIES = 3;
 const WATCHDOG_INTERVAL_MS = 2500;
+/** Max wait for first real frame after resumeFromVoice (ms) */
+const VOICE_RESUME_TIMEOUT_MS = 3000;
 
 export function useCamera(): UseCameraResult {
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -22,6 +30,8 @@ export function useCamera(): UseCameraResult {
     const streamRef = useRef<MediaStream | null>(null);
     const mountedRef = useRef(false);
     const operationIdRef = useRef(0);
+    /** When true, watchdog/recovery will not attempt to reopen — camera was intentionally suspended for voice */
+    const intentionalStopRef = useRef(false);
 
     const reopenCooldownRef = useRef<number>(0);
     const retryCountRef = useRef<number>(0);
@@ -201,7 +211,7 @@ export function useCamera(): UseCameraResult {
     }, [initCamera]);
 
     const schedulePlaybackResume = useCallback((triggerSource: string, delayMs = 30) => {
-        if (!mountedRef.current || isReopeningRef.current) return;
+        if (!mountedRef.current || isReopeningRef.current || intentionalStopRef.current) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
         // Passive while microphone/listening is active (Requirements 4 & 5)
@@ -254,7 +264,7 @@ export function useCamera(): UseCameraResult {
 
     // Check video and track state, attempt play() first, reopen only if recovery fails
     const checkAndRecoverCamera = useCallback((triggerSource: string) => {
-        if (!mountedRef.current || isReopeningRef.current) return;
+        if (!mountedRef.current || isReopeningRef.current || intentionalStopRef.current) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
         // Passive while microphone/listening is active (Requirements 4 & 5)
@@ -425,12 +435,108 @@ export function useCamera(): UseCameraResult {
         };
     }, [isReady, checkAndRecoverCamera]);
 
+    // ─── iOS Voice-Media Suspension ────────────────────────────────────
+    // These methods are called exclusively by BlindAssistScreen's iOS
+    // voice-media coordinator. They allow physically stopping the camera
+    // tracks before SpeechRecognition starts (avoiding WebKit audio
+    // session conflicts) and restoring them after mic finishes.
+
+    /** Capture the current video frame as a JPEG dataURL for frozen overlay. */
+    const captureSnapshot = useCallback((): string | null => {
+        const video = videoRef.current;
+        if (!video || video.videoWidth === 0 || video.videoHeight === 0) return null;
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return null;
+            ctx.drawImage(video, 0, 0);
+            return canvas.toDataURL('image/jpeg', 0.85);
+        } catch {
+            return null;
+        }
+    }, []);
+
+    /** Stop camera tracks intentionally — watchdog will not try to reopen. */
+    const suspendForVoice = useCallback(() => {
+        intentionalStopRef.current = true;
+
+        if (playDebounceTimerRef.current) {
+            clearTimeout(playDebounceTimerRef.current);
+            playDebounceTimerRef.current = null;
+        }
+
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setStream(null);
+        setIsReady(false);
+        // Do NOT release wake lock — we'll restore camera shortly
+
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[Camera] suspendForVoice: tracks stopped, watchdog disabled');
+        }
+    }, []);
+
+    /** Reopen camera after voice session and wait for first real frame. */
+    const resumeFromVoice = useCallback(async () => {
+        intentionalStopRef.current = false;
+        retryCountRef.current = 0;
+
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[Camera] resumeFromVoice: reopening camera');
+        }
+
+        await initCamera();
+
+        // Wait for a real video frame before resolving
+        return new Promise<void>((resolve) => {
+            const video = videoRef.current;
+            if (!video) { resolve(); return; }
+
+            let resolved = false;
+            const done = () => {
+                if (resolved) return;
+                resolved = true;
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`[Camera] resumeFromVoice: first frame ready (${video.videoWidth}x${video.videoHeight})`);
+                }
+                resolve();
+            };
+
+            // Prefer requestVideoFrameCallback (Safari 15.4+)
+            if (typeof (video as any).requestVideoFrameCallback === 'function') {
+                (video as any).requestVideoFrameCallback(done);
+            } else {
+                // Fallback: poll with rAF
+                const checkFrame = () => {
+                    if (resolved) return;
+                    if (video.readyState >= 2 && video.videoWidth > 0) {
+                        done();
+                    } else {
+                        requestAnimationFrame(checkFrame);
+                    }
+                };
+                requestAnimationFrame(checkFrame);
+            }
+
+            // Safety timeout — resolve regardless after VOICE_RESUME_TIMEOUT_MS
+            setTimeout(done, VOICE_RESUME_TIMEOUT_MS);
+        });
+    }, [initCamera]);
+
     // Release wake lock and stop tracks on unmount
     useEffect(() => {
         mountedRef.current = true;
         return () => {
             mountedRef.current = false;
             operationIdRef.current += 1;
+            intentionalStopRef.current = false;
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
                 streamRef.current = null;
@@ -443,5 +549,5 @@ export function useCamera(): UseCameraResult {
         };
     }, []);
 
-    return { videoRef, stream, isReady, error, initCamera, stopCamera };
+    return { videoRef, stream, isReady, error, initCamera, stopCamera, captureSnapshot, suspendForVoice, resumeFromVoice };
 }

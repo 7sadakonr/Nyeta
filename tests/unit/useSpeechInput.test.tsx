@@ -61,14 +61,14 @@ describe('useSpeechInput lifecycle and one-shot session enforcement', () => {
     delete (navigator as any).audioSession;
   });
 
-  it('calls recognition.start() once, sets audio session to play-and-record, and suppresses TTS guidance on startListening', () => {
+  it('calls recognition.start() once, leaves audio session to WebKit, and suppresses TTS guidance on startListening', () => {
     const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechInput(onResult));
 
     act(() => result.current.startListening());
     const recognition = MockRecognition.latest!;
 
-    expect(mockAudioSession.type).toBe('play-and-record');
+    expect(mockAudioSession.type).toBe('auto');
     expect(beginListening).toHaveBeenCalledOnce();
     expect(recognition.start).toHaveBeenCalledOnce();
     expect(result.current.state).toBe('listening');

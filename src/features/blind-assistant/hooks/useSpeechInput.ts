@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
+import { setWebAudioSession } from '@/shared/accessibility/audioSession';
 
 export type SpeechInputState = 'idle' | 'starting' | 'listening' | 'stopping';
 
@@ -43,6 +44,7 @@ export function useSpeechInput(
     const submitOnEndRef = useRef(false);
     const isExplicitStopRef = useRef(false);
     const sessionActiveRef = useRef(false);
+    const settleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
@@ -76,6 +78,16 @@ export function useSpeechInput(
 
         speechController.endListening();
         setState('idle');
+
+        // Restore audio session to playback once upon ending mic session, then settle to auto
+        setWebAudioSession('playback');
+        if (settleTimerRef.current) {
+            clearTimeout(settleTimerRef.current);
+        }
+        settleTimerRef.current = setTimeout(() => {
+            settleTimerRef.current = null;
+            setWebAudioSession('auto');
+        }, 200);
 
         const finalTranscript = [finalTranscriptRef.current.trim(), interimTranscriptRef.current.trim()]
             .filter(Boolean)
@@ -225,6 +237,9 @@ export function useSpeechInput(
         sessionActiveRef.current = true;
         setState('starting');
 
+        // Switch audio session to play-and-record before starting microphone
+        setWebAudioSession('play-and-record');
+
         const recognition = createRecognition();
         recognitionRef.current = recognition;
 
@@ -290,8 +305,13 @@ export function useSpeechInput(
 
     useEffect(() => {
         return () => {
+            if (settleTimerRef.current) {
+                clearTimeout(settleTimerRef.current);
+                settleTimerRef.current = null;
+            }
             submitOnEndRef.current = false;
             finishSession('unmount', { abort: true });
+            setWebAudioSession('auto');
         };
     }, [finishSession]);
 

@@ -40,7 +40,14 @@ class MockRecognition {
 }
 
 describe('useSpeechInput lifecycle and one-shot session enforcement', () => {
+  let mockAudioSession: { type: string };
+
   beforeEach(() => {
+    mockAudioSession = { type: 'auto' };
+    Object.defineProperty(navigator, 'audioSession', {
+      configurable: true,
+      value: mockAudioSession,
+    });
     MockRecognition.instances = [];
     MockRecognition.latest = null;
     vi.stubGlobal('SpeechRecognition', MockRecognition);
@@ -49,21 +56,25 @@ describe('useSpeechInput lifecycle and one-shot session enforcement', () => {
     speak.mockClear();
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (navigator as any).audioSession;
+  });
 
-  it('calls recognition.start() once and suppresses TTS guidance on startListening', () => {
+  it('calls recognition.start() once, sets audio session to play-and-record, and suppresses TTS guidance on startListening', () => {
     const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechInput(onResult));
 
     act(() => result.current.startListening());
     const recognition = MockRecognition.latest!;
 
+    expect(mockAudioSession.type).toBe('play-and-record');
     expect(beginListening).toHaveBeenCalledOnce();
     expect(recognition.start).toHaveBeenCalledOnce();
     expect(result.current.state).toBe('listening');
   });
 
-  it('final result triggers recognition.stop() and submits transcript once after onend', () => {
+  it('final result triggers recognition.stop() and submits transcript once after onend and restores audio session', () => {
     const onResult = vi.fn();
     const { result } = renderHook(() => useSpeechInput(onResult));
 
@@ -86,6 +97,7 @@ describe('useSpeechInput lifecycle and one-shot session enforcement', () => {
       recognition.onend?.();
     });
 
+    expect(mockAudioSession.type).toBe('playback');
     expect(endListening).toHaveBeenCalledOnce();
     expect(onResult).toHaveBeenCalledExactlyOnceWith('นี่คืออะไร');
     expect(result.current.state).toBe('idle');

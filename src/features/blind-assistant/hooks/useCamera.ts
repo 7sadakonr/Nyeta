@@ -204,12 +204,18 @@ export function useCamera(): UseCameraResult {
         if (!mountedRef.current || isReopeningRef.current) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
+        // Passive while microphone/listening is active (Requirements 4 & 5)
+        if (speechController?.getSnapshot?.().isListening) return;
+
         if (playDebounceTimerRef.current) return;
 
         playDebounceTimerRef.current = setTimeout(() => {
             playDebounceTimerRef.current = null;
             if (!mountedRef.current || isReopeningRef.current) return;
             if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+
+            // Re-check listening state after debounce
+            if (speechController?.getSnapshot?.().isListening) return;
 
             const video = videoRef.current;
             const currentStream = streamRef.current;
@@ -251,6 +257,9 @@ export function useCamera(): UseCameraResult {
         if (!mountedRef.current || isReopeningRef.current) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 
+        // Passive while microphone/listening is active (Requirements 4 & 5)
+        if (speechController?.getSnapshot?.().isListening) return;
+
         const video = videoRef.current;
         const currentStream = streamRef.current;
         if (!video || !currentStream) return;
@@ -261,9 +270,9 @@ export function useCamera(): UseCameraResult {
         // 1. Track is ended or missing
         if (!track || track.readyState === 'ended') {
             const speechSnap = speechController?.getSnapshot ? speechController.getSnapshot() : null;
-            if (speechSnap?.isSpeaking) {
+            if (speechSnap?.isSpeaking || speechSnap?.isListening) {
                 if (process.env.NODE_ENV !== 'production') {
-                    console.log(`[Camera Watchdog] Track ended while speech is speaking. Postponing reopen until idle (${triggerSource})`);
+                    console.log(`[Camera Watchdog] Track ended while speech/mic is active. Postponing reopen until idle (${triggerSource})`);
                 }
                 return;
             }
@@ -279,7 +288,7 @@ export function useCamera(): UseCameraResult {
             return;
         }
 
-        // 3. Track is live: ensure video playback is running (never reopen while track is live)
+        // 3. Track is live: if video paused or stalled, resume playback (never reopen while track is live)
         schedulePlaybackResume(triggerSource, 0);
     }, [reopenCamera, schedulePlaybackResume]);
 
@@ -328,45 +337,68 @@ export function useCamera(): UseCameraResult {
         };
     }, [stream, checkAndRecoverCamera]);
 
-    // Speech state synchronization: ensure camera plays smoothly throughout speech guidance
+    // Speech state synchronization: do NOT aggressively call video.play() on every utterance chunk.
+    // When listening finishes, wait for media settle and validate camera once (Requirements 4, 5 & 7).
     useEffect(() => {
         if (!speechController?.subscribe) return;
 
         let wasSpeaking = false;
         let wasListening = false;
+        let micSettleTimer: NodeJS.Timeout | null = null;
 
         const unsubscribe = speechController.subscribe(() => {
             const snap = speechController.getSnapshot();
-            if (snap.isSpeaking) {
-                // Keep video playback continuously active while speech is speaking
-                schedulePlaybackResume('speech: speaking', 30);
-            } else if (wasSpeaking && snap.state === 'idle') {
-                schedulePlaybackResume('speech: idle', 50);
 
-                // If track ended while speech was active, reopen now that speech is idle
+            if (snap.isListening) {
+                wasListening = true;
+                return;
+            }
+
+            if (wasListening && snap.state === 'idle') {
+                wasListening = false;
+                // Microphone ended: wait for media & AudioSession to settle, then validate camera ONCE (Requirement 5)
+                if (micSettleTimer) clearTimeout(micSettleTimer);
+                micSettleTimer = setTimeout(() => {
+                    micSettleTimer = null;
+                    if (!mountedRef.current) return;
+                    const video = videoRef.current;
+                    const currentStream = streamRef.current;
+                    if (!video || !currentStream) return;
+
+                    const tracks = currentStream.getVideoTracks ? currentStream.getVideoTracks() : currentStream.getTracks?.() ?? [];
+                    const track = tracks[0];
+
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log(`[Camera] validate after mic -> track.readyState=${track?.readyState}, track.muted=${track?.muted}, video.paused=${video.paused}, video.readyState=${video.readyState}`);
+                    }
+
+                    if (track && track.readyState === 'live') {
+                        if (video.paused) {
+                            video.play().catch(() => {});
+                        }
+                    } else if (track && track.readyState === 'ended') {
+                        checkAndRecoverCamera('mic: idle (deferred track ended)');
+                    }
+                }, 250);
+                return;
+            }
+
+            // If track ended while speech was active, reopen now that speech is idle
+            if (wasSpeaking && snap.state === 'idle') {
                 const tracks = streamRef.current?.getVideoTracks ? streamRef.current.getVideoTracks() : streamRef.current?.getTracks?.() ?? [];
                 const track = tracks[0];
                 if (!track || track.readyState === 'ended') {
                     checkAndRecoverCamera('speech: idle (deferred track ended)');
                 }
-            } else if (wasListening && snap.state === 'idle') {
-                // Microphone ended: gently validate video playback without restarting camera (Requirement 7)
-                schedulePlaybackResume('mic: idle', 50);
-
-                const tracks = streamRef.current?.getVideoTracks ? streamRef.current.getVideoTracks() : streamRef.current?.getTracks?.() ?? [];
-                const track = tracks[0];
-                if (!track || track.readyState === 'ended') {
-                    checkAndRecoverCamera('mic: idle (deferred track ended)');
-                }
             }
             wasSpeaking = snap.isSpeaking;
-            wasListening = snap.isListening;
         });
 
         return () => {
+            if (micSettleTimer) clearTimeout(micSettleTimer);
             unsubscribe();
         };
-    }, [checkAndRecoverCamera, schedulePlaybackResume]);
+    }, [checkAndRecoverCamera]);
 
     // Periodic watchdog to catch stalled frames (non-aggressive to save battery)
     useEffect(() => {

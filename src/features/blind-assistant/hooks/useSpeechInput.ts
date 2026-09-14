@@ -47,10 +47,33 @@ export function useSpeechInput(
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
 
-    const finishSession = useCallback(() => {
+    const finishSession = useCallback((reason = 'default', options?: { abort?: boolean }) => {
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
         isExplicitStopRef.current = false;
+
+        if (process.env.NODE_ENV !== 'production') {
+            console.log(`[SpeechInput] finishSession (${reason})`);
+        }
+
+        const rec = recognitionRef.current;
+        recognitionRef.current = null;
+
+        if (rec) {
+            rec.onstart = null;
+            rec.onresult = null;
+            rec.onerror = null;
+            rec.onend = null;
+            if (options?.abort) {
+                try {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log('[SpeechInput] abort');
+                    }
+                    rec.abort?.();
+                } catch {}
+            }
+        }
+
         speechController.endListening();
         setState('idle');
 
@@ -62,20 +85,9 @@ export function useSpeechInput(
         submitOnEndRef.current = false;
         interimTranscriptRef.current = '';
 
-        const rec = recognitionRef.current;
-        if (rec) {
-            try {
-                rec.onstart = null;
-                rec.onresult = null;
-                rec.onerror = null;
-                rec.onend = null;
-                rec.stop?.();
-                rec.abort?.();
-            } catch {}
-            recognitionRef.current = null;
+        if (shouldSubmit && finalTranscript) {
+            onResultRef.current?.(finalTranscript);
         }
-
-        if (shouldSubmit) onResultRef.current?.(finalTranscript);
     }, []);
 
     const createRecognition = useCallback(() => {
@@ -83,12 +95,19 @@ export function useSpeechInput(
         const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (!SpeechRecognition) return null;
 
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[SpeechInput] create');
+        }
+
         const recognition = new SpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = true;
         recognition.lang = 'th-TH';
 
         recognition.onstart = () => {
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('[SpeechInput] onstart');
+            }
             setState('listening');
             setTranscript('กำลังฟัง...');
             interimTranscriptRef.current = '';
@@ -100,56 +119,79 @@ export function useSpeechInput(
             let final = '';
             for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
                 const result = event.results[index];
-                if (result.isFinal) final += result[0]?.transcript || '';
-                else interim += result[0]?.transcript || '';
+                if (result.isFinal) {
+                    final += result[0]?.transcript || '';
+                } else {
+                    interim += result[0]?.transcript || '';
+                }
             }
+
             if (interim) {
                 interimTranscriptRef.current = interim;
                 setTranscript(`🎤 ${interim}`);
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('[SpeechInput] onresult interim:', interim);
+                }
             }
+
             if (final.trim()) {
                 finalTranscriptRef.current = `${finalTranscriptRef.current} ${final}`.trim();
                 setTranscript(`✅ ${finalTranscriptRef.current}`);
                 interimTranscriptRef.current = '';
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('[SpeechInput] onresult final:', finalTranscriptRef.current);
+                }
+
+                // Final result marks for submission and triggers orderly stop (Requirement 2)
+                submitOnEndRef.current = true;
+                try {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.log('[SpeechInput] stop (orderly after final result)');
+                    }
+                    recognition.stop?.();
+                } catch (err) {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.warn('[SpeechInput] recognition.stop() threw:', err);
+                    }
+                }
             }
         };
 
         recognition.onerror = (event: any) => {
-            if (isExplicitStopRef.current) {
-                return;
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('[SpeechInput] onerror:', event?.error);
             }
-            if (event.error === 'no-speech') {
-                setTranscript(finalTranscriptRef.current ? `✅ ${finalTranscriptRef.current}` : 'กำลังฟัง...');
-                return;
-            }
-            if (event.error === 'aborted') {
+            if (!sessionActiveRef.current) return;
+
+            if (event?.error === 'no-speech') {
+                // no-speech: do not restart, finish session, user can press mic again (Requirement 5)
+                setTranscript(finalTranscriptRef.current ? `✅ ${finalTranscriptRef.current}` : 'ไม่ได้ยินเสียงพูด');
+                submitOnEndRef.current = Boolean(finalTranscriptRef.current.trim());
+            } else if (event?.error === 'aborted') {
+                // aborted: cleanup and end, do not restart (Requirement 5)
                 setTranscript('ยกเลิกการถามด้วยเสียง');
-                return;
+                submitOnEndRef.current = false;
+            } else if (event?.error === 'not-allowed') {
+                // not-allowed: end session, show/speak error (Requirement 5)
+                submitOnEndRef.current = false;
+                setTranscript('ไม่ได้รับอนุญาตให้ใช้ไมโครโฟน');
+                onFeedbackRef.current?.('error');
+                speechController.speak('ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาอนุญาตในการตั้งค่าครับ', {
+                    channel: 'critical',
+                });
+            } else {
+                submitOnEndRef.current = false;
+                setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
+                onFeedbackRef.current?.('error');
             }
-            submitOnEndRef.current = false;
-            interimTranscriptRef.current = '';
-            setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
-            onFeedbackRef.current?.('error');
         };
 
         recognition.onend = () => {
-            if (isExplicitStopRef.current) {
-                if (sessionActiveRef.current) finishSession();
-                return;
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('[SpeechInput] onend');
             }
-            if (sessionActiveRef.current) {
-                try {
-                    recognition.start();
-                } catch {
-                    setTimeout(() => {
-                        if (sessionActiveRef.current && !isExplicitStopRef.current) {
-                            try { recognition.start(); } catch { finishSession(); }
-                        }
-                    }, 200);
-                }
-                return;
-            }
-            finishSession();
+            // One user action = one SpeechRecognition session. Never restart in onend (Requirement 1 & 2).
+            finishSession('onend');
         };
 
         return recognition;
@@ -165,17 +207,21 @@ export function useSpeechInput(
             return;
         }
 
+        // Clean up any lingering session before starting a new one (Requirement 4)
         if (sessionActiveRef.current || state !== 'idle') {
-            try { recognitionRef.current?.abort(); } catch {}
-            recognitionRef.current = null;
+            finishSession('cleanup dangling session before start', { abort: true });
         }
 
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[SpeechInput] startListening invoked');
+        }
+
+        // Stop / suppress TTS guidance intentionally once (Requirement 4 & 8)
         speechController.beginListening();
 
         finalTranscriptRef.current = '';
         interimTranscriptRef.current = '';
         submitOnEndRef.current = false;
-        isExplicitStopRef.current = false;
         sessionActiveRef.current = true;
         setState('starting');
 
@@ -183,52 +229,69 @@ export function useSpeechInput(
         recognitionRef.current = recognition;
 
         if (!recognition) {
-            finishSession();
+            finishSession('createRecognition returned null');
             return;
         }
 
         try {
+            if (process.env.NODE_ENV !== 'production') {
+                console.log('[SpeechInput] start');
+            }
             recognition.start();
-        } catch {
-            submitOnEndRef.current = false;
-            isExplicitStopRef.current = false;
-            interimTranscriptRef.current = '';
-            finishSession();
+        } catch (err) {
+            if (process.env.NODE_ENV !== 'production') {
+                console.warn('[SpeechInput] start threw error:', err);
+            }
+            finishSession('start threw error', { abort: true });
         }
     }, [createRecognition, finishSession, state]);
 
     const stopListening = useCallback(() => {
         if (!sessionActiveRef.current) return;
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[SpeechInput] stopListening requested');
+        }
         setState('stopping');
-        isExplicitStopRef.current = true;
         submitOnEndRef.current = true;
 
-        finishSession();
+        const rec = recognitionRef.current;
+        if (rec) {
+            try {
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log('[SpeechInput] stop');
+                }
+                rec.stop?.();
+            } catch {
+                finishSession('stopListening fallback', { abort: true });
+            }
+        } else {
+            finishSession('stopListening without active rec');
+        }
     }, [finishSession]);
 
     const cancelListening = useCallback(() => {
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('[SpeechInput] cancelListening requested');
+        }
         submitOnEndRef.current = false;
-        isExplicitStopRef.current = false;
         interimTranscriptRef.current = '';
         finalTranscriptRef.current = '';
         if (!sessionActiveRef.current) return;
-        const recognition = recognitionRef.current;
-        try { recognition?.abort(); } catch {}
-        finishSession();
+        finishSession('cancelListening', { abort: true });
     }, [finishSession]);
 
     const toggleListening = useCallback(() => {
-        if (sessionActiveRef.current) stopListening();
-        else startListening();
+        if (sessionActiveRef.current) {
+            stopListening();
+        } else {
+            startListening();
+        }
     }, [startListening, stopListening]);
 
     useEffect(() => {
         return () => {
             submitOnEndRef.current = false;
-            isExplicitStopRef.current = false;
-            interimTranscriptRef.current = '';
-            try { recognitionRef.current?.abort(); } catch {}
-            finishSession();
+            finishSession('unmount', { abort: true });
         };
     }, [finishSession]);
 

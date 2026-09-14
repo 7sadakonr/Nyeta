@@ -84,7 +84,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         }
     }, [cameraError]);
 
-    const { isSpeaking, isListening, isQuiet: isSpeechQuiet } = useSpeechStatus();
+    const { isSpeaking, isListening: isSpeechListening, isQuiet: isSpeechQuiet } = useSpeechStatus();
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
@@ -95,7 +95,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         targetObject,
         targetPhase,
         targetingEvent,
-    } = useObjectDetector(videoRef, mode === 'assistant' && !isListening, cameraContainerRef);
+    } = useObjectDetector(videoRef, mode === 'assistant' && !isSpeechListening, cameraContainerRef);
 
     const guidanceText = objGuidance?.message || '';
 
@@ -115,7 +115,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, []);
 
     useEffect(() => {
-        if (mode !== 'assistant' || isListening || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
+        if (mode !== 'assistant' || isSpeechListening || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
         lastHapticEventIdRef.current = targetingEvent.id;
 
         if (targetingEvent.type === 'candidate-reset' || speechController.isGuidanceSuppressed) {
@@ -148,10 +148,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } else if (targetingEvent.type === 'locked') {
             hapticRef.current?.trigger(1);
         }
-    }, [isListening, mode, targetingEvent]);
+    }, [isSpeechListening, mode, targetingEvent]);
 
     useEffect(() => {
-        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted || isListening) {
+        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted || isSpeechListening) {
             pendingObjectAnnouncementRef.current = null;
             return;
         }

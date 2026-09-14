@@ -65,7 +65,7 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
     const [isRequesting, setIsRequesting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleStart = () => {
+    const handleStart = async () => {
         if (isRequesting) return;
         setIsRequesting(true);
         setError(null);
@@ -74,9 +74,24 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
         speechController.unlockAudio();
         speechController.speak('นัยตา', { channel: 'status' });
 
-        // We do not pre-fetch permissions here anymore to avoid opening the microphone
-        // which triggers iOS telephony mode and causes audio session issues.
-        onStart();
+        try {
+            // Request camera and microphone permissions upfront
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: 'environment' }, 
+                audio: true 
+            });
+            
+            // Release the devices immediately so the actual app hooks can claim them
+            stream.getTracks().forEach(track => track.stop());
+            
+            onStart();
+        } catch (err) {
+            console.error('Permission denied:', err);
+            const msg = 'ไม่สามารถเข้าถึงกล้องหรือไมโครโฟนได้ กรุณาอนุญาตในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่อีกครั้งครับ';
+            setError(msg);
+            speechController.speak(msg, { channel: 'critical' });
+            setIsRequesting(false);
+        }
     };
 
     return (

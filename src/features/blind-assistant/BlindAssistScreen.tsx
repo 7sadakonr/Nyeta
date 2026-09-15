@@ -1,7 +1,6 @@
 'use client';
 
 import { forwardRef, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
-import { isIOSPlatform } from '@/shared/utils/platform';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
 // Custom Hooks
@@ -53,10 +52,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const cameraContainerRef = useRef<HTMLDivElement | null>(null);
     const { resultRegionProps, resetSuppression } = useResultRegionSuppression();
 
-    // iOS voice-media suspension state
-    const [voiceSnapshotUrl, setVoiceSnapshotUrl] = useState<string | null>(null);
-    const voiceSessionPendingRef = useRef<{ text: string } | null>(null);
-
     const stopProcessingRef = useRef<(() => void) | null>(null);
     const stopWaitingSound = useCallback(() => {
         if (stopProcessingRef.current) {
@@ -72,12 +67,12 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     // 1. Core Services
     const { feedback } = useFeedback(hapticRef);
-    const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera, captureSnapshot, suspendForVoice, resumeFromVoice } = useCamera();
+    const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera } = useCamera();
 
     useEffect(() => {
-        initCamera();
+        initCamera(mode);
         return () => stopCamera();
-    }, [initCamera, stopCamera]);
+    }, [initCamera, stopCamera, mode]);
     
     // Announce camera access error if any
 
@@ -293,88 +288,17 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         isListening,
         transcript: voiceTranscript,
         toggleListening,
-        startListening,
-        stopListening,
         cancelListening,
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
         useCallback((text: string) => {
             feedback('capture');
-            if (isIOSPlatform) {
-                // Defer AI submission until camera is restored (voice-media suspension)
-                voiceSessionPendingRef.current = { text };
-            } else {
-                handleCaptureAndAsk(text);
-            }
+            handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
             if (type === 'start') feedback('capture');
         }, [feedback])
     );
-
-    // iOS Voice-Media Suspension:
-    // On iOS Safari / PWA, having camera capture and mic capture active concurrently causes
-    // audio session conflict (stuttering, volume jitter). We suspend the camera during mic.
-    const handleVoiceToggle = useCallback(() => {
-        if (!isIOSPlatform) {
-            toggleListening();
-            return;
-        }
-
-        if (isListening) {
-            stopListening();
-            return;
-        }
-
-        // === iOS: Starting voice input ===
-        // 1. Capture frozen frame snapshot
-        const snapshot = captureSnapshot();
-        if (snapshot) {
-            setVoiceSnapshotUrl(snapshot);
-        }
-
-        // 2. Suspend camera tracks (watchdog will not trigger)
-        suspendForVoice();
-
-        // 3. Start SpeechRecognition without competing camera
-        startListening();
-    }, [isListening, toggleListening, stopListening, startListening, captureSnapshot, suspendForVoice]);
-
-    // iOS Voice-Media Suspension: restore camera after mic session finishes
-    useEffect(() => {
-        if (!isIOSPlatform) return;
-        if (isListening) return; // Still listening
-        if (!voiceSnapshotUrl) return; // No active suspension
-
-        let cancelled = false;
-
-        (async () => {
-            try {
-                // Reopen camera and wait for first real video frame
-                await resumeFromVoice();
-            } finally {
-                if (!cancelled) {
-                    // Dismiss frozen overlay
-                    setVoiceSnapshotUrl(null);
-                }
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [isListening, voiceSnapshotUrl, resumeFromVoice]);
-
-    // iOS Voice-Media Suspension: submit pending question once camera is fully restored and live
-    useEffect(() => {
-        if (!isIOSPlatform || !aiReady || voiceSnapshotUrl || isListening) return;
-
-        const pending = voiceSessionPendingRef.current;
-        if (pending?.text) {
-            voiceSessionPendingRef.current = null;
-            handleCaptureAndAsk(pending.text);
-        }
-    }, [aiReady, voiceSnapshotUrl, isListening, handleCaptureAndAsk]);
 
     // D. Currency Scanner
     const {
@@ -410,11 +334,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     useEffect(() => {
         if (previousModeRef.current === mode) return;
         cancelListening();
-        if (isIOSPlatform && voiceSnapshotUrl) {
-            setVoiceSnapshotUrl(null);
-            voiceSessionPendingRef.current = null;
-            resumeFromVoice();
-        }
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
         pendingObjectAnnouncementRef.current = null;
@@ -424,12 +343,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         if (mode !== 'reader') resetDocument();
         if (mode !== 'assistant') setVoiceTranscript('');
         previousModeRef.current = mode;
-    }, [cancelListening, mode, resetDocument, resetSuppression, resumeFromVoice, setVoiceTranscript, stopWaitingSound, voiceSnapshotUrl]);
+    }, [cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript, stopWaitingSound]);
 
     const prepareForCall = useCallback(() => {
         cancelListening();
-        setVoiceSnapshotUrl(null);
-        voiceSessionPendingRef.current = null;
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
         pendingObjectAnnouncementRef.current = null;
@@ -498,7 +415,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
                             showCapturedText={showCapturedText}
-                            frozenFrameUrl={voiceSnapshotUrl}
                         />
 
                         {mode === 'assistant' && showCapturedText && (
@@ -545,8 +461,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
                         onToggleGuidance={handleToggleGuidance}
-                        onStartListening={handleVoiceToggle}
-                        onStopListening={handleVoiceToggle}
+                        onStartListening={toggleListening}
+                        onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}
                         onReplayCurrencyDetails={replayCurrencyDetails}
                         onClearTotal={clearTotal}

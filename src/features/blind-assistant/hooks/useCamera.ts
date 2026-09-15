@@ -1,26 +1,14 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
-import { speechController } from '@/shared/accessibility/speechController';
+import { mediaSessionManager, MediaOwner } from '@/shared/media/mediaSessionManager';
 
 export interface UseCameraResult {
     videoRef: RefObject<HTMLVideoElement | null>;
     stream: MediaStream | null;
     isReady: boolean;
     error: any;
-    initCamera: () => Promise<void>;
+    initCamera: (owner?: MediaOwner) => Promise<void>;
     stopCamera: () => void;
-    /** iOS voice-media suspension: capture current frame as dataURL */
-    captureSnapshot: () => string | null;
-    /** iOS voice-media suspension: stop tracks without triggering watchdog */
-    suspendForVoice: () => void;
-    /** iOS voice-media suspension: reopen camera and wait for first real frame */
-    resumeFromVoice: () => Promise<void>;
 }
-
-const REOPEN_COOLDOWN_MS = 3000;
-const MAX_REOPEN_RETRIES = 3;
-const WATCHDOG_INTERVAL_MS = 2500;
-/** Max wait for first real frame after resumeFromVoice (ms) */
-const VOICE_RESUME_TIMEOUT_MS = 3000;
 
 export function useCamera(): UseCameraResult {
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -30,19 +18,11 @@ export function useCamera(): UseCameraResult {
     const streamRef = useRef<MediaStream | null>(null);
     const mountedRef = useRef(false);
     const operationIdRef = useRef(0);
-    /** When true, watchdog/recovery will not attempt to reopen — camera was intentionally suspended for voice */
-    const intentionalStopRef = useRef(false);
-
-    const reopenCooldownRef = useRef<number>(0);
-    const retryCountRef = useRef<number>(0);
-    const isReopeningRef = useRef<boolean>(false);
-    const playDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const wakeLockRef = useRef<any>(null);
 
     useEffect(() => {
         streamRef.current = stream;
     }, [stream]);
-
-    const wakeLockRef = useRef<any>(null);
 
     const requestWakeLock = async () => {
         try {
@@ -50,13 +30,13 @@ export function useCamera(): UseCameraResult {
                 wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
                 wakeLockRef.current.addEventListener('release', () => {
                     if (process.env.NODE_ENV !== 'production') {
-                        console.log('Screen Wake Lock released');
+                        console.log('[Camera] Screen Wake Lock released');
                     }
                 });
             }
         } catch (err) {
             if (process.env.NODE_ENV !== 'production') {
-                console.warn('Wake Lock Error:', err);
+                console.warn('[Camera] Wake Lock Error:', err);
             }
         }
     };
@@ -96,34 +76,14 @@ export function useCamera(): UseCameraResult {
         };
     }, [stream]);
 
-    const initCamera = useCallback(async () => {
+    const initCamera = useCallback(async (owner: MediaOwner = 'assistant') => {
         const operationId = operationIdRef.current + 1;
         operationIdRef.current = operationId;
-        setIsReady(false);
         setError(null);
 
-        // Before requesting a new stream, stop previous tracks and clear video source
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-
         try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    aspectRatio: { ideal: 16 / 9 },
-                }
-            });
-            // A tab switch can unmount this feature while the permission prompt is open.
-            // Never retain a stream which resolves after that switch.
+            const mediaStream = await mediaSessionManager.acquireCamera(owner);
             if (!mountedRef.current || operationId !== operationIdRef.current) {
-                mediaStream.getTracks().forEach(track => track.stop());
                 return;
             }
             streamRef.current = mediaStream;
@@ -132,25 +92,16 @@ export function useCamera(): UseCameraResult {
         } catch (err) {
             if (!mountedRef.current || operationId !== operationIdRef.current) return;
             if (process.env.NODE_ENV !== 'production') {
-                console.warn('Camera Init Error:', err);
+                console.warn('[Camera] Init Error:', err);
             }
             setError(err);
+            setIsReady(false);
         }
     }, []);
 
     const stopCamera = useCallback(() => {
         operationIdRef.current += 1;
-        retryCountRef.current = 0;
-        isReopeningRef.current = false;
-        if (playDebounceTimerRef.current) {
-            clearTimeout(playDebounceTimerRef.current);
-            playDebounceTimerRef.current = null;
-        }
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
+        mediaSessionManager.releaseCamera('assistant', true);
         if (videoRef.current) {
             videoRef.current.srcObject = null;
         }
@@ -159,179 +110,41 @@ export function useCamera(): UseCameraResult {
         releaseWakeLock();
     }, []);
 
-    // Controlled camera reopen with rate limiting and cleanup
-    const reopenCamera = useCallback(async (reason: string) => {
-        if (!mountedRef.current || isReopeningRef.current) return;
-        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-
-        const now = Date.now();
-        if (now - reopenCooldownRef.current < REOPEN_COOLDOWN_MS) {
-            if (process.env.NODE_ENV !== 'production') {
-                console.log(`[Camera Watchdog] Reopen throttled (${reason}), cooldown active`);
-            }
-            return;
-        }
-
-        if (retryCountRef.current >= MAX_REOPEN_RETRIES) {
-            if (process.env.NODE_ENV !== 'production') {
-                console.warn(`[Camera Watchdog] Max reopen retries (${MAX_REOPEN_RETRIES}) reached. Reason: ${reason}`);
-            }
-            return;
-        }
-
-        isReopeningRef.current = true;
-        reopenCooldownRef.current = now;
-        retryCountRef.current++;
-
-        if (process.env.NODE_ENV !== 'production') {
-            console.log(`[Camera Watchdog] Reopening camera (${reason}). Retry ${retryCountRef.current}/${MAX_REOPEN_RETRIES}`);
-        }
-
-        // Before reopen: stop old tracks and clear srcObject
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-        setStream(null);
-        setIsReady(false);
-
-        try {
-            await initCamera();
-            retryCountRef.current = 0;
-        } catch (err) {
-            if (process.env.NODE_ENV !== 'production') {
-                console.warn('[Camera Watchdog] Camera reopen failed:', err);
-            }
-        } finally {
-            isReopeningRef.current = false;
-        }
-    }, [initCamera]);
-
-    const schedulePlaybackResume = useCallback((triggerSource: string, delayMs = 30) => {
-        if (!mountedRef.current || isReopeningRef.current || intentionalStopRef.current) return;
-        if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-
-        // Passive while microphone/listening is active (Requirements 4 & 5)
-        if (speechController?.getSnapshot?.().isListening) return;
-
-        if (playDebounceTimerRef.current) return;
-
-        playDebounceTimerRef.current = setTimeout(() => {
-            playDebounceTimerRef.current = null;
-            if (!mountedRef.current || isReopeningRef.current) return;
-            if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-
-            // Re-check listening state after debounce
-            if (speechController?.getSnapshot?.().isListening) return;
-
-            const video = videoRef.current;
-            const currentStream = streamRef.current;
-            if (!video || !currentStream) return;
-
-            const tracks = currentStream.getVideoTracks ? currentStream.getVideoTracks() : currentStream.getTracks?.() ?? [];
-            const track = tracks[0];
-            if (!track || track.readyState !== 'live') return;
-
-            const isPaused = video.paused;
-            const isStalled = video.readyState < 2;
-            const hasNoDimensions = isReady && (video.videoWidth === 0 || video.videoHeight === 0);
-
-            if (process.env.NODE_ENV !== 'production') {
-                console.log(`[Camera Watchdog] check (${triggerSource}) -> track.readyState=${track?.readyState}, track.muted=${track?.muted}, video.paused=${isPaused}, video.readyState=${video.readyState}`);
-            }
-
-            if (isPaused || isStalled || hasNoDimensions) {
-                if (process.env.NODE_ENV !== 'production') {
-                    console.log(`[Camera Watchdog] Resuming video playback (${triggerSource}). Paused=${isPaused}, readyState=${video.readyState}`);
-                }
-                video.play()
-                    .then(() => {
-                        if (process.env.NODE_ENV !== 'production') {
-                            console.log(`[Camera Watchdog] video.play() succeeded (${triggerSource}). Dimensions: ${video.videoWidth}x${video.videoHeight}`);
-                        }
-                    })
-                    .catch((err) => {
-                        if (process.env.NODE_ENV !== 'production') {
-                            console.warn(`[Camera Watchdog] video.play() rejected (${triggerSource}):`, err);
-                        }
-                    });
-            }
-        }, delayMs);
-    }, [isReady]);
-
-    // Check video and track state, attempt play() first, reopen only if recovery fails
+    // Minimal, simplified watchdog: never aggressive, strictly obeys mediaSessionManager
     const checkAndRecoverCamera = useCallback((triggerSource: string) => {
-        if (!mountedRef.current || isReopeningRef.current || intentionalStopRef.current) return;
+        if (!mountedRef.current) return;
         if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-
-        // Passive while microphone/listening is active (Requirements 4 & 5)
-        if (speechController?.getSnapshot?.().isListening) return;
+        if (mediaSessionManager.isTransitioning()) return;
 
         const video = videoRef.current;
         const currentStream = streamRef.current;
         if (!video || !currentStream) return;
 
-        const tracks = currentStream.getVideoTracks ? currentStream.getVideoTracks() : currentStream.getTracks?.() ?? [];
+        const tracks = currentStream.getVideoTracks();
         const track = tracks[0];
 
-        // 1. Track is ended or missing
+        // Track ended unexpectedly
         if (!track || track.readyState === 'ended') {
-            const speechSnap = speechController?.getSnapshot ? speechController.getSnapshot() : null;
-            if (speechSnap?.isSpeaking || speechSnap?.isListening) {
-                if (process.env.NODE_ENV !== 'production') {
-                    console.log(`[Camera Watchdog] Track ended while speech/mic is active. Postponing reopen until idle (${triggerSource})`);
-                }
-                return;
-            }
-            reopenCamera(`track ended (${triggerSource})`);
-            return;
-        }
-
-        // 2. Track is temporarily muted by iOS WebKit: do NOT reopen camera; wait for unmute
-        if (track.muted) {
             if (process.env.NODE_ENV !== 'production') {
-                console.log(`[Camera Watchdog] Track is muted (${triggerSource}); waiting for unmute`);
+                console.log(`[Camera] Track ended (${triggerSource}), requesting recovery`);
             }
+            void initCamera();
             return;
         }
 
-        // 3. Track is live: if video paused or stalled, resume playback (never reopen while track is live)
-        schedulePlaybackResume(triggerSource, 0);
-    }, [reopenCamera, schedulePlaybackResume]);
+        // Track muted by browser: wait for unmute
+        if (track.muted) return;
 
-    // Video element stall/pause events (resumes playback quickly even during speech)
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video || !stream) return;
+        // Video playback paused while track is live: resume
+        if (video.paused && track.readyState === 'live') {
+            video.play().catch(() => {});
+        }
+    }, [initCamera]);
 
-        const handlePause = () => {
-            schedulePlaybackResume('video.pause', 30);
-        };
-        const handleStalled = () => {
-            schedulePlaybackResume('video.stalled', 50);
-        };
-        const handleWaiting = () => {
-            schedulePlaybackResume('video.waiting', 50);
-        };
-
-        video.addEventListener('pause', handlePause);
-        video.addEventListener('stalled', handleStalled);
-        video.addEventListener('waiting', handleWaiting);
-
-        return () => {
-            video.removeEventListener('pause', handlePause);
-            video.removeEventListener('stalled', handleStalled);
-            video.removeEventListener('waiting', handleWaiting);
-        };
-    }, [stream, schedulePlaybackResume]);
-
-    // Track ended and unmute events (mute does not restart camera)
+    // Track ended / unmute listeners
     useEffect(() => {
         if (!stream) return;
-        const tracks = stream.getVideoTracks ? stream.getVideoTracks() : stream.getTracks?.() ?? [];
+        const tracks = stream.getVideoTracks();
         const track = tracks[0];
         if (!track) return;
 
@@ -347,81 +160,7 @@ export function useCamera(): UseCameraResult {
         };
     }, [stream, checkAndRecoverCamera]);
 
-    // Speech state synchronization: do NOT aggressively call video.play() on every utterance chunk.
-    // When listening finishes, wait for media settle and validate camera once (Requirements 4, 5 & 7).
-    useEffect(() => {
-        if (!speechController?.subscribe) return;
-
-        let wasSpeaking = false;
-        let wasListening = false;
-        let micSettleTimer: NodeJS.Timeout | null = null;
-
-        const unsubscribe = speechController.subscribe(() => {
-            const snap = speechController.getSnapshot();
-
-            if (snap.isListening) {
-                wasListening = true;
-                return;
-            }
-
-            if (wasListening && snap.state === 'idle') {
-                wasListening = false;
-                // Microphone ended: wait for media & AudioSession to settle, then validate camera ONCE (Requirement 5)
-                if (micSettleTimer) clearTimeout(micSettleTimer);
-                micSettleTimer = setTimeout(() => {
-                    micSettleTimer = null;
-                    if (!mountedRef.current) return;
-                    const video = videoRef.current;
-                    const currentStream = streamRef.current;
-                    if (!video || !currentStream) return;
-
-                    const tracks = currentStream.getVideoTracks ? currentStream.getVideoTracks() : currentStream.getTracks?.() ?? [];
-                    const track = tracks[0];
-
-                    if (process.env.NODE_ENV !== 'production') {
-                        console.log(`[Camera] validate after mic -> track.readyState=${track?.readyState}, track.muted=${track?.muted}, video.paused=${video.paused}, video.readyState=${video.readyState}`);
-                    }
-
-                    if (track && track.readyState === 'live') {
-                        if (video.paused) {
-                            video.play().catch(() => {});
-                        }
-                    } else if (track && track.readyState === 'ended') {
-                        checkAndRecoverCamera('mic: idle (deferred track ended)');
-                    }
-                }, 250);
-                return;
-            }
-
-            // If track ended while speech was active, reopen now that speech is idle
-            if (wasSpeaking && snap.state === 'idle') {
-                const tracks = streamRef.current?.getVideoTracks ? streamRef.current.getVideoTracks() : streamRef.current?.getTracks?.() ?? [];
-                const track = tracks[0];
-                if (!track || track.readyState === 'ended') {
-                    checkAndRecoverCamera('speech: idle (deferred track ended)');
-                }
-            }
-            wasSpeaking = snap.isSpeaking;
-        });
-
-        return () => {
-            if (micSettleTimer) clearTimeout(micSettleTimer);
-            unsubscribe();
-        };
-    }, [checkAndRecoverCamera]);
-
-    // Periodic watchdog to catch stalled frames (non-aggressive to save battery)
-    useEffect(() => {
-        if (!isReady || !stream) return;
-
-        const interval = setInterval(() => {
-            checkAndRecoverCamera('watchdog-interval');
-        }, WATCHDOG_INTERVAL_MS);
-
-        return () => clearInterval(interval);
-    }, [isReady, stream, checkAndRecoverCamera]);
-
-    // Handle visibility change
+    // Handle visibility changes
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible' && isReady) {
@@ -435,119 +174,16 @@ export function useCamera(): UseCameraResult {
         };
     }, [isReady, checkAndRecoverCamera]);
 
-    // ─── iOS Voice-Media Suspension ────────────────────────────────────
-    // These methods are called exclusively by BlindAssistScreen's iOS
-    // voice-media coordinator. They allow physically stopping the camera
-    // tracks before SpeechRecognition starts (avoiding WebKit audio
-    // session conflicts) and restoring them after mic finishes.
-
-    /** Capture the current video frame as a JPEG dataURL for frozen overlay. */
-    const captureSnapshot = useCallback((): string | null => {
-        const video = videoRef.current;
-        if (!video || video.videoWidth === 0 || video.videoHeight === 0) return null;
-        try {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) return null;
-            ctx.drawImage(video, 0, 0);
-            return canvas.toDataURL('image/jpeg', 0.85);
-        } catch {
-            return null;
-        }
-    }, []);
-
-    /** Stop camera tracks intentionally — watchdog will not try to reopen. */
-    const suspendForVoice = useCallback(() => {
-        intentionalStopRef.current = true;
-
-        if (playDebounceTimerRef.current) {
-            clearTimeout(playDebounceTimerRef.current);
-            playDebounceTimerRef.current = null;
-        }
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-        setStream(null);
-        setIsReady(false);
-        // Do NOT release wake lock — we'll restore camera shortly
-
-        if (process.env.NODE_ENV !== 'production') {
-            console.log('[Camera] suspendForVoice: tracks stopped, watchdog disabled');
-        }
-    }, []);
-
-    /** Reopen camera after voice session and wait for first real frame. */
-    const resumeFromVoice = useCallback(async () => {
-        intentionalStopRef.current = false;
-        retryCountRef.current = 0;
-
-        if (process.env.NODE_ENV !== 'production') {
-            console.log('[Camera] resumeFromVoice: reopening camera');
-        }
-
-        await initCamera();
-
-        // Wait for a real video frame before resolving
-        return new Promise<void>((resolve) => {
-            const video = videoRef.current;
-            if (!video) { resolve(); return; }
-
-            let resolved = false;
-            const done = () => {
-                if (resolved) return;
-                resolved = true;
-                if (process.env.NODE_ENV !== 'production') {
-                    console.log(`[Camera] resumeFromVoice: first frame ready (${video.videoWidth}x${video.videoHeight})`);
-                }
-                resolve();
-            };
-
-            // Prefer requestVideoFrameCallback (Safari 15.4+)
-            if (typeof (video as any).requestVideoFrameCallback === 'function') {
-                (video as any).requestVideoFrameCallback(done);
-            } else {
-                // Fallback: poll with rAF
-                const checkFrame = () => {
-                    if (resolved) return;
-                    if (video.readyState >= 2 && video.videoWidth > 0) {
-                        done();
-                    } else {
-                        requestAnimationFrame(checkFrame);
-                    }
-                };
-                requestAnimationFrame(checkFrame);
-            }
-
-            // Safety timeout — resolve regardless after VOICE_RESUME_TIMEOUT_MS
-            setTimeout(done, VOICE_RESUME_TIMEOUT_MS);
-        });
-    }, [initCamera]);
-
-    // Release wake lock and stop tracks on unmount
+    // Cleanup on unmount
     useEffect(() => {
         mountedRef.current = true;
         return () => {
             mountedRef.current = false;
             operationIdRef.current += 1;
-            intentionalStopRef.current = false;
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-                streamRef.current = null;
-            }
-            if (playDebounceTimerRef.current) {
-                clearTimeout(playDebounceTimerRef.current);
-                playDebounceTimerRef.current = null;
-            }
+            mediaSessionManager.releaseCamera('assistant', false);
             releaseWakeLock();
         };
     }, []);
 
-    return { videoRef, stream, isReady, error, initCamera, stopCamera, captureSnapshot, suspendForVoice, resumeFromVoice };
+    return { videoRef, stream, isReady, error, initCamera, stopCamera };
 }

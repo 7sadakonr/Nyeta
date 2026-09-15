@@ -8,6 +8,7 @@ import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { useOrientationLock } from '@/shared/hooks/useOrientationLock';
 import { playEarcon } from '@/shared/accessibility/audio';
+import { mediaSessionManager } from '@/shared/media/mediaSessionManager';
 import BlindBottomNavigation from './BlindBottomNavigation';
 import PwaControls from './PwaControls';
 import { ACTIVE_CALL_STATUSES, ASSISTANT_TABS, BlindAppTab } from './types';
@@ -35,7 +36,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     }, []);
     const accessibilityNavigationHandlers = useAccessibilitySpeechNavigation(activateBlindAudio);
 
-    const selectTab = useCallback((nextTab: BlindAppTab) => {
+    const selectTab = useCallback(async (nextTab: BlindAppTab) => {
         if (nextTab === activeTab) return;
         if (callLocked && nextTab !== 'volunteer') {
             void hapticRef.current?.trigger(2);
@@ -45,7 +46,8 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         speechController.stop();
 
         if (activeTab === 'volunteer') {
-            callRef.current?.prepareForExit();
+            await callRef.current?.prepareForExit();
+            await mediaSessionManager.waitUntilReady();
             setCallStatus('idle');
         } else if (nextTab === 'volunteer') {
             assistantRef.current?.prepareForCall();

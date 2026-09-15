@@ -70,9 +70,9 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera } = useCamera();
 
     useEffect(() => {
-        initCamera();
+        initCamera(mode);
         return () => stopCamera();
-    }, [initCamera, stopCamera]);
+    }, [initCamera, stopCamera, mode]);
     
     // Announce camera access error if any
 
@@ -84,17 +84,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         }
     }, [cameraError]);
 
-    const { isSpeaking, isQuiet: isSpeechQuiet } = useSpeechStatus();
+    const { isSpeaking, isListening: isSpeechListening, isQuiet: isSpeechQuiet } = useSpeechStatus();
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
+    // Pauses inference while microphone is listening to prevent GPU/CPU media contention (Requirement 6).
     const {
         detections: cocoBoxes,
         guidance: objGuidance,
         targetObject,
         targetPhase,
         targetingEvent,
-    } = useObjectDetector(videoRef, mode === 'assistant', cameraContainerRef);
+    } = useObjectDetector(videoRef, mode === 'assistant' && !isSpeechListening, cameraContainerRef);
 
     const guidanceText = objGuidance?.message || '';
 
@@ -104,7 +105,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const lastHapticEventIdRef = useRef(0);
     const pendingObjectAnnouncementRef = useRef<{ eventId: number; text: string; important: boolean; candidate: boolean } | null>(null);
 
-    // Drop pending object guidance immediately when guidance suppression activates
+    // Drop pending object guidance immediately when guidance suppression activates or microphone starts listening
     useEffect(() => {
         return speechController.subscribeGuidanceSuppressed(() => {
             if (speechController.isGuidanceSuppressed) {
@@ -114,7 +115,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, []);
 
     useEffect(() => {
-        if (mode !== 'assistant' || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
+        if (mode !== 'assistant' || isSpeechListening || !targetingEvent || targetingEvent.id <= lastHapticEventIdRef.current) return;
         lastHapticEventIdRef.current = targetingEvent.id;
 
         if (targetingEvent.type === 'candidate-reset' || speechController.isGuidanceSuppressed) {
@@ -147,10 +148,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } else if (targetingEvent.type === 'locked') {
             hapticRef.current?.trigger(1);
         }
-    }, [mode, targetingEvent]);
+    }, [isSpeechListening, mode, targetingEvent]);
 
     useEffect(() => {
-        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted) {
+        if (speechController.isGuidanceSuppressed || speechController.isGuidanceMuted || isSpeechListening) {
             pendingObjectAnnouncementRef.current = null;
             return;
         }

@@ -20,7 +20,7 @@ const STATUS_SPEECH: Record<string, string> = {
 };
 
 export interface BlindCallHandle {
-    prepareForExit: () => void;
+    prepareForExit: () => Promise<void>;
 }
 
 export interface BlindCallScreenProps {
@@ -113,8 +113,8 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         else releaseWakeLock();
     }, [isActive, requestWakeLock, releaseWakeLock]);
 
-    const prepareForExit = useCallback(() => {
-        endCall(false);
+    const prepareForExit = useCallback(async () => {
+        await endCall(false);
         stopRingEarcon();
         hapticRef.current?.stopContinuous();
         speechController.stop();

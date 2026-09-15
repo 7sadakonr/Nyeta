@@ -10,12 +10,13 @@ interface MemoryRecord {
 // In-memory sliding window fallback store for local development / testing
 const memoryStore = new Map<string, MemoryRecord>();
 
-export type RateLimiterType = 'gemini' | 'pusher_trigger' | 'session' | 'calls_accept';
+export type RateLimiterType = 'gemini' | 'transcribe' | 'pusher_trigger' | 'session' | 'calls_accept';
 
-export const VALID_LIMITER_TYPES: RateLimiterType[] = ['gemini', 'pusher_trigger', 'session', 'calls_accept'];
+export const VALID_LIMITER_TYPES: RateLimiterType[] = ['gemini', 'transcribe', 'pusher_trigger', 'session', 'calls_accept'];
 
 const MEMORY_LIMITS: Record<RateLimiterType, { max: number; windowMs: number }> = {
     gemini: { max: 20, windowMs: 60 * 1000 },
+    transcribe: { max: 30, windowMs: 60 * 1000 },
     pusher_trigger: { max: 60, windowMs: 60 * 1000 },
     session: { max: 30, windowMs: 60 * 1000 },
     calls_accept: { max: 10, windowMs: 60 * 1000 },
@@ -91,6 +92,12 @@ function getUpstashRatelimiters(): Record<RateLimiterType, Ratelimit> | null {
                 limiter: Ratelimit.slidingWindow(20, '60 s'),
                 analytics: true,
                 prefix: 'nyeta:ratelimit:gemini',
+            }),
+            transcribe: new Ratelimit({
+                redis: redisClient,
+                limiter: Ratelimit.slidingWindow(30, '60 s'),
+                analytics: true,
+                prefix: 'nyeta:ratelimit:transcribe',
             }),
             pusher_trigger: new Ratelimit({
                 redis: redisClient,

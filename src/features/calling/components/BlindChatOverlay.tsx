@@ -1,21 +1,19 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
 import { playBeep } from '@/shared/accessibility/audio';
 
 export interface BlindChatOverlayProps {
     latestMessage: { from?: string; text?: string } | null;
-    onSendMessage: (text: string) => void;
+    onSendMessage?: (text: string) => void;
     audioReady?: boolean;
 }
 
-export default function BlindChatOverlay({ latestMessage, onSendMessage, audioReady = false }: BlindChatOverlayProps) {
-    const [isListening, setIsListening] = useState<boolean>(false);
-    const recognitionRef = useRef<any>(null);
+export default function BlindChatOverlay({ latestMessage, audioReady = false }: BlindChatOverlayProps) {
     const lastHandledMessageRef = useRef<{ from?: string; text?: string } | null>(null);
 
-    // TTS: Speak the incoming message
+    // TTS: Speak the incoming message from the volunteer
     useEffect(() => {
         if (latestMessage === lastHandledMessageRef.current) return;
         lastHandledMessageRef.current = latestMessage;
@@ -39,75 +37,6 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
         }
     }, [audioReady, latestMessage]);
 
-    // Setup Speech Recognition
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-            if (SpeechRecognition) {
-                const recognition = new SpeechRecognition();
-                recognition.lang = 'th-TH';
-                recognition.continuous = false;
-                recognition.interimResults = false;
-                
-                recognition.onstart = () => setIsListening(true);
-                
-                recognition.onresult = (event: any) => {
-                    const transcript = event.results[0][0].transcript;
-                    if (transcript && transcript.trim()) {
-                        onSendMessage(transcript.trim());
-                    }
-                };
-                
-                recognition.onerror = (event: any) => {
-                    console.error('Speech recognition error', event.error);
-                    setIsListening(false);
-                    speechController.endListening();
-                };
-                
-                recognition.onend = () => {
-                    setIsListening(false);
-                    speechController.endListening();
-                };
-                
-                recognitionRef.current = recognition;
-            }
-        }
-        return () => {
-            try { recognitionRef.current?.abort(); } catch {}
-            recognitionRef.current = null;
-            speechController.endListening();
-        };
-    }, [onSendMessage]);
-
-    const startListening = () => {
-        if (recognitionRef.current && !isListening) {
-            // Play mic start sound
-            playBeep(800, 0.1);
-            if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                try {
-                    navigator.vibrate([50, 50, 50]);
-                } catch {}
-            }
-
-            speechController.beginListening(); const accepted = true;
-
-            if (!accepted) return;
-
-            try {
-                recognitionRef.current.start();
-            } catch (e) {
-                speechController.endListening();
-                console.error(e);
-            }
-        }
-    };
-
-    const stopListening = () => {
-        if (recognitionRef.current && isListening) {
-            recognitionRef.current.stop();
-        }
-    };
-
     if (!latestMessage) return null;
 
     return (
@@ -118,25 +47,6 @@ export default function BlindChatOverlay({ latestMessage, onSendMessage, audioRe
                     <p className="text-3xl text-white font-medium leading-tight">{latestMessage.text}</p>
                 </div>
             )}
-            
-            <button
-                className={`fixed bottom-40 left-1/2 -translate-x-1/2 rounded-full p-6 shadow-2xl transition-all ${
-                    isListening ? 'bg-red-500 scale-110' : 'bg-gray-800/80 hover:bg-gray-700'
-                }`}
-                onPointerDown={startListening}
-                onPointerUp={stopListening}
-                onPointerLeave={stopListening}
-                aria-label="กดค้างเพื่อพูดตอบ"
-            >
-                <svg className={`w-12 h-12 ${isListening ? 'text-white' : 'text-gray-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
-                {isListening && (
-                    <span className="absolute -top-12 left-1/2 -translate-x-1/2 whitespace-nowrap bg-red-600 text-white px-4 py-2 rounded-full text-xl font-bold">
-                        กำลังฟัง...
-                    </span>
-                )}
-            </button>
         </div>
     );
 }

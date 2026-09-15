@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
+import { mediaSessionManager } from '@/shared/media/mediaSessionManager';
 
-export type SpeechInputState = 'idle' | 'starting' | 'listening' | 'stopping';
+export type SpeechInputState = 'idle' | 'starting' | 'listening' | 'stopping' | 'transcribing';
 
 export interface UseSpeechInputResult {
     isListening: boolean;
@@ -15,225 +16,235 @@ export interface UseSpeechInputResult {
     setTranscript: React.Dispatch<React.SetStateAction<string>>;
 }
 
-const subscribeToSpeechRecognitionSupport = () => () => {};
-
-const getSpeechRecognitionSupport = () => (
-    typeof window !== 'undefined'
-    && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
-);
-
-const getServerSpeechRecognitionSupport = () => false;
+function getSupportedAudioMimeType(): string {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/ogg',
+    ];
+    for (const mime of candidates) {
+        try {
+            if (MediaRecorder.isTypeSupported(mime)) {
+                return mime;
+            }
+        } catch {}
+    }
+    return '';
+}
 
 export function useSpeechInput(
     onResult?: (transcript: string) => void,
     onFeedback?: (type: string) => void,
 ): UseSpeechInputResult {
     const [state, setState] = useState<SpeechInputState>('idle');
+    const stateRef = useRef<SpeechInputState>('idle');
     const [transcript, setTranscript] = useState('');
-    const isSupported = useSyncExternalStore(
-        subscribeToSpeechRecognitionSupport,
-        getSpeechRecognitionSupport,
-        getServerSpeechRecognitionSupport,
-    );
-    const recognitionRef = useRef<any>(null);
+
+    const updateState = useCallback((next: SpeechInputState) => {
+        stateRef.current = next;
+        setState(next);
+    }, []);
+
     const onResultRef = useRef(onResult);
     const onFeedbackRef = useRef(onFeedback);
-    const finalTranscriptRef = useRef('');
-    const interimTranscriptRef = useRef('');
-    const submitOnEndRef = useRef(false);
-    const isExplicitStopRef = useRef(false);
-    const sessionActiveRef = useRef(false);
-
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
 
-    const finishSession = useCallback(() => {
+    const recorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+    const sessionActiveRef = useRef(false);
+    const cancelledRef = useRef(false);
+    const mimeTypeRef = useRef<string>('');
+
+    const isSupported = typeof window !== 'undefined' && typeof MediaRecorder !== 'undefined';
+
+    const cancelListening = useCallback(() => {
+        if (!sessionActiveRef.current && stateRef.current === 'idle') return;
+        cancelledRef.current = true;
+        sessionActiveRef.current = false;
+
+        const rec = recorderRef.current;
+        recorderRef.current = null;
+        if (rec && rec.state !== 'inactive') {
+            try {
+                rec.stop();
+            } catch {}
+        }
+        chunksRef.current = [];
+
+        void mediaSessionManager.endVoiceCapture();
+        speechController.endListening();
+        updateState('idle');
+        setTranscript('');
+    }, [updateState]);
+
+    const stopListening = useCallback(() => {
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
-        isExplicitStopRef.current = false;
-        speechController.endListening();
-        setState('idle');
+        updateState('stopping');
+        setTranscript('กำลังแปลงเสียง...');
 
-        const finalTranscript = [finalTranscriptRef.current.trim(), interimTranscriptRef.current.trim()]
-            .filter(Boolean)
-            .join(' ')
-            .trim();
-        const shouldSubmit = submitOnEndRef.current;
-        submitOnEndRef.current = false;
-        interimTranscriptRef.current = '';
-
-        const rec = recognitionRef.current;
-        if (rec) {
+        const rec = recorderRef.current;
+        if (rec && rec.state !== 'inactive') {
             try {
-                rec.onstart = null;
-                rec.onresult = null;
-                rec.onerror = null;
-                rec.onend = null;
-                rec.stop?.();
-                rec.abort?.();
-            } catch {}
-            recognitionRef.current = null;
+                rec.stop();
+            } catch {
+                cancelListening();
+            }
+        } else {
+            cancelListening();
         }
+    }, [cancelListening, updateState]);
 
-        if (shouldSubmit) onResultRef.current?.(finalTranscript);
-    }, []);
-
-    const createRecognition = useCallback(() => {
-        if (typeof window === 'undefined') return null;
-        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SpeechRecognition) return null;
-
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = true;
-        recognition.lang = 'th-TH';
-
-        recognition.onstart = () => {
-            setState('listening');
-            setTranscript('กำลังฟัง...');
-            interimTranscriptRef.current = '';
-            onFeedbackRef.current?.('mic-start');
-        };
-
-        recognition.onresult = (event: any) => {
-            let interim = '';
-            let final = '';
-            for (let index = event.resultIndex || 0; index < event.results.length; index += 1) {
-                const result = event.results[index];
-                if (result.isFinal) final += result[0]?.transcript || '';
-                else interim += result[0]?.transcript || '';
-            }
-            if (interim) {
-                interimTranscriptRef.current = interim;
-                setTranscript(`🎤 ${interim}`);
-            }
-            if (final.trim()) {
-                finalTranscriptRef.current = `${finalTranscriptRef.current} ${final}`.trim();
-                setTranscript(`✅ ${finalTranscriptRef.current}`);
-                interimTranscriptRef.current = '';
-            }
-        };
-
-        recognition.onerror = (event: any) => {
-            if (isExplicitStopRef.current) {
-                return;
-            }
-            if (event.error === 'no-speech') {
-                setTranscript(finalTranscriptRef.current ? `✅ ${finalTranscriptRef.current}` : 'กำลังฟัง...');
-                return;
-            }
-            if (event.error === 'aborted') {
-                setTranscript('ยกเลิกการถามด้วยเสียง');
-                return;
-            }
-            submitOnEndRef.current = false;
-            interimTranscriptRef.current = '';
-            setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
+    const startListening = useCallback(async () => {
+        if (!isSupported) {
             onFeedbackRef.current?.('error');
-        };
-
-        recognition.onend = () => {
-            if (isExplicitStopRef.current) {
-                if (sessionActiveRef.current) finishSession();
-                return;
-            }
-            if (sessionActiveRef.current) {
-                try {
-                    recognition.start();
-                } catch {
-                    setTimeout(() => {
-                        if (sessionActiveRef.current && !isExplicitStopRef.current) {
-                            try { recognition.start(); } catch { finishSession(); }
-                        }
-                    }, 200);
-                }
-                return;
-            }
-            finishSession();
-        };
-
-        return recognition;
-    }, [finishSession]);
-
-    const startListening = useCallback(() => {
-        const SpeechRecognition = typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
-        if (!SpeechRecognition) {
-            onFeedbackRef.current?.('error');
-            speechController.speak('เบราว์เซอร์นี้ไม่รองรับไมค์ กรุณาใช้ Chrome หรือ Safari ครับ', {
+            speechController.speak('เบราว์เซอร์นี้ไม่รองรับการบันทึกเสียง กรุณาใช้ Chrome หรือ Safari ครับ', {
                 channel: 'critical',
             });
             return;
         }
 
-        if (sessionActiveRef.current || state !== 'idle') {
-            try { recognitionRef.current?.abort(); } catch {}
-            recognitionRef.current = null;
-        }
-
-        speechController.beginListening();
-
-        finalTranscriptRef.current = '';
-        interimTranscriptRef.current = '';
-        submitOnEndRef.current = false;
-        isExplicitStopRef.current = false;
-        sessionActiveRef.current = true;
-        setState('starting');
-
-        const recognition = createRecognition();
-        recognitionRef.current = recognition;
-
-        if (!recognition) {
-            finishSession();
+        // Double-tap protection: ignore subsequent clicks if already starting or active
+        if (sessionActiveRef.current || stateRef.current !== 'idle') {
             return;
         }
 
+        sessionActiveRef.current = true;
+        cancelledRef.current = false;
+        chunksRef.current = [];
+        updateState('starting');
+
+        // Stop TTS guidance while listening
+        speechController.beginListening();
+
         try {
-            recognition.start();
-        } catch {
-            submitOnEndRef.current = false;
-            isExplicitStopRef.current = false;
-            interimTranscriptRef.current = '';
-            finishSession();
+            const stream = await mediaSessionManager.beginVoiceCapture();
+
+            if (cancelledRef.current || !sessionActiveRef.current) {
+                await mediaSessionManager.endVoiceCapture();
+                return;
+            }
+
+            const mime = getSupportedAudioMimeType();
+            mimeTypeRef.current = mime;
+
+            const options: MediaRecorderOptions = {};
+            if (mime) {
+                options.mimeType = mime;
+            }
+
+            const recorder = new MediaRecorder(stream, options);
+            recorderRef.current = recorder;
+
+            recorder.ondataavailable = (event: BlobEvent) => {
+                if (event.data && event.data.size > 0) {
+                    chunksRef.current.push(event.data);
+                }
+            };
+
+            recorder.onerror = (err) => {
+                if (process.env.NODE_ENV !== 'production') {
+                    console.error('[SpeechInput] MediaRecorder error:', err);
+                }
+                cancelListening();
+            };
+
+            recorder.onstop = async () => {
+                const isCancelled = cancelledRef.current;
+                const chunks = [...chunksRef.current];
+                chunksRef.current = [];
+                recorderRef.current = null;
+
+                // Release microphone immediately after recorder stops
+                await mediaSessionManager.endVoiceCapture();
+                speechController.endListening();
+
+                if (isCancelled || chunks.length === 0) {
+                    updateState('idle');
+                    return;
+                }
+
+                updateState('transcribing');
+                try {
+                    const mimeType = mimeTypeRef.current || 'audio/webm';
+                    const audioBlob = new Blob(chunks, { type: mimeType });
+
+                    const formData = new FormData();
+                    formData.append('audio', audioBlob, 'recording');
+
+                    const response = await fetch('/api/transcribe', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Transcription API HTTP ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    const text = data?.text?.trim();
+
+                    if (text) {
+                        setTranscript(`✅ ${text}`);
+                        onResultRef.current?.(text);
+                    } else {
+                        setTranscript('ไม่ได้ยินเสียงพูด');
+                        onFeedbackRef.current?.('error');
+                    }
+                } catch (error) {
+                    if (process.env.NODE_ENV !== 'production') {
+                        console.error('[SpeechInput] Transcription failed:', error);
+                    }
+                    setTranscript('แปลงเสียงไม่สำเร็จ');
+                    onFeedbackRef.current?.('error');
+                } finally {
+                    updateState('idle');
+                }
+            };
+
+            // Timeslice 100ms: emit chunks periodically
+            recorder.start(100);
+            updateState('listening');
+            setTranscript('กำลังฟัง...');
+            onFeedbackRef.current?.('mic-start');
+        } catch (err) {
+            if (process.env.NODE_ENV !== 'production') {
+                console.warn('[SpeechInput] Start threw error:', err);
+            }
+            cancelListening();
+            onFeedbackRef.current?.('error');
+            speechController.speak('ไม่สามารถเข้าถึงไมโครโฟนได้ กรุณาอนุญาตในการตั้งค่าครับ', {
+                channel: 'critical',
+            });
         }
-    }, [createRecognition, finishSession, state]);
-
-    const stopListening = useCallback(() => {
-        if (!sessionActiveRef.current) return;
-        setState('stopping');
-        isExplicitStopRef.current = true;
-        submitOnEndRef.current = true;
-
-        finishSession();
-    }, [finishSession]);
-
-    const cancelListening = useCallback(() => {
-        submitOnEndRef.current = false;
-        isExplicitStopRef.current = false;
-        interimTranscriptRef.current = '';
-        finalTranscriptRef.current = '';
-        if (!sessionActiveRef.current) return;
-        const recognition = recognitionRef.current;
-        try { recognition?.abort(); } catch {}
-        finishSession();
-    }, [finishSession]);
+    }, [cancelListening, isSupported, updateState]);
 
     const toggleListening = useCallback(() => {
-        if (sessionActiveRef.current) stopListening();
-        else startListening();
+        if (sessionActiveRef.current || stateRef.current === 'listening' || stateRef.current === 'starting') {
+            stopListening();
+        } else if (stateRef.current === 'idle') {
+            startListening();
+        }
     }, [startListening, stopListening]);
 
+    const cancelListeningRef = useRef(cancelListening);
+    useEffect(() => {
+        cancelListeningRef.current = cancelListening;
+    }, [cancelListening]);
+
+    // Cleanup strictly on unmount
     useEffect(() => {
         return () => {
-            submitOnEndRef.current = false;
-            isExplicitStopRef.current = false;
-            interimTranscriptRef.current = '';
-            try { recognitionRef.current?.abort(); } catch {}
-            finishSession();
+            cancelListeningRef.current();
         };
-    }, [finishSession]);
+    }, []);
 
     return {
-        isListening: state === 'starting' || state === 'listening' || state === 'stopping',
+        isListening: state === 'starting' || state === 'listening' || state === 'stopping' || state === 'transcribing',
         state,
         isSupported,
         transcript,

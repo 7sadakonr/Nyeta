@@ -6,6 +6,7 @@ import { sendEvent, subscribe, unsubscribe } from '@/features/calling/client/sig
 import { getCallSession } from '@/features/calling/client/sessionClient';
 import { createPeerConnection, closePeerConnection } from '@/features/calling/client/peerConnection';
 import { CallStatus } from '@/features/calling/types';
+import { mediaSessionManager } from '@/shared/media/mediaSessionManager';
 
 const RING_TIMEOUT_MS = 40000;
 
@@ -13,7 +14,7 @@ export interface UseBlindHelpResult {
     status: CallStatus;
     error: string | null;
     startCall: () => Promise<void>;
-    endCall: (announce?: boolean) => void;
+    endCall: (announce?: boolean) => Promise<void>;
     reset: () => void;
     localVideoRef: RefObject<HTMLVideoElement | null>;
     remoteAudioRef: RefObject<HTMLAudioElement | null>;
@@ -50,7 +51,7 @@ export function useBlindHelp(): UseBlindHelpResult {
         setStatus(next);
     }, []);
 
-    const cleanup = useCallback((nextStatus?: CallStatus) => {
+    const cleanup = useCallback(async (nextStatus?: CallStatus) => {
         operationIdRef.current += 1;
         if (ringTimerRef.current) {
             clearTimeout(ringTimerRef.current);
@@ -60,10 +61,7 @@ export function useBlindHelp(): UseBlindHelpResult {
             closePeerConnection(pcRef.current);
             pcRef.current = null;
         }
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach((t) => t.stop());
-            localStreamRef.current = null;
-        }
+        localStreamRef.current = null;
         if (channelRef.current && callIdRef.current) {
             unsubscribe(callChannel(callIdRef.current));
         }
@@ -73,10 +71,14 @@ export function useBlindHelp(): UseBlindHelpResult {
         if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
         if (localVideoRef.current) localVideoRef.current.srcObject = null;
         setDataChannel(null);
+
+        // Ensure all call tracks and WebRTC audio are cleanly released by mediaSessionManager
+        await mediaSessionManager.endCall();
+
         if (nextStatus) setStatusSafe(nextStatus);
     }, [setStatusSafe]);
 
-    const endCall = useCallback((announce: boolean = true) => {
+    const endCall = useCallback(async (announce: boolean = true) => {
         const id = callIdRef.current;
         const token = sessionTokenRef.current;
         if (id) {
@@ -84,7 +86,7 @@ export function useBlindHelp(): UseBlindHelpResult {
             sendEvent(VOLUNTEERS_CHANNEL, EVENTS.CALL_CANCELLED, { callId: id }, token || undefined);
         }
         callIdRef.current = null;
-        cleanup(announce ? 'ended' : 'idle');
+        await cleanup(announce ? 'ended' : 'idle');
     }, [cleanup]);
 
     const handleAccepted = useCallback(async (data: any) => {
@@ -160,18 +162,18 @@ export function useBlindHelp(): UseBlindHelpResult {
 
         let stream: MediaStream;
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
+            stream = await mediaSessionManager.beginCall({
                 video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
                 audio: true,
             });
         } catch (err) {
-            console.error('getUserMedia error', err);
+            console.error('mediaSessionManager beginCall error', err);
             setError('ไม่สามารถเข้าถึงกล้องหรือไมโครโฟนได้');
             setStatusSafe('error');
             return;
         }
         if (!mountedRef.current || operationId !== operationIdRef.current) {
-            stream.getTracks().forEach((track) => track.stop());
+            void mediaSessionManager.endCall();
             return;
         }
         localStreamRef.current = stream;
@@ -188,18 +190,18 @@ export function useBlindHelp(): UseBlindHelpResult {
         } catch (err: any) {
             console.error('Session auth error:', err.message);
             setError('ไม่สามารถสร้างเซสชันการโทรได้');
-            cleanup('error');
+            void cleanup('error');
             return;
         }
         if (!mountedRef.current || operationId !== operationIdRef.current) {
-            stream.getTracks().forEach((track) => track.stop());
+            void mediaSessionManager.endCall();
             return;
         }
 
         const callId = session?.callId;
         if (!callId) {
             setError('ไม่สามารถรับรหัสการโทรได้');
-            cleanup('error');
+            void cleanup('error');
             return;
         }
 
@@ -227,13 +229,13 @@ export function useBlindHelp(): UseBlindHelpResult {
             onConnectionStateChange: (state) => {
                 if (state === 'connected') setStatusSafe('connected');
                 else if (['failed', 'closed'].includes(state)) {
-                    if (['connected', 'connecting'].includes(statusRef.current)) cleanup('ended');
+                    if (['connected', 'connecting'].includes(statusRef.current)) void cleanup('ended');
                 }
             },
         });
         if (!mountedRef.current || operationId !== operationIdRef.current) {
             closePeerConnection(pc);
-            stream.getTracks().forEach((track) => track.stop());
+            void mediaSessionManager.endCall();
             return;
         }
         pcRef.current = pc;
@@ -244,7 +246,7 @@ export function useBlindHelp(): UseBlindHelpResult {
         const pusherChannel = subscribe(callChannel(callId));
         if (!mountedRef.current || operationId !== operationIdRef.current) {
             closePeerConnection(pc);
-            stream.getTracks().forEach((track) => track.stop());
+            void mediaSessionManager.endCall();
             return;
         }
         channelRef.current = pusherChannel;

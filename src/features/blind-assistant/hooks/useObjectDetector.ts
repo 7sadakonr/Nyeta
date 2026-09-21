@@ -15,6 +15,7 @@ import {
     isObjectDetectionDisabled,
     getTfjsBackendOverride,
     isCanvasDetectDisabled,
+    IOS27_DIAGNOSTICS_ENABLED,
 } from '@/features/blind-assistant/client/investigationFlags';
 
 const DETECTION_INTERVAL_MS = 225;
@@ -63,12 +64,12 @@ export function useObjectDetector(
             try {
                 const tf = await import('@tensorflow/tfjs');
                 const backendOverride = getTfjsBackendOverride();
-                if (backendOverride && process.env.NODE_ENV !== 'production') {
+                if (backendOverride && IOS27_DIAGNOSTICS_ENABLED) {
                     console.log(`[Investigation] Setting TFJS backend: ${backendOverride}`);
                     await tf.setBackend(backendOverride);
                     await tf.ready();
                 }
-                if (process.env.NODE_ENV !== 'production') {
+                if (IOS27_DIAGNOSTICS_ENABLED) {
                     console.log(`[Investigation] TFJS active backend: ${tf.getBackend()}`);
                 }
                 const cocoSsd = await import('@tensorflow-models/coco-ssd');

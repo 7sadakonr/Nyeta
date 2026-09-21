@@ -7,15 +7,20 @@ import {
     getSnapshotLog,
     FreezeProbeResult,
 } from '../client/cameraMediaDebug';
+import {
+    IOS27_DIAGNOSTICS_ENABLED,
+    isObjectTtsDisabled,
+    isObjectDetectionDisabled,
+    getTfjsBackendOverride,
+    isCanvasDetectDisabled,
+} from '../client/investigationFlags';
 
 interface DiagnosticPanelProps {
     videoRef: RefObject<HTMLVideoElement | null>;
 }
 
-const IS_DEV = process.env.NODE_ENV !== 'production';
-
 export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
-    if (!IS_DEV) return null;
+    if (!IOS27_DIAGNOSTICS_ENABLED) return null;
 
     const [isOpen, setIsOpen] = useState(false);
     const [probeResult, setProbeResult] = useState<FreezeProbeResult | null>(null);
@@ -38,44 +43,139 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
 
         setActiveTest(mode);
 
-        // Schedule pre-speak snapshot 500ms before speak
-        captureMediaSnapshot(`test-${mode}-500ms-before-speak`, video);
+        // Schedule pre-operation snapshot 500ms before execution
+        captureMediaSnapshot(`test-${mode}-500ms-before`, video);
 
         const synth = typeof window !== 'undefined' ? (window as any)['speech' + 'Synthesis'] : null;
         if (!synth) {
             console.warn('[CameraDebug] SpeechSynthesis not available');
+            setActiveTest(null);
             return;
         }
 
-        const executeSpeak = () => {
-            captureMediaSnapshot(`test-${mode}-immediately-before-speak`, video);
+        const executeTest = () => {
+            captureMediaSnapshot(`test-${mode}-immediately-before`, video);
 
             switch (mode) {
-                case '5A': {
-                    // Test 5A: Bare speak alone
+                case 'B': {
+                    // Test B: Bare speak() - Absolutely NO prior cancel(), resume(), or SpeechController calls
                     const utterance = new SpeechSynthesisUtterance('ทดสอบ');
                     utterance.lang = 'th-TH';
+
                     utterance.onstart = () => {
-                        captureMediaSnapshot('test-5A-utterance-onstart', video);
-                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5A-250ms-after-start', video), 250));
-                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5A-500ms-after-start', video), 500));
-                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5A-1000ms-after-start', video), 1000));
+                        captureMediaSnapshot('test-B-utterance-onstart', video);
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-B-250ms-after-start', video), 250));
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-B-500ms-after-start', video), 500));
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-B-1000ms-after-start', video), 1000));
                     };
                     utterance.onend = () => {
-                        captureMediaSnapshot('test-5A-utterance-onend', video);
+                        captureMediaSnapshot('test-B-utterance-onend', video);
                         timerRef.current.push(setTimeout(() => {
-                            captureMediaSnapshot('test-5A-500ms-after-end', video);
+                            captureMediaSnapshot('test-B-500ms-after-end', video);
                             setActiveTest(null);
                         }, 500));
                     };
                     utterance.onerror = (e) => {
-                        captureMediaSnapshot(`test-5A-utterance-error:${e.error}`, video);
+                        captureMediaSnapshot(`test-B-utterance-error:${e.error}`, video);
                         setActiveTest(null);
                     };
 
                     synth['speak'](utterance);
+                    captureMediaSnapshot('test-B-immediately-after-speak', video);
                     break;
                 }
+
+                case 'C': {
+                    // Test C: Cancel only - No speak() following
+                    captureMediaSnapshot('test-C-before-cancel', video);
+                    try {
+                        synth['cancel']();
+                    } catch (e) {
+                        console.warn('[CameraDebug] cancel failed', e);
+                    }
+                    captureMediaSnapshot('test-C-immediately-after-cancel', video);
+                    timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-C-250ms-after-cancel', video), 250));
+                    timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-C-500ms-after-cancel', video), 500));
+                    timerRef.current.push(setTimeout(() => {
+                        captureMediaSnapshot('test-C-1000ms-after-cancel', video);
+                        setActiveTest(null);
+                    }, 1000));
+                    break;
+                }
+
+                case 'D': {
+                    // Test D: Cancel -> Immediate Speak (no delay between cancel and speak)
+                    captureMediaSnapshot('test-D-before-cancel', video);
+                    try {
+                        synth['cancel']();
+                    } catch (e) {
+                        console.warn('[CameraDebug] cancel failed', e);
+                    }
+                    captureMediaSnapshot('test-D-immediately-after-cancel', video);
+
+                    const utterance = new SpeechSynthesisUtterance('ทดสอบ');
+                    utterance.lang = 'th-TH';
+                    utterance.onstart = () => {
+                        captureMediaSnapshot('test-D-utterance-onstart', video);
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-D-250ms-after-start', video), 250));
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-D-500ms-after-start', video), 500));
+                        timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-D-1000ms-after-start', video), 1000));
+                    };
+                    utterance.onend = () => {
+                        captureMediaSnapshot('test-D-utterance-onend', video);
+                        timerRef.current.push(setTimeout(() => {
+                            captureMediaSnapshot('test-D-500ms-after-end', video);
+                            setActiveTest(null);
+                        }, 500));
+                    };
+                    utterance.onerror = (e) => {
+                        captureMediaSnapshot(`test-D-utterance-error:${e.error}`, video);
+                        setActiveTest(null);
+                    };
+
+                    synth['speak'](utterance);
+                    captureMediaSnapshot('test-D-immediately-after-speak', video);
+                    break;
+                }
+
+                case 'E': {
+                    // Test E: Cancel -> Delay (400ms) -> Speak
+                    captureMediaSnapshot('test-E-before-cancel', video);
+                    try {
+                        synth['cancel']();
+                    } catch (e) {
+                        console.warn('[CameraDebug] cancel failed', e);
+                    }
+                    captureMediaSnapshot('test-E-immediately-after-cancel', video);
+
+                    timerRef.current.push(setTimeout(() => {
+                        captureMediaSnapshot('test-E-after-400ms-delay-before-speak', video);
+                        const utterance = new SpeechSynthesisUtterance('ทดสอบ');
+                        utterance.lang = 'th-TH';
+                        utterance.onstart = () => {
+                            captureMediaSnapshot('test-E-utterance-onstart', video);
+                            timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-E-250ms-after-start', video), 250));
+                            timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-E-500ms-after-start', video), 500));
+                            timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-E-1000ms-after-start', video), 1000));
+                        };
+                        utterance.onend = () => {
+                            captureMediaSnapshot('test-E-utterance-onend', video);
+                            timerRef.current.push(setTimeout(() => {
+                                captureMediaSnapshot('test-E-500ms-after-end', video);
+                                setActiveTest(null);
+                            }, 500));
+                        };
+                        utterance.onerror = (e) => {
+                            captureMediaSnapshot(`test-E-utterance-error:${e.error}`, video);
+                            setActiveTest(null);
+                        };
+
+                        synth['speak'](utterance);
+                        captureMediaSnapshot('test-E-immediately-after-speak', video);
+                    }, 400));
+                    break;
+                }
+
                 case '5B': {
                     // Test 5B: resume() then speak()
                     captureMediaSnapshot('test-5B-before-resume', video);
@@ -107,8 +207,10 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                     };
 
                     synth['speak'](utterance);
+                    captureMediaSnapshot('test-5B-immediately-after-speak', video);
                     break;
                 }
+
                 case '5C-voice': {
                     // Test 5C: With explicit Thai voice assigned
                     const utterance = new SpeechSynthesisUtterance('ทดสอบ');
@@ -141,8 +243,10 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                     };
 
                     synth['speak'](utterance);
+                    captureMediaSnapshot('test-5C-immediately-after-speak', video);
                     break;
                 }
+
                 case '5C-novoice': {
                     // Test 5C: Without voice assignment
                     const utterance = new SpeechSynthesisUtterance('ทดสอบ');
@@ -168,61 +272,13 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                     };
 
                     synth['speak'](utterance);
-                    break;
-                }
-                case '5D': {
-                    // Test 5D: cancel() alone without speak
-                    captureMediaSnapshot('test-5D-before-cancel', video);
-                    try {
-                        synth['cancel']();
-                    } catch (e) {
-                        console.warn('[CameraDebug] cancel failed', e);
-                    }
-                    captureMediaSnapshot('test-5D-after-cancel', video);
-                    timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5D-250ms-after-cancel', video), 250));
-                    timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5D-500ms-after-cancel', video), 500));
-                    timerRef.current.push(setTimeout(() => {
-                        captureMediaSnapshot('test-5D-1000ms-after-cancel', video);
-                        setActiveTest(null);
-                    }, 1000));
-                    break;
-                }
-                case '5E': {
-                    // Test 5E: cancel -> delay 400ms -> speak
-                    captureMediaSnapshot('test-5E-before-cancel', video);
-                    try {
-                        synth['cancel']();
-                    } catch (e) {}
-                    captureMediaSnapshot('test-5E-after-cancel', video);
-
-                    timerRef.current.push(setTimeout(() => {
-                        captureMediaSnapshot('test-5E-after-400ms-delay-before-speak', video);
-                        const utterance = new SpeechSynthesisUtterance('ทดสอบ');
-                        utterance.lang = 'th-TH';
-                        utterance.onstart = () => {
-                            captureMediaSnapshot('test-5E-utterance-onstart', video);
-                            timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5E-250ms-after-start', video), 250));
-                            timerRef.current.push(setTimeout(() => captureMediaSnapshot('test-5E-500ms-after-start', video), 500));
-                        };
-                        utterance.onend = () => {
-                            captureMediaSnapshot('test-5E-utterance-onend', video);
-                            timerRef.current.push(setTimeout(() => {
-                                captureMediaSnapshot('test-5E-500ms-after-end', video);
-                                setActiveTest(null);
-                            }, 500));
-                        };
-                        utterance.onerror = (e) => {
-                            captureMediaSnapshot(`test-5E-utterance-error:${e.error}`, video);
-                            setActiveTest(null);
-                        };
-                        synth['speak'](utterance);
-                    }, 400));
+                    captureMediaSnapshot('test-5C-novoice-immediately-after-speak', video);
                     break;
                 }
             }
         };
 
-        timerRef.current.push(setTimeout(executeSpeak, 500));
+        timerRef.current.push(setTimeout(executeTest, 500));
     }, [videoRef]);
 
     const runFreezeProbe = useCallback(async () => {
@@ -245,6 +301,12 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
         }
     }, []);
 
+    // Current active flags status
+    const objectTtsOff = isObjectTtsDisabled();
+    const objectDetectionOff = isObjectDetectionDisabled();
+    const tfjsBackend = getTfjsBackendOverride() || 'auto';
+    const canvasDetectOff = isCanvasDetectDisabled();
+
     return (
         <aside
             aria-label="เครื่องมือวินิจฉัยสำหรับนักพัฒนา"
@@ -262,7 +324,16 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
             {isOpen && (
                 <div className="mt-1 w-64 max-h-[75vh] overflow-y-auto rounded-lg bg-black/95 p-3 text-[11px] text-green-400 font-mono shadow-2xl border border-amber-500/30">
                     <div className="text-amber-400 font-bold mb-2 pb-1 border-b border-gray-800">
-                        iOS 27 Freeze Probe
+                        iOS 27 Freeze Diagnostic (V2)
+                    </div>
+
+                    {/* URL Flags Status */}
+                    <div className="mb-2 p-1.5 rounded bg-gray-900 border border-gray-800 text-[9px] text-gray-300">
+                        <div className="font-semibold text-amber-300 mb-1">Active Query Flags:</div>
+                        <div>objectTts: <span className={objectTtsOff ? 'text-red-400 font-bold' : 'text-green-400'}>{objectTtsOff ? 'OFF (Test A)' : 'ON'}</span></div>
+                        <div>COCO detection: <span className={objectDetectionOff ? 'text-red-400 font-bold' : 'text-green-400'}>{objectDetectionOff ? 'OFF' : 'ON'}</span></div>
+                        <div>TFJS backend: <span className="text-cyan-400">{tfjsBackend}</span></div>
+                        <div>Detect source: <span className="text-cyan-400">{canvasDetectOff ? 'Direct video' : 'Canvas crop'}</span></div>
                     </div>
 
                     {/* Freeze Probe */}
@@ -293,12 +364,13 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                         </div>
                         <div className="grid grid-cols-1 gap-1">
                             {[
-                                { id: '5A', label: '5A: speak() เดี่ยวๆ' },
-                                { id: '5B', label: '5B: resume() + speak()' },
-                                { id: '5C-voice', label: '5C: กำหนด Thai voice' },
-                                { id: '5C-novoice', label: '5C: ไม่กำหนด voice' },
-                                { id: '5D', label: '5D: cancel() เดี่ยวๆ' },
-                                { id: '5E', label: '5E: cancel + delay + speak' },
+                                { id: 'B', label: 'Test B: Bare Speak (ไม่ cancel)' },
+                                { id: 'C', label: 'Test C: Cancel Only (ไม่ speak)' },
+                                { id: 'D', label: 'Test D: Cancel -> Speak (ทันที)' },
+                                { id: 'E', label: 'Test E: Cancel -> Delay 400ms -> Speak' },
+                                { id: '5B', label: 'Test 5B: resume() + speak()' },
+                                { id: '5C-voice', label: 'Test 5C: Thai voice' },
+                                { id: '5C-novoice', label: 'Test 5C: Default voice' },
                             ].map(item => (
                                 <button
                                     key={item.id}

@@ -1,9 +1,11 @@
 'use client';
 
-const IS_DEV = process.env.NODE_ENV !== 'production';
+export const IOS27_DIAGNOSTICS_ENABLED =
+    process.env.NEXT_PUBLIC_IOS27_DIAGNOSTICS === '1' ||
+    process.env.NODE_ENV !== 'production';
 
 function getUrlParam(key: string): string | null {
-    if (!IS_DEV || typeof window === 'undefined') return null;
+    if (!IOS27_DIAGNOSTICS_ENABLED || typeof window === 'undefined') return null;
     try {
         return new URLSearchParams(window.location.search).get(key);
     } catch {

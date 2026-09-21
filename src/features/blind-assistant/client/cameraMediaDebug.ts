@@ -1,6 +1,4 @@
-'use client';
-
-const IS_DEV = process.env.NODE_ENV !== 'production';
+import { IOS27_DIAGNOSTICS_ENABLED } from './investigationFlags';
 
 export interface MediaSnapshot {
     timestamp: number;
@@ -63,7 +61,7 @@ export function captureMediaSnapshot(
     event: string,
     video?: HTMLVideoElement | null
 ): MediaSnapshot | null {
-    if (!IS_DEV) return null;
+    if (!IOS27_DIAGNOSTICS_ENABLED) return null;
     const v = video || _currentVideo;
     const track = getVideoTrack(v);
 
@@ -117,7 +115,7 @@ export function captureMediaSnapshot(
 }
 
 export function attachTrackListeners(video: HTMLVideoElement): () => void {
-    if (!IS_DEV) return () => {};
+    if (!IOS27_DIAGNOSTICS_ENABLED) return () => {};
     _currentVideo = video;
     if (_trackListenersAttached) return () => {};
 
@@ -191,7 +189,7 @@ export function startFrameFreezeProbe(
     video: HTMLVideoElement,
     durationMs = 3000
 ): Promise<FreezeProbeResult> {
-    if (!IS_DEV) {
+    if (!IOS27_DIAGNOSTICS_ENABLED) {
         return Promise.resolve({
             case: 'none',
             description: 'Production mode',
@@ -278,7 +276,7 @@ export function startFrameFreezeProbe(
 }
 
 export function getSnapshotLog(): MediaSnapshot[] {
-    return IS_DEV ? [..._snapshotLog] : [];
+    return IOS27_DIAGNOSTICS_ENABLED ? [..._snapshotLog] : [];
 }
 
 export function clearSnapshotLog(): void {

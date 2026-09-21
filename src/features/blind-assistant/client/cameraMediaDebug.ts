@@ -17,8 +17,8 @@ export interface MediaSnapshot {
         readyState: string;
         muted: boolean;
         enabled: boolean;
-        settings: MediaTrackSettings | null;
-        capabilities: MediaTrackCapabilities | null;
+        width?: number;
+        height?: number;
     } | null;
     speech: {
         speaking: boolean;
@@ -82,20 +82,8 @@ export function captureMediaSnapshot(
             readyState: track.readyState,
             muted: track.muted,
             enabled: track.enabled,
-            settings: (() => {
-                try {
-                    return typeof track.getSettings === 'function' ? track.getSettings() : null;
-                } catch {
-                    return null;
-                }
-            })(),
-            capabilities: (() => {
-                try {
-                    return typeof (track as any).getCapabilities === 'function' ? (track as any).getCapabilities() : null;
-                } catch {
-                    return null;
-                }
-            })(),
+            width: typeof track.getSettings === 'function' ? track.getSettings().width : undefined,
+            height: typeof track.getSettings === 'function' ? track.getSettings().height : undefined,
         } : null,
         speech: typeof window !== 'undefined' && 'speechSynthesis' in window ? {
             speaking: Boolean((window as any).speechSynthesis?.['speaking']),

@@ -26,7 +26,7 @@ import CameraView from '@/features/blind-assistant/components/CameraView';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 import DiagnosticPanel from '@/features/blind-assistant/components/DiagnosticPanel';
-import { isObjectTtsDisabled, IOS27_DIAGNOSTICS_ENABLED } from '@/features/blind-assistant/client/investigationFlags';
+import { isObjectTtsDisabled, isDiagnosticsEnabled } from '@/features/blind-assistant/client/investigationFlags';
 
 export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
@@ -87,6 +87,13 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [cameraError]);
 
     const { isSpeaking, isQuiet: isSpeechQuiet } = useSpeechStatus();
+    const [diagEnabled, setDiagEnabled] = useState(false);
+
+    useEffect(() => {
+        if (isDiagnosticsEnabled()) {
+            setDiagEnabled(true);
+        }
+    }, []);
 
     // 2. Feature Hooks
     // A. Object Detector: COCO stays client-side; targeting state owns candidate stability and spatial tracking.
@@ -172,7 +179,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
         if (!pending.important && isSpeechQuiet) return;
 
-        const debugEnabled = IOS27_DIAGNOSTICS_ENABLED
+        const debugEnabled = isDiagnosticsEnabled()
             && typeof window !== 'undefined'
             && new URLSearchParams(window.location.search).get('speechDebug') === '1';
         const objectTtsDisabled = isObjectTtsDisabled();
@@ -512,7 +519,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                 </div>
             </div>
 
-            {IOS27_DIAGNOSTICS_ENABLED && (
+            {diagEnabled && (
                 <DiagnosticPanel videoRef={videoRef} />
             )}
         </div>

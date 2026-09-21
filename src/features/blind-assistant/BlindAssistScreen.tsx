@@ -193,6 +193,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const {
         status: aiStatus,
         messages: aiMessages,
+        isCaptureInProgress,
         captureAndAsk,
         clearMessages,
         stopSpeaking
@@ -211,6 +212,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             feedback('error');
             return;
         }
+
+        if (isCaptureInProgress()) return;
 
         // Preflight passed: stop current guidance immediately
         speechController.stop();
@@ -234,7 +237,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } finally {
             stopWaitingSound();
         }
-    }, [aiReady, captureAndAsk, feedback, stopWaitingSound]);
+    }, [aiReady, captureAndAsk, feedback, isCaptureInProgress, stopWaitingSound]);
 
     // เลื่อน focus กลับไปที่จุดเริ่มต้นของผลลัพธ์เพื่ออ่านใหม่ตามที่ผู้ใช้สั่ง
     const handleReadAgain = useCallback(() => {

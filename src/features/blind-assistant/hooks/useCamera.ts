@@ -17,6 +17,7 @@ export function useCamera(): UseCameraResult {
     const streamRef = useRef<MediaStream | null>(null);
     const mountedRef = useRef(false);
     const operationIdRef = useRef(0);
+    const wakeLockRequestIdRef = useRef(0);
 
     useEffect(() => {
         streamRef.current = stream;
@@ -27,8 +28,20 @@ export function useCamera(): UseCameraResult {
     const requestWakeLock = async () => {
         try {
             if ('wakeLock' in navigator) {
-                wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-                wakeLockRef.current.addEventListener('release', () => {
+                const requestId = ++wakeLockRequestIdRef.current;
+                const operationId = operationIdRef.current;
+                const wakeLock = await (navigator as any).wakeLock.request('screen');
+                if (
+                    requestId !== wakeLockRequestIdRef.current
+                    || operationId !== operationIdRef.current
+                    || !streamRef.current
+                ) {
+                    void wakeLock.release().catch(() => {});
+                    return;
+                }
+
+                wakeLockRef.current = wakeLock;
+                wakeLock.addEventListener('release', () => {
                     console.log('Screen Wake Lock released');
                 });
             }
@@ -38,6 +51,7 @@ export function useCamera(): UseCameraResult {
     };
 
     const releaseWakeLock = () => {
+        wakeLockRequestIdRef.current += 1;
         if (wakeLockRef.current) {
             wakeLockRef.current.release().catch(() => {});
             wakeLockRef.current = null;
@@ -91,6 +105,16 @@ export function useCamera(): UseCameraResult {
             }
             streamRef.current = mediaStream;
             setStream(mediaStream);
+            const handleTrackEnded = () => {
+                if (operationId !== operationIdRef.current || streamRef.current !== mediaStream) return;
+                operationIdRef.current += 1;
+                streamRef.current = null;
+                setStream(null);
+                setIsReady(false);
+                setError(new DOMException('Camera track ended unexpectedly', 'NotReadableError'));
+                releaseWakeLock();
+            };
+            mediaStream.getTracks().forEach(track => track.addEventListener('ended', handleTrackEnded, { once: true }));
             requestWakeLock();
         } catch (err) {
             if (!mountedRef.current || operationId !== operationIdRef.current) return;

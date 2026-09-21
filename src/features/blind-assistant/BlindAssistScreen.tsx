@@ -418,6 +418,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
                             showCapturedText={showCapturedText}
+                            cameraError={cameraError}
                         />
 
                         {mode === 'assistant' && showCapturedText && (

@@ -53,6 +53,23 @@ describe('AI camera layout', () => {
         expect(container.querySelector('video')?.className).toContain('object-cover');
     });
 
+    it('shows a recovery message instead of a silent black frame when camera access fails', () => {
+        const videoRef = createRef<HTMLVideoElement>();
+        const cameraContainerRef = createRef<HTMLDivElement>();
+        render(
+            <CameraView
+                videoRef={videoRef}
+                cameraContainerRef={cameraContainerRef}
+                cameraHeightClass="h-80"
+                mode="assistant"
+                currencyResult={null}
+                cameraError={new DOMException('denied', 'NotAllowedError')}
+            />,
+        );
+
+        expect(screen.getByText('ไม่สามารถเปิดกล้องได้')).toBeDefined();
+    });
+
     it('uses the same dark camera frame for currency mode', () => {
         const videoRef = createRef<HTMLVideoElement>();
         const cameraContainerRef = createRef<HTMLDivElement>();

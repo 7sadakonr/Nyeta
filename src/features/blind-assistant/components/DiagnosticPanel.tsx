@@ -350,6 +350,62 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
         return () => video.removeEventListener('pause', handlePause);
     }, [autoResume, videoRef]);
 
+    const [audioSessionType, setAudioSessionType] = useState<string>('checking...');
+    const [resumeOnSpeechEnd, setResumeOnSpeechEnd] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+            setAudioSessionType((navigator as any).audioSession?.type || 'unknown');
+        } else {
+            setAudioSessionType('not supported');
+        }
+    }, [isOpen]);
+
+    const setSession = (type: string) => {
+        if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+            try {
+                (navigator as any).audioSession.type = type;
+                setAudioSessionType((navigator as any).audioSession.type);
+                captureMediaSnapshot(`audioSession-set:${type}`, videoRef.current);
+                alert(`audioSession.type = ${type}`);
+            } catch (e: any) {
+                alert(`audioSession error: ${e.message}`);
+            }
+        } else {
+            alert('navigator.audioSession is not supported on this iOS version');
+        }
+    };
+
+    const strictMuteVideo = useCallback(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        v.muted = true;
+        v.defaultMuted = true;
+        v.volume = 0;
+        v.setAttribute('muted', '');
+        v.setAttribute('playsinline', '');
+        v.setAttribute('webkit-playsinline', '');
+        captureMediaSnapshot('strict-mute-applied', v);
+        alert('Applied strict mute (volume=0, defaultMuted, playsinline)');
+    }, [videoRef]);
+
+    // Resume when speech finishes (does NOT interrupt/fight during speech!)
+    useEffect(() => {
+        if (!resumeOnSpeechEnd) return;
+        const synth = typeof window !== 'undefined' ? (window as any)['speech' + 'Synthesis'] : null;
+        if (!synth) return;
+
+        const interval = setInterval(() => {
+            const v = videoRef.current;
+            if (v && v.paused && !Boolean(synth['speaking']) && !Boolean(synth['pending'])) {
+                captureMediaSnapshot('resume-on-speech-end', v);
+                v.play().catch(() => {});
+            }
+        }, 150);
+
+        return () => clearInterval(interval);
+    }, [resumeOnSpeechEnd, videoRef]);
+
     // Current active flags status
     const objectTtsOff = isObjectTtsDisabled();
     const objectDetectionOff = isObjectDetectionDisabled();
@@ -406,24 +462,58 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                         )}
                     </div>
 
-                    {/* Manual Play & Auto Resume Test */}
-                    <div className="mb-3 p-2 rounded bg-amber-950/40 border border-amber-500/40">
-                        <div className="font-semibold text-amber-300 text-[10px] mb-1">
-                            ทดสอบการแก้ปัญหา (Playback Test):
+                    {/* Manual Play & Solutions Test */}
+                    <div className="mb-3 p-2 rounded bg-amber-950/40 border border-amber-500/40 space-y-1.5">
+                        <div className="font-semibold text-amber-300 text-[10px]">
+                            ทดสอบทางออก Audio Session & Playback:
                         </div>
+
+                        {/* AudioSession API */}
+                        <div className="text-[9px] text-gray-400">
+                            audioSession.type: <span className="text-cyan-300 font-bold">{audioSessionType}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setSession('ambient')}
+                                className="rounded bg-indigo-900 hover:bg-indigo-800 py-1 px-1.5 text-white font-semibold text-[9px]"
+                            >
+                                🔊 Set: 'ambient'
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSession('play-and-record')}
+                                className="rounded bg-indigo-900 hover:bg-indigo-800 py-1 px-1.5 text-white font-semibold text-[9px]"
+                            >
+                                🎙️ Set: 'play-and-record'
+                            </button>
+                        </div>
+
+                        {/* Strict Mute */}
+                        <button
+                            type="button"
+                            onClick={strictMuteVideo}
+                            className="w-full rounded bg-purple-900 hover:bg-purple-800 py-1 px-2 text-white font-semibold text-[10px]"
+                        >
+                            🔇 Strict Mute (volume=0)
+                        </button>
+
+                        {/* Resume on speech end (ไม่แย่ง session ตอนกำลังพูด) */}
+                        <button
+                            type="button"
+                            onClick={() => setResumeOnSpeechEnd(prev => !prev)}
+                            className={`w-full rounded py-1 px-2 font-bold text-[10px] ${resumeOnSpeechEnd ? 'bg-cyan-600 text-black' : 'bg-gray-800 text-gray-300'}`}
+                        >
+                            {resumeOnSpeechEnd ? '✨ Resume on Speech End: [เปิดอยู่]' : '✨ เปิด Resume on Speech End'}
+                        </button>
+
+                        {/* Manual Play */}
                         <button
                             type="button"
                             onClick={testManualPlay}
-                            className="w-full mb-1.5 rounded bg-amber-600 hover:bg-amber-500 py-1 px-2 text-black font-bold text-[10px]"
+                            className="w-full rounded bg-amber-600 hover:bg-amber-500 py-1 px-2 text-black font-bold text-[10px]"
                         >
                             ▶️ ลองเรียก video.play() ตอนค้าง
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setAutoResume(prev => !prev)}
-                            className={`w-full rounded py-1 px-2 font-bold text-[10px] ${autoResume ? 'bg-green-600 text-black' : 'bg-gray-800 text-gray-300'}`}
-                        >
-                            {autoResume ? '🛡️ Auto-resume on pause: [เปิดอยู่]' : '🛡️ เปิด Auto-resume on pause'}
                         </button>
                     </div>
 

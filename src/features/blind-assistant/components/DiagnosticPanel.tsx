@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useCallback, RefObject } from 'react';
+import React, { useRef, useState, useCallback, useEffect, RefObject } from 'react';
 import {
     captureMediaSnapshot,
     startFrameFreezeProbe,
@@ -321,6 +321,35 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
         }
     }, []);
 
+    const testManualPlay = useCallback(async () => {
+        const video = videoRef.current;
+        if (!video) return;
+        captureMediaSnapshot('manual-play-trigger', video);
+        try {
+            await video.play();
+            captureMediaSnapshot('manual-play-success', video);
+        } catch (err: any) {
+            captureMediaSnapshot(`manual-play-error:${err.name || err.message}`, video);
+        }
+    }, [videoRef]);
+
+    const [autoResume, setAutoResume] = useState(false);
+    useEffect(() => {
+        if (!autoResume) return;
+        const video = videoRef.current;
+        if (!video) return;
+        const handlePause = () => {
+            captureMediaSnapshot('auto-resume-on-pause', video);
+            video.play().then(() => {
+                captureMediaSnapshot('auto-resume-success', video);
+            }).catch(e => {
+                captureMediaSnapshot(`auto-resume-error:${e.name}`, video);
+            });
+        };
+        video.addEventListener('pause', handlePause);
+        return () => video.removeEventListener('pause', handlePause);
+    }, [autoResume, videoRef]);
+
     // Current active flags status
     const objectTtsOff = isObjectTtsDisabled();
     const objectDetectionOff = isObjectDetectionDisabled();
@@ -375,6 +404,27 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Manual Play & Auto Resume Test */}
+                    <div className="mb-3 p-2 rounded bg-amber-950/40 border border-amber-500/40">
+                        <div className="font-semibold text-amber-300 text-[10px] mb-1">
+                            ทดสอบการแก้ปัญหา (Playback Test):
+                        </div>
+                        <button
+                            type="button"
+                            onClick={testManualPlay}
+                            className="w-full mb-1.5 rounded bg-amber-600 hover:bg-amber-500 py-1 px-2 text-black font-bold text-[10px]"
+                        >
+                            ▶️ ลองเรียก video.play() ตอนค้าง
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setAutoResume(prev => !prev)}
+                            className={`w-full rounded py-1 px-2 font-bold text-[10px] ${autoResume ? 'bg-green-600 text-black' : 'bg-gray-800 text-gray-300'}`}
+                        >
+                            {autoResume ? '🛡️ Auto-resume on pause: [เปิดอยู่]' : '🛡️ เปิด Auto-resume on pause'}
+                        </button>
                     </div>
 
                     {/* Speech Tests */}

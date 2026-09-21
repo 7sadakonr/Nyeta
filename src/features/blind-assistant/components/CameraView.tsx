@@ -49,6 +49,7 @@ export default function CameraView({
                 autoPlay
                 muted
                 playsInline
+                webkit-playsinline=""
                 className="absolute inset-0 h-full w-full object-cover"
                 aria-hidden="true"
             />

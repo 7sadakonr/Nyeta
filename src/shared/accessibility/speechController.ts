@@ -498,7 +498,9 @@ class SpeechController {
         this._emitLifecycle('before-cancel');
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             try {
-                window.speechSynthesis.cancel();
+                if (window.speechSynthesis.speaking || window.speechSynthesis.pending || this._state === 'speaking') {
+                    window.speechSynthesis.cancel();
+                }
             } catch (e) {}
         }
         this._emitLifecycle('after-cancel');

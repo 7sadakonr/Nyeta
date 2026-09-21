@@ -74,33 +74,27 @@ export function useCamera(): UseCameraResult {
             }
         };
 
+        let pauseRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+        let animationFrameId: number | null = null;
+
         const handlePause = () => {
             if (document.visibilityState !== 'visible' || !streamRef.current || video.ended) return;
             configureAmbientAudioSession();
 
-            const isSpeaking = speechController.isSpeaking ||
-                (typeof window !== 'undefined' && 'speechSynthesis' in window &&
-                    Boolean((window as any).speechSynthesis?.speaking || (window as any).speechSynthesis?.pending));
+            // WebKit on iOS may dispatch a transient pause event during audio category/speech transitions.
+            // Resume immediately on the next animation frame (~16ms) and via short fallback timer
+            // so the camera feed remains completely fluid and never stays frozen while TTS speaks.
+            const resumePlayback = () => {
+                if (video.paused && !video.ended && streamRef.current && document.visibilityState === 'visible') {
+                    video.play().catch(() => {});
+                }
+            };
 
-            if (isSpeaking) {
-                // Speech is active; wait until it completes before resuming so we avoid audio session conflicts
-                const checkResume = () => {
-                    if (!streamRef.current || video.ended || document.visibilityState !== 'visible') return;
-                    const stillSpeaking = speechController.isSpeaking ||
-                        (typeof window !== 'undefined' && 'speechSynthesis' in window &&
-                            Boolean((window as any).speechSynthesis?.speaking || (window as any).speechSynthesis?.pending));
-                    if (!stillSpeaking) {
-                        if (video.paused) {
-                            video.play().catch(() => {});
-                        }
-                    } else {
-                        setTimeout(checkResume, 100);
-                    }
-                };
-                setTimeout(checkResume, 100);
-            } else {
-                video.play().catch(() => {});
-            }
+            if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(resumePlayback);
+
+            if (pauseRecoveryTimer) clearTimeout(pauseRecoveryTimer);
+            pauseRecoveryTimer = setTimeout(resumePlayback, 40);
         };
 
         video.addEventListener('pause', handlePause);
@@ -121,6 +115,8 @@ export function useCamera(): UseCameraResult {
         }
 
         return () => {
+            if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+            if (pauseRecoveryTimer) clearTimeout(pauseRecoveryTimer);
             videoTrack?.removeEventListener('unmute', handleTrackUnmute);
             video.removeEventListener('loadedmetadata', handleReady);
             video.removeEventListener('canplay', handleReady);

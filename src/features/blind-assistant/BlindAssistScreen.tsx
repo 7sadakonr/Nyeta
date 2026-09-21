@@ -193,7 +193,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const {
         status: aiStatus,
         messages: aiMessages,
-        isCaptureInProgress,
         captureAndAsk,
         clearMessages,
         stopSpeaking
@@ -212,8 +211,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             feedback('error');
             return;
         }
-
-        if (isCaptureInProgress()) return;
 
         // Preflight passed: stop current guidance immediately
         speechController.stop();
@@ -237,7 +234,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         } finally {
             stopWaitingSound();
         }
-    }, [aiReady, captureAndAsk, feedback, isCaptureInProgress, stopWaitingSound]);
+    }, [aiReady, captureAndAsk, feedback, stopWaitingSound]);
 
     // เลื่อน focus กลับไปที่จุดเริ่มต้นของผลลัพธ์เพื่ออ่านใหม่ตามที่ผู้ใช้สั่ง
     const handleReadAgain = useCallback(() => {
@@ -289,8 +286,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const {
         isListening,
         transcript: voiceTranscript,
-        startListening,
-        stopListening,
+        toggleListening,
         cancelListening,
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
@@ -465,8 +461,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
                         onToggleGuidance={handleToggleGuidance}
-                        onStartListening={startListening}
-                        onStopListening={stopListening}
+                        onStartListening={toggleListening}
+                        onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}
                         onReplayCurrencyDetails={replayCurrencyDetails}
                         onClearTotal={clearTotal}

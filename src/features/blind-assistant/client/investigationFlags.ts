@@ -2,15 +2,13 @@
 
 /**
  * Checks whether diagnostics / investigation tools should be active.
- * Active if:
+ * Active ONLY if explicitly requested via:
  * 1. Environment variable NEXT_PUBLIC_IOS27_DIAGNOSTICS is '1'
- * 2. Development / Test mode (NODE_ENV !== 'production')
- * 3. Any diagnostic query parameter is present (?diag=1, ?objectTts=off, etc.)
- * 4. localStorage.getItem('ios27_diag') is '1'
+ * 2. Diagnostic query parameter is present (?diag=1, ?debug=1, etc.)
+ * 3. localStorage.getItem('ios27_diag') is '1'
  */
 export function isDiagnosticsEnabled(): boolean {
     if (process.env.NEXT_PUBLIC_IOS27_DIAGNOSTICS === '1') return true;
-    if (process.env.NODE_ENV !== 'production') return true;
     if (typeof window !== 'undefined') {
         try {
             const search = window.location.search;
@@ -39,8 +37,7 @@ export function isDiagnosticsEnabled(): boolean {
 }
 
 export const IOS27_DIAGNOSTICS_ENABLED =
-    process.env.NEXT_PUBLIC_IOS27_DIAGNOSTICS === '1' ||
-    process.env.NODE_ENV !== 'production';
+    process.env.NEXT_PUBLIC_IOS27_DIAGNOSTICS === '1';
 
 function getUrlParam(key: string): string | null {
     if (typeof window === 'undefined') return null;

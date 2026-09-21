@@ -35,7 +35,38 @@ export interface SpeechSnapshot {
 
 const ACCESSIBILITY_QUIET_DURATION_MS = 3500;
 
+/**
+ * Configures the iOS Audio Session to 'ambient' mode via the W3C Audio Session API
+ * (supported in Safari iOS 16.4+).
+ *
+ * In default ('auto') mode, iOS Safari switches the system audio category to
+ * exclusive solo playback whenever Web Speech API (speechSynthesis.speak) triggers.
+ * WebKit/AVFoundation sends a system interruption that pauses all active <video>
+ * HTMLMediaElements on the page.
+ *
+ * Setting type = 'ambient' instructs iOS WebKit that web speech can mix with existing
+ * media playback, completely preventing the system from pausing active camera video streams.
+ */
+export function configureAmbientAudioSession(): void {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+        try {
+            const session = (navigator as any).audioSession;
+            if (session && session.type !== 'ambient') {
+                session.type = 'ambient';
+            }
+        } catch {
+            // AudioSession API may throw if not permitted or unsupported in specific contexts
+        }
+    }
+}
+
 class SpeechController {
+    constructor() {
+        if (typeof window !== 'undefined') {
+            configureAmbientAudioSession();
+        }
+    }
+
     private _audioUnlocked = false;
 
     private _pendingUnlockSpeech: { text: string, options: SpeechOptions } | null = null;
@@ -136,6 +167,7 @@ class SpeechController {
 
     
     public unlockAudio(): void {
+        configureAmbientAudioSession();
         if (this._audioUnlocked || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
         this._audioUnlocked = true;
         try {
@@ -231,6 +263,10 @@ class SpeechController {
             };
         }
         return this._lastSnapshot;
+    }
+
+    public get isSpeaking(): boolean {
+        return this._state === 'speaking';
     }
 
     public speak(text: string, options: SpeechOptions): boolean {
@@ -523,6 +559,7 @@ class SpeechController {
     }
 
     private _speakDirect(text: string, requestId: number, options: { rate: number, lang: string }, isFirst = true, isChunked = false) {
+        configureAmbientAudioSession();
         try {
             if (window.speechSynthesis.paused) {
                 window.speechSynthesis.resume();

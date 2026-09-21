@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import { captureMediaSnapshot, attachTrackListeners } from '../client/cameraMediaDebug';
 import { isDiagnosticsEnabled } from '../client/investigationFlags';
+import { speechController, configureAmbientAudioSession } from '@/shared/accessibility/speechController';
 
 export interface UseCameraResult {
     videoRef: RefObject<HTMLVideoElement | null>;
@@ -50,8 +51,14 @@ export function useCamera(): UseCameraResult {
         const video = videoRef.current;
         if (!video || !stream) return;
 
+        configureAmbientAudioSession();
+
         video.srcObject = stream;
         video.muted = true;
+        video.defaultMuted = true;
+        video.volume = 0;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
 
         let cleanupDiag: (() => void) | null = null;
         if (isDiagnosticsEnabled()) {
@@ -67,6 +74,37 @@ export function useCamera(): UseCameraResult {
             }
         };
 
+        const handlePause = () => {
+            if (document.visibilityState !== 'visible' || !streamRef.current || video.ended) return;
+            configureAmbientAudioSession();
+
+            const isSpeaking = speechController.isSpeaking ||
+                (typeof window !== 'undefined' && 'speechSynthesis' in window &&
+                    Boolean((window as any).speechSynthesis?.speaking || (window as any).speechSynthesis?.pending));
+
+            if (isSpeaking) {
+                // Speech is active; wait until it completes before resuming so we avoid audio session conflicts
+                const checkResume = () => {
+                    if (!streamRef.current || video.ended || document.visibilityState !== 'visible') return;
+                    const stillSpeaking = speechController.isSpeaking ||
+                        (typeof window !== 'undefined' && 'speechSynthesis' in window &&
+                            Boolean((window as any).speechSynthesis?.speaking || (window as any).speechSynthesis?.pending));
+                    if (!stillSpeaking) {
+                        if (video.paused) {
+                            video.play().catch(() => {});
+                        }
+                    } else {
+                        setTimeout(checkResume, 100);
+                    }
+                };
+                setTimeout(checkResume, 100);
+            } else {
+                video.play().catch(() => {});
+            }
+        };
+
+        video.addEventListener('pause', handlePause);
+
         if (video.readyState >= 2) {
             handleReady();
         } else {
@@ -77,11 +115,13 @@ export function useCamera(): UseCameraResult {
         return () => {
             video.removeEventListener('loadedmetadata', handleReady);
             video.removeEventListener('canplay', handleReady);
+            video.removeEventListener('pause', handlePause);
             cleanupDiag?.();
         };
     }, [stream]);
 
     const initCamera = useCallback(async () => {
+        configureAmbientAudioSession();
         const operationId = operationIdRef.current + 1;
         operationIdRef.current = operationId;
         setIsReady(false);

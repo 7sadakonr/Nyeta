@@ -20,6 +20,7 @@ export interface CameraViewProps {
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
     showCapturedText?: boolean;
+    cameraError?: unknown;
 }
 
 export default function CameraView({
@@ -38,6 +39,7 @@ export default function CameraView({
     aiStatus = 'idle',
     readerGuidance = '',
     showCapturedText = false,
+    cameraError = null,
 }: CameraViewProps) {
     return (
         <div
@@ -66,6 +68,15 @@ export default function CameraView({
                 currencyBlocked={isBlocked}
             />
             <div className="pointer-events-none absolute inset-0 z-[5] bg-gradient-to-b from-[#090909]/30 via-transparent to-[#090909]/35" />
+
+            {Boolean(cameraError) && (
+                <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-[#090909]/80 p-6">
+                    <div className="rounded-xl bg-[#3A1418] px-5 py-4 text-center shadow-xl">
+                        <p className="text-[18px] font-semibold text-[#FF453A]">ไม่สามารถเปิดกล้องได้</p>
+                        <p className="mt-2 text-[14px] font-medium text-[#FF453A]/80">ตรวจสอบสิทธิ์กล้องแล้วลองใหม่</p>
+                    </div>
+                </div>
+            )}
 
             {mode === 'reader' && readerGuidance && aiStatus !== 'thinking' && (
                 <div aria-hidden="true" className={`absolute bottom-4 left-4 right-4 z-20 rounded-xl px-4 py-3 text-center backdrop-blur-2xl ${readerAligned

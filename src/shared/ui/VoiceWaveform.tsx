@@ -14,13 +14,7 @@ declare global {
     }
 }
 
-const FFT_SIZE = 256;
-const MIC_BINS = [[1, 4], [4, 11], [11, 33]] as const;
-const MIC_GAIN = 2.2;
-const ATTACK_MS = 40;
-const RELEASE_MS = 240;
 const QUIET_HEIGHT = 0.1;
-const MAX_DELTA_SECONDS = 0.05;
 const WAVE_EVERY_FRAMES = 4;
 const WAVE_HISTORY_MAX = 80;
 
@@ -102,19 +96,6 @@ function drawWave(
     return { accumulator: sampledAccumulator, tick: nextTick };
 }
 
-function getMicLevel(analyser: AnalyserNode, buffer: Uint8Array<ArrayBuffer>) {
-    analyser.getByteFrequencyData(buffer);
-    let total = 0;
-
-    for (const [low, high] of MIC_BINS) {
-        let binTotal = 0;
-        for (let index = low; index < high; index += 1) binTotal += buffer[index];
-        total += binTotal / ((high - low) * 255);
-    }
-
-    return (total / MIC_BINS.length) * MIC_GAIN;
-}
-
 export default function VoiceWaveform({ active, color = '#FF453A', className = '' }: VoiceWaveformProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -123,119 +104,52 @@ export default function VoiceWaveform({ active, color = '#FF453A', className = '
         if (!canvas || !active) return;
 
         let disposed = false;
-        let attemptId = 0;
-        let opening = false;
         let animationFrame = 0;
-        let stream: MediaStream | null = null;
-        let source: MediaStreamAudioSourceNode | null = null;
-        let audioContext: AudioContext | null = null;
-        let analyser: AnalyserNode | null = null;
-        let buffer: Uint8Array<ArrayBuffer> | null = null;
-        let envelope = 0;
-        let lastFrameAt = performance.now();
-        let lastDrawAt = 0;
         let tick = 0;
         let accumulator = 0;
         const history: number[] = [];
         const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
-        const releaseAudio = () => {
+        const stopAnimation = () => {
             if (animationFrame) cancelAnimationFrame(animationFrame);
             animationFrame = 0;
-            source?.disconnect();
-            source = null;
-            stream?.getTracks().forEach(track => track.stop());
-            stream = null;
-            analyser = null;
-            buffer = null;
-            if (audioContext && audioContext.state !== 'closed') void audioContext.close().catch(() => {});
-            audioContext = null;
         };
 
         const frame = (now: number) => {
-            if (disposed || !analyser || !buffer) return;
+            if (disposed || document.hidden) return;
 
-            const deltaSeconds = Math.min((now - lastFrameAt) / 1000, MAX_DELTA_SECONDS);
-            lastFrameAt = now;
-            const target = Math.min(1, getMicLevel(analyser, buffer));
-            const timeConstant = Math.max(1, target > envelope ? ATTACK_MS : RELEASE_MS) / 1000;
-            envelope += (target - envelope) * (1 - Math.exp(-deltaSeconds / timeConstant));
-
-            if (!reduceMotion || now - lastDrawAt >= 1000 / 15) {
-                const next = drawWave(canvas, history, envelope, color, tick, accumulator);
-                tick = next.tick;
-                accumulator = next.accumulator;
-                lastDrawAt = now;
-            }
+            // SpeechRecognition owns microphone access. This is deliberately visual-only
+            // so it cannot compete for a second audio stream on mobile browsers.
+            const level = 0.32 + Math.sin(now / 130) * 0.16 + Math.sin(now / 53) * 0.06;
+            const next = drawWave(canvas, history, Math.max(QUIET_HEIGHT, level), color, tick, accumulator);
+            tick = next.tick;
+            accumulator = next.accumulator;
 
             animationFrame = requestAnimationFrame(frame);
         };
 
-        const start = async () => {
-            const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
-            if (disposed || document.hidden || opening || analyser) return;
-            if (!AudioContextConstructor || !navigator.mediaDevices?.getUserMedia) {
-                drawQuietWave(canvas, color);
-                return;
-            }
-
-            opening = true;
-            const currentAttempt = ++attemptId;
-            let context: AudioContext | null = null;
-
-            try {
-                context = new AudioContextConstructor();
-                audioContext = context;
-                if (context.state === 'suspended') await context.resume();
-                if (disposed || document.hidden || currentAttempt !== attemptId) return;
-                const nextStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-                if (disposed || document.hidden || currentAttempt !== attemptId) {
-                    nextStream.getTracks().forEach(track => track.stop());
-                    return;
-                }
-
-                stream = nextStream;
-                source = context.createMediaStreamSource(stream);
-                analyser = context.createAnalyser();
-                analyser.fftSize = FFT_SIZE;
-                analyser.smoothingTimeConstant = 0;
-                source.connect(analyser);
-                buffer = new Uint8Array(analyser.frequencyBinCount);
-                animationFrame = requestAnimationFrame(frame);
-            } catch {
-                if (!disposed && !document.hidden && currentAttempt === attemptId) {
-                    releaseAudio();
-                    drawQuietWave(canvas, color);
-                }
-            } finally {
-                if (audioContext === context && (disposed || document.hidden || currentAttempt !== attemptId)) {
-                    releaseAudio();
-                }
-                opening = false;
-                if (!disposed && !document.hidden && !analyser && currentAttempt !== attemptId) void start();
-            }
+        const startAnimation = () => {
+            if (disposed || document.hidden || animationFrame || reduceMotion) return;
+            animationFrame = requestAnimationFrame(frame);
         };
 
-        const stopForHiddenPage = () => {
+        const handleVisibilityChange = () => {
             if (document.hidden) {
-                attemptId += 1;
-                releaseAudio();
+                stopAnimation();
                 drawQuietWave(canvas, color);
                 return;
             }
-            void start();
+            startAnimation();
         };
 
         drawQuietWave(canvas, color);
-        document.addEventListener('visibilitychange', stopForHiddenPage);
-        void start();
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        startAnimation();
 
         return () => {
             disposed = true;
-            attemptId += 1;
-            document.removeEventListener('visibilitychange', stopForHiddenPage);
-            releaseAudio();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            stopAnimation();
             const context = canvas.getContext('2d');
             if (context) context.clearRect(0, 0, canvas.width, canvas.height);
         };

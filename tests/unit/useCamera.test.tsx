@@ -4,11 +4,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useCamera } from '@/features/blind-assistant/hooks/useCamera';
 
 const originalMediaDevices = navigator.mediaDevices;
+const originalWakeLock = (navigator as Navigator & { wakeLock?: unknown }).wakeLock;
 
 afterEach(() => {
     Object.defineProperty(navigator, 'mediaDevices', {
         configurable: true,
         value: originalMediaDevices,
+    });
+    Object.defineProperty(navigator, 'wakeLock', {
+        configurable: true,
+        value: originalWakeLock,
     });
 });
 
@@ -60,5 +65,65 @@ describe('useCamera', () => {
 
         expect(stop).toHaveBeenCalledOnce();
         expect(result.current.stream).toBeNull();
+    });
+
+    it('clears readiness when the browser ends the camera track', async () => {
+        let onEnded: (() => void) | null = null;
+        const track = {
+            stop: vi.fn(),
+            addEventListener: vi.fn((event: string, listener: () => void) => {
+                if (event === 'ended') onEnded = listener;
+            }),
+            removeEventListener: vi.fn(),
+        };
+        const stream = { getTracks: () => [track] } as unknown as MediaStream;
+        const getUserMedia = vi.fn().mockResolvedValue(stream);
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia },
+        });
+        const { result } = renderHook(() => useCamera());
+
+        await act(async () => {
+            await result.current.initCamera();
+        });
+        expect(result.current.stream).toBe(stream);
+
+        act(() => onEnded?.());
+
+        expect(result.current.stream).toBeNull();
+        expect(result.current.isReady).toBe(false);
+    });
+
+    it('releases a wake lock that resolves after the camera track has ended', async () => {
+        let onEnded: (() => void) | null = null;
+        let resolveWakeLock: ((sentinel: { addEventListener: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }) => void) | null = null;
+        const release = vi.fn(() => Promise.resolve());
+        const sentinel = { addEventListener: vi.fn(), release };
+        const track = {
+            stop: vi.fn(),
+            addEventListener: vi.fn((event: string, listener: () => void) => {
+                if (event === 'ended') onEnded = listener;
+            }),
+            removeEventListener: vi.fn(),
+        };
+        const stream = { getTracks: () => [track] } as unknown as MediaStream;
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+        });
+        Object.defineProperty(navigator, 'wakeLock', {
+            configurable: true,
+            value: { request: vi.fn(() => new Promise(resolve => { resolveWakeLock = resolve; })) },
+        });
+        const { result } = renderHook(() => useCamera());
+
+        await act(async () => {
+            await result.current.initCamera();
+        });
+        act(() => onEnded?.());
+        await act(async () => resolveWakeLock?.(sentinel));
+
+        expect(release).toHaveBeenCalledOnce();
     });
 });

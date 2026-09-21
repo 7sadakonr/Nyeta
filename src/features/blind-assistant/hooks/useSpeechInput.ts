@@ -75,7 +75,7 @@ export function useSpeechInput(
             recognitionRef.current = null;
         }
 
-        if (shouldSubmit) onResultRef.current?.(finalTranscript);
+        if (shouldSubmit && finalTranscript) onResultRef.current?.(finalTranscript);
     }, []);
 
     const createRecognition = useCallback(() => {
@@ -124,12 +124,15 @@ export function useSpeechInput(
             }
             if (event.error === 'aborted') {
                 setTranscript('ยกเลิกการถามด้วยเสียง');
+                submitOnEndRef.current = false;
+                finishSession();
                 return;
             }
             submitOnEndRef.current = false;
             interimTranscriptRef.current = '';
             setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
             onFeedbackRef.current?.('error');
+            finishSession();
         };
 
         recognition.onend = () => {

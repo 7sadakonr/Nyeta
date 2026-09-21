@@ -1,9 +1,107 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
 describe('ControlBar', () => {
+    beforeEach(() => {
+        const canvasContext = {
+            clearRect: () => {},
+            fillRect: () => {},
+            set fillStyle(_value: string | CanvasGradient | CanvasPattern) {},
+            set globalAlpha(_value: number) {},
+        } as unknown as CanvasRenderingContext2D;
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => canvasContext) as never);
+    });
+
+    afterEach(() => {
+        cleanup();
+        vi.restoreAllMocks();
+    });
+
+    it('keeps the voice button focused while swapping its mic icon for a listening waveform', () => {
+        const onStartListening = vi.fn();
+        const onStopListening = vi.fn();
+        const props = {
+            mode: 'assistant' as const,
+            aiReady: true,
+            aiStatus: 'idle' as const,
+            isSpeaking: false,
+            docText: null,
+            isReading: false,
+            isProcessingDoc: false,
+            currencyResult: null,
+            currencyScanning: false,
+            currencyMonitoring: false,
+            readerAligned: false,
+            onCapture: vi.fn(),
+            onStopSpeaking: vi.fn(),
+            onStartListening,
+            onStopListening,
+            onCurrencyCapture: vi.fn(),
+            onReplayCurrencyDetails: vi.fn(),
+            onClearTotal: vi.fn(),
+            onReadDocument: vi.fn(),
+            onReplayDocument: vi.fn(),
+            onStopReading: vi.fn(),
+        };
+        const { getByRole, queryByTestId, rerender } = render(
+            <ControlBar {...props} isListening={false} />,
+        );
+
+        const idleButton = getByRole('button', { name: 'ถามด้วยเสียง' });
+        expect(idleButton.querySelector('[data-testid="voice-mic-icon"]')).toBeTruthy();
+        expect(queryByTestId('voice-waveform')).toBeNull();
+        fireEvent.click(idleButton);
+        expect(onStartListening).toHaveBeenCalledOnce();
+
+        idleButton.focus();
+        rerender(<ControlBar {...props} isListening />);
+
+        const listeningButton = getByRole('button', { name: 'กำลังฟัง แตะอีกครั้งเพื่อหยุดและส่ง' });
+        expect(document.activeElement).toBe(listeningButton);
+        expect(listeningButton.getAttribute('aria-pressed')).toBe('true');
+        expect(queryByTestId('voice-waveform')?.getAttribute('aria-hidden')).toBe('true');
+        fireEvent.click(listeningButton);
+        expect(onStopListening).toHaveBeenCalledOnce();
+    });
+
+    it('starts and stops voice input with Enter and Space', () => {
+        const onStartListening = vi.fn();
+        const onStopListening = vi.fn();
+        const props = {
+            mode: 'assistant' as const,
+            aiReady: true,
+            aiStatus: 'idle' as const,
+            isSpeaking: false,
+            docText: null,
+            isReading: false,
+            isProcessingDoc: false,
+            currencyResult: null,
+            currencyScanning: false,
+            currencyMonitoring: false,
+            readerAligned: false,
+            onCapture: vi.fn(),
+            onStopSpeaking: vi.fn(),
+            onStartListening,
+            onStopListening,
+            onCurrencyCapture: vi.fn(),
+            onReplayCurrencyDetails: vi.fn(),
+            onClearTotal: vi.fn(),
+            onReadDocument: vi.fn(),
+            onReplayDocument: vi.fn(),
+            onStopReading: vi.fn(),
+        };
+        const { getByRole, rerender } = render(<ControlBar {...props} isListening={false} />);
+
+        fireEvent.keyDown(getByRole('button', { name: 'ถามด้วยเสียง' }), { key: 'Enter' });
+        expect(onStartListening).toHaveBeenCalledOnce();
+
+        rerender(<ControlBar {...props} isListening />);
+        fireEvent.keyDown(getByRole('button', { name: 'กำลังฟัง แตะอีกครั้งเพื่อหยุดและส่ง' }), { key: ' ' });
+        expect(onStopListening).toHaveBeenCalledOnce();
+    });
+
     it('offers a clear-chat action when assistant messages exist', () => {
         const onClearMessages = vi.fn();
         const { getByRole } = render(

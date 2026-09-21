@@ -286,7 +286,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const {
         isListening,
         transcript: voiceTranscript,
-        toggleListening,
+        startListening,
+        stopListening,
         cancelListening,
         setTranscript: setVoiceTranscript
     } = useSpeechInput(
@@ -460,8 +461,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onCapture={handleCaptureAndAsk}
                         onStopSpeaking={stopSpeaking}
                         onToggleGuidance={handleToggleGuidance}
-                        onStartListening={toggleListening}
-                        onStopListening={toggleListening}
+                        onStartListening={startListening}
+                        onStopListening={stopListening}
                         onCurrencyCapture={captureCurrency}
                         onReplayCurrencyDetails={replayCurrencyDetails}
                         onClearTotal={clearTotal}

@@ -82,4 +82,30 @@ describe('useSpeechInput', () => {
     expect(endListening).toHaveBeenCalledOnce();
     expect(onResult).toHaveBeenCalledWith('นี่คืออะไร');
   });
+
+  it('does not submit an empty transcript when listening is explicitly stopped', () => {
+    const onResult = vi.fn();
+    const { result } = renderHook(() => useSpeechInput(onResult));
+
+    act(() => result.current.startListening());
+    act(() => result.current.stopListening());
+
+    expect(endListening).toHaveBeenCalledOnce();
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('ends the session without submission after a fatal recognition error', () => {
+    const onResult = vi.fn();
+    const onFeedback = vi.fn();
+    const { result } = renderHook(() => useSpeechInput(onResult, onFeedback));
+
+    act(() => result.current.startListening());
+    const recognition = MockRecognition.latest!;
+    act(() => recognition.onerror?.({ error: 'not-allowed' }));
+
+    expect(result.current.isListening).toBe(false);
+    expect(endListening).toHaveBeenCalledOnce();
+    expect(onFeedback).toHaveBeenCalledWith('error');
+    expect(onResult).not.toHaveBeenCalled();
+  });
 });

@@ -80,6 +80,17 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(readSource('src/features/calling/BlindCallScreen.tsx')).not.toContain('useAccessibilitySpeechNavigation');
     });
 
+    it('wires explicit speech start and stop callbacks into the control bar', () => {
+        const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
+
+        expect(screen).toContain('startListening,');
+        expect(screen).toContain('stopListening,');
+        expect(screen).toContain('onStartListening={startListening}');
+        expect(screen).toContain('onStopListening={stopListening}');
+        expect(screen).not.toContain('onStartListening={toggleListening}');
+        expect(screen).not.toContain('onStopListening={toggleListening}');
+    });
+
     it('keeps direct Web Speech API calls inside the shared coordinator', () => {
         const featureSources = [
             'src/features/blind-assistant',

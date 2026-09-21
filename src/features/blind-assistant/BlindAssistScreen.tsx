@@ -25,6 +25,8 @@ import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
 import CameraView from '@/features/blind-assistant/components/CameraView';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
+import DiagnosticPanel from '@/features/blind-assistant/components/DiagnosticPanel';
+import { isObjectTtsDisabled } from '@/features/blind-assistant/client/investigationFlags';
 
 export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
@@ -167,6 +169,32 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         }
 
         if (!pending.important && isSpeechQuiet) return;
+
+        const debugEnabled = process.env.NODE_ENV !== 'production'
+            && typeof window !== 'undefined'
+            && new URLSearchParams(window.location.search).get('speechDebug') === '1';
+        const objectTtsDisabled = isObjectTtsDisabled();
+        const logSpeech = (stage: string, completed?: boolean) => {
+            if (!debugEnabled) return;
+            const video = videoRef.current;
+            console.debug('[object-guidance]', {
+                stage,
+                completed,
+                eventId: pending.eventId,
+                eventType: targetingEvent?.type,
+                channel: 'object-guidance',
+                paused: video?.paused,
+                currentTime: video?.currentTime,
+                trackReadyState: (video?.srcObject as MediaStream | null)?.getVideoTracks()[0]?.readyState,
+                visibilityState: document.visibilityState,
+            });
+        };
+        if (objectTtsDisabled) {
+            logSpeech('skipped');
+            pendingObjectAnnouncementRef.current = null;
+            return;
+        }
+        logSpeech('before-speak');
 
         const didSpeak = speechController.speak(pending.text, {
             channel: pending.important ? 'result' : 'realtime',
@@ -473,6 +501,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                     />
                 </div>
             </div>
+
+            {process.env.NODE_ENV !== 'production' && (
+                <DiagnosticPanel videoRef={videoRef} />
+            )}
         </div>
     );
 });

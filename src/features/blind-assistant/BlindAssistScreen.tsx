@@ -340,7 +340,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
-            if (type === 'start') feedback('capture');
+            if (type === 'start' || type === 'mic-start') feedback('button');
+            else if (type === 'error') feedback('error');
         }, [feedback])
     );
 

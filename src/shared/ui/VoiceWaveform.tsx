@@ -6,6 +6,7 @@ export interface VoiceWaveformProps {
     active: boolean;
     color?: string;
     className?: string;
+    captureAudio?: boolean;
 }
 
 declare global {
@@ -115,7 +116,7 @@ function getMicLevel(analyser: AnalyserNode, buffer: Uint8Array<ArrayBuffer>) {
     return (total / MIC_BINS.length) * MIC_GAIN;
 }
 
-export default function VoiceWaveform({ active, color = '#FF453A', className = '' }: VoiceWaveformProps) {
+export default function VoiceWaveform({ active, color = '#FF453A', className = '', captureAudio = true }: VoiceWaveformProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
@@ -138,6 +139,31 @@ export default function VoiceWaveform({ active, color = '#FF453A', className = '
         let accumulator = 0;
         const history: number[] = [];
         const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+        if (!captureAudio) {
+            // Simulated animated waveform to prevent microphone resource contention with speech recognition
+            const simFrame = (now: number) => {
+                if (disposed) return;
+                const deltaSeconds = Math.min((now - lastFrameAt) / 1000, MAX_DELTA_SECONDS);
+                lastFrameAt = now;
+                const target = 0.45 + 0.35 * Math.abs(Math.sin(now * 0.005));
+                const timeConstant = 0.08;
+                envelope += (target - envelope) * (1 - Math.exp(-deltaSeconds / timeConstant));
+
+                if (!reduceMotion || now - lastDrawAt >= 1000 / 15) {
+                    const next = drawWave(canvas, history, envelope, color, tick, accumulator);
+                    tick = next.tick;
+                    accumulator = next.accumulator;
+                    lastDrawAt = now;
+                }
+                animationFrame = requestAnimationFrame(simFrame);
+            };
+            animationFrame = requestAnimationFrame(simFrame);
+            return () => {
+                disposed = true;
+                if (animationFrame) cancelAnimationFrame(animationFrame);
+            };
+        }
 
         const releaseAudio = () => {
             if (animationFrame) cancelAnimationFrame(animationFrame);

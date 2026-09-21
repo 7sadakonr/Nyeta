@@ -60,6 +60,35 @@ export function configureAmbientAudioSession(): void {
     }
 }
 
+/**
+ * Configures the iOS Audio Session to 'play-and-record' mode via the W3C Audio Session API.
+ * This category is REQUIRED on iOS Safari when recording audio or using Web Speech Recognition,
+ * because 'ambient' mode strictly forbids microphone input.
+ */
+export function configurePlayAndRecordAudioSession(): void {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+        try {
+            const session = (navigator as any).audioSession;
+            if (session && session.type !== 'play-and-record') {
+                session.type = 'play-and-record';
+            }
+        } catch {}
+    }
+}
+
+/**
+ * Restores ambient audio session mode with retries to account for iOS Safari's
+ * asynchronous release of the microphone input track.
+ */
+export function restoreAmbientAudioSession(): void {
+    configureAmbientAudioSession();
+    if (typeof window !== 'undefined') {
+        setTimeout(configureAmbientAudioSession, 100);
+        setTimeout(configureAmbientAudioSession, 300);
+        setTimeout(configureAmbientAudioSession, 600);
+    }
+}
+
 class SpeechController {
     constructor() {
         if (typeof window !== 'undefined') {
@@ -434,12 +463,14 @@ class SpeechController {
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
+        configurePlayAndRecordAudioSession();
         this.notify();
     }
 
     public endListening(): void {
         if (this._state === 'listening') {
             this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+            restoreAmbientAudioSession();
             this.notify();
         }
     }

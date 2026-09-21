@@ -105,6 +105,14 @@ export function useCamera(): UseCameraResult {
 
         video.addEventListener('pause', handlePause);
 
+        const videoTrack = stream.getVideoTracks?.()?.[0];
+        const handleTrackUnmute = () => {
+            if (video.paused && !video.ended && streamRef.current && document.visibilityState === 'visible') {
+                video.play().catch(() => {});
+            }
+        };
+        videoTrack?.addEventListener('unmute', handleTrackUnmute);
+
         if (video.readyState >= 2) {
             handleReady();
         } else {
@@ -113,6 +121,7 @@ export function useCamera(): UseCameraResult {
         }
 
         return () => {
+            videoTrack?.removeEventListener('unmute', handleTrackUnmute);
             video.removeEventListener('loadedmetadata', handleReady);
             video.removeEventListener('canplay', handleReady);
             video.removeEventListener('pause', handlePause);

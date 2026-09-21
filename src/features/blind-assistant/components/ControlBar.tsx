@@ -144,7 +144,7 @@ export default function ControlBar({
                             aria-pressed={isListening}
                         >
                             {isListening ? (
-                                <VoiceWaveform active color="#FF453A" className="h-7 w-16 max-w-full" />
+                                <VoiceWaveform active captureAudio={false} color="#FF453A" className="h-7 w-16 max-w-full" />
                             ) : (
                                 <MicIcon data-testid="voice-mic-icon" className="size-7" />
                             )}

@@ -43,6 +43,8 @@ export function useSpeechInput(
     const submitOnEndRef = useRef(false);
     const isExplicitStopRef = useRef(false);
     const sessionActiveRef = useRef(false);
+    const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
@@ -51,6 +53,14 @@ export function useSpeechInput(
         if (!sessionActiveRef.current) return;
         sessionActiveRef.current = false;
         isExplicitStopRef.current = false;
+        if (silenceTimerRef.current) {
+            clearTimeout(silenceTimerRef.current);
+            silenceTimerRef.current = null;
+        }
+        if (maxDurationTimerRef.current) {
+            clearTimeout(maxDurationTimerRef.current);
+            maxDurationTimerRef.current = null;
+        }
         speechController.endListening();
         setState('idle');
 
@@ -61,6 +71,7 @@ export function useSpeechInput(
         const shouldSubmit = submitOnEndRef.current;
         submitOnEndRef.current = false;
         interimTranscriptRef.current = '';
+        finalTranscriptRef.current = '';
 
         const rec = recognitionRef.current;
         if (rec) {
@@ -112,6 +123,17 @@ export function useSpeechInput(
                 setTranscript(`✅ ${finalTranscriptRef.current}`);
                 interimTranscriptRef.current = '';
             }
+
+            // Silence watchdog: if user speaks and then pauses for 2.5s, auto-submit
+            if (silenceTimerRef.current) {
+                clearTimeout(silenceTimerRef.current);
+            }
+            silenceTimerRef.current = setTimeout(() => {
+                if (sessionActiveRef.current && (finalTranscriptRef.current.trim() || interimTranscriptRef.current.trim())) {
+                    submitOnEndRef.current = true;
+                    finishSession();
+                }
+            }, 2500);
         };
 
         recognition.onerror = (event: any) => {
@@ -125,6 +147,16 @@ export function useSpeechInput(
             if (event.error === 'aborted') {
                 setTranscript('ยกเลิกการถามด้วยเสียง');
                 submitOnEndRef.current = false;
+                finishSession();
+                return;
+            }
+            if (event.error === 'not-allowed') {
+                submitOnEndRef.current = false;
+                interimTranscriptRef.current = '';
+                finalTranscriptRef.current = '';
+                setTranscript('กรุณาอนุญาตให้ใช้ไมโครโฟน');
+                onFeedbackRef.current?.('error');
+                speechController.speak('กรุณาอนุญาตให้ใช้ไมโครโฟนในการตั้งค่าเบราว์เซอร์ครับ', { channel: 'critical' });
                 finishSession();
                 return;
             }
@@ -144,9 +176,23 @@ export function useSpeechInput(
                 try {
                     recognition.start();
                 } catch {
+                    // Immediate restart failed (e.g. iOS Safari requiring user gesture).
+                    // If the user already spoke, submit the captured text.
+                    if (finalTranscriptRef.current.trim() || interimTranscriptRef.current.trim()) {
+                        submitOnEndRef.current = true;
+                        finishSession();
+                        return;
+                    }
                     setTimeout(() => {
                         if (sessionActiveRef.current && !isExplicitStopRef.current) {
-                            try { recognition.start(); } catch { finishSession(); }
+                            try {
+                                recognition.start();
+                            } catch {
+                                if (finalTranscriptRef.current.trim() || interimTranscriptRef.current.trim()) {
+                                    submitOnEndRef.current = true;
+                                }
+                                finishSession();
+                            }
                         }
                     }, 200);
                 }
@@ -181,6 +227,18 @@ export function useSpeechInput(
         isExplicitStopRef.current = false;
         sessionActiveRef.current = true;
         setState('starting');
+
+        if (maxDurationTimerRef.current) {
+            clearTimeout(maxDurationTimerRef.current);
+        }
+        maxDurationTimerRef.current = setTimeout(() => {
+            if (sessionActiveRef.current) {
+                if (finalTranscriptRef.current.trim() || interimTranscriptRef.current.trim()) {
+                    submitOnEndRef.current = true;
+                }
+                finishSession();
+            }
+        }, 15000);
 
         const recognition = createRecognition();
         recognitionRef.current = recognition;

@@ -1,6 +1,6 @@
 'use client';
 
-export type SpeechChannel = 'realtime' | 'result' | 'status' | 'critical';
+export type SpeechChannel = 'realtime' | 'result' | 'status' | 'critical' | 'object-guidance';
 
 export interface SpeechOptions {
     channel: SpeechChannel;
@@ -10,9 +10,20 @@ export interface SpeechOptions {
     dedupeMs?: number;
     onStart?: () => void;
     onEnd?: (completed?: boolean) => void;
+    isRelevant?: () => boolean;
 }
 
 export type SpeechState = 'idle' | 'speaking' | 'screen-reader-quiet' | 'listening';
+
+export type SpeechLifecycleEvent =
+    | 'before-speech'
+    | 'utterance-start'
+    | 'utterance-end'
+    | 'utterance-error'
+    | 'before-cancel'
+    | 'after-cancel';
+
+export type SpeechLifecycleListener = (event: SpeechLifecycleEvent, details?: any) => void;
 
 export interface SpeechSnapshot {
     state: SpeechState;
@@ -24,7 +35,51 @@ export interface SpeechSnapshot {
 
 const ACCESSIBILITY_QUIET_DURATION_MS = 3500;
 
+/**
+ * Configures the iOS Audio Session to 'ambient' mode via the W3C Audio Session API
+ * (supported in Safari iOS 16.4+).
+ *
+ * In default ('auto') mode, iOS Safari switches the system audio category to
+ * exclusive solo playback whenever Web Speech API (speechSynthesis.speak) triggers.
+ * WebKit/AVFoundation sends a system interruption that pauses all active <video>
+ * HTMLMediaElements on the page.
+ *
+ * Setting type = 'ambient' instructs iOS WebKit that web speech can mix with existing
+ * media playback, completely preventing the system from pausing active camera video streams.
+ */
+export function configureAmbientAudioSession(): void {
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+        try {
+            const session = (navigator as any).audioSession;
+            if (session && session.type !== 'ambient') {
+                session.type = 'ambient';
+            }
+        } catch {
+            // AudioSession API may throw if not permitted or unsupported in specific contexts
+        }
+    }
+}
+
+/**
+ * Restores ambient audio session mode with retries to account for iOS Safari's
+ * asynchronous release of the microphone input track.
+ */
+export function restoreAmbientAudioSession(): void {
+    configureAmbientAudioSession();
+    if (typeof window !== 'undefined') {
+        setTimeout(configureAmbientAudioSession, 100);
+        setTimeout(configureAmbientAudioSession, 300);
+        setTimeout(configureAmbientAudioSession, 600);
+    }
+}
+
 class SpeechController {
+    constructor() {
+        if (typeof window !== 'undefined') {
+            configureAmbientAudioSession();
+        }
+    }
+
     private _audioUnlocked = false;
 
     private _pendingUnlockSpeech: { text: string, options: SpeechOptions } | null = null;
@@ -42,7 +97,8 @@ class SpeechController {
         this._guidanceMuted = muted;
 
         if (muted) {
-            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+            this._clearPendingObjectGuidance();
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status' || this._currentChannel === 'object-guidance') {
                 this._cancelInternal();
                 this._activeRequest++;
                 this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
@@ -73,8 +129,9 @@ class SpeechController {
         this._guidanceSuppressed = suppressed;
 
         if (suppressed) {
+            this._clearPendingObjectGuidance();
             // Cancel any active guidance speech
-            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status' || this._currentChannel === 'object-guidance') {
                 this._cancelInternal();
                 this._activeRequest++;
                 this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
@@ -106,6 +163,7 @@ class SpeechController {
         this._orientationBlocked = blocked;
 
         if (blocked) {
+            this._clearPendingObjectGuidance();
             // Immediately stop any non-critical speech
             if (this._currentChannel !== 'critical') {
                 this._cancelInternal();
@@ -122,6 +180,7 @@ class SpeechController {
 
     
     public unlockAudio(): void {
+        configureAmbientAudioSession();
         if (this._audioUnlocked || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
         this._audioUnlocked = true;
         try {
@@ -162,14 +221,47 @@ class SpeechController {
     private _listeners = new Set<() => void>();
 
     private _activeUtterance: SpeechSynthesisUtterance | null = null;
+    private _pendingObjectGuidance: { text: string; options: SpeechOptions } | null = null;
     
     // Chunking state
     private _chunkIndex: number = 0;
     private _chunks: string[] = [];
     private _chunkOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> & { rate: number, lang: string } | null = null;
 
+    private _lifecycleListeners = new Set<SpeechLifecycleListener>();
+    private _speechWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+    private _clearWatchdog(): void {
+        if (this._speechWatchdogTimer) {
+            clearTimeout(this._speechWatchdogTimer);
+            this._speechWatchdogTimer = null;
+        }
+    }
+
     private notify() {
         this._listeners.forEach(listener => listener());
+    }
+
+    private _emitLifecycle(event: SpeechLifecycleEvent, details?: any): void {
+        if (this._lifecycleListeners.size === 0) return;
+        this._lifecycleListeners.forEach(listener => {
+            try {
+                listener(event, details);
+            } catch (e) {
+                console.error('[speech-controller] lifecycle listener error:', e);
+            }
+        });
+    }
+
+    public subscribeLifecycle(listener: SpeechLifecycleListener): () => void {
+        this._lifecycleListeners.add(listener);
+        return () => this._lifecycleListeners.delete(listener);
+    }
+
+    private _debug(stage: string, channel: SpeechChannel | null = this._currentChannel): void {
+        if (process.env.NODE_ENV === 'production' || typeof window === 'undefined') return;
+        if (new URLSearchParams(window.location.search).get('speechDebug') !== '1') return;
+        console.debug('[speech-controller]', { stage, channel });
     }
 
     public subscribe(listener: () => void): () => void {
@@ -194,6 +286,10 @@ class SpeechController {
         return this._lastSnapshot;
     }
 
+    public get isSpeaking(): boolean {
+        return this._state === 'speaking';
+    }
+
     public speak(text: string, options: SpeechOptions): boolean {
         if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) {
             options.onEnd?.(false);
@@ -211,7 +307,7 @@ class SpeechController {
             return false;
         }
 
-        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical') {
+        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical' && options.channel !== 'object-guidance') {
             options.onEnd?.(false);
             return false;
         }
@@ -221,7 +317,7 @@ class SpeechController {
             return false;
         }
 
-        if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status')) {
+        if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status' || options.channel === 'object-guidance')) {
             options.onEnd?.(false);
             return false;
         }
@@ -267,6 +363,13 @@ class SpeechController {
              this._lastRealtimeGuidance = null;
         }
 
+        if (options.channel === 'object-guidance' && this._state === 'speaking') {
+            if (this._currentChannel === 'object-guidance' || this._currentChannel === 'critical' || this._currentChannel === 'result') {
+                this._replacePendingObjectGuidance(cleanText, options);
+                return true;
+            }
+        }
+
         // Cancel previous
         this._cancelInternal();
 
@@ -304,6 +407,7 @@ class SpeechController {
 
     public stop(): void {
         this._resumeAfterNavigation = null;
+        this._clearPendingObjectGuidance();
         const hasPendingSpeech = this._state === 'speaking' ||
             this._pendingUnlockSpeech !== null ||
             this._activeUtterance !== null ||
@@ -347,6 +451,7 @@ class SpeechController {
 
     public beginListening(): void {
         this._resumeAfterNavigation = null;
+        this._clearPendingObjectGuidance();
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
@@ -354,10 +459,9 @@ class SpeechController {
     }
 
     public endListening(): void {
-        if (this._state === 'listening') {
-            this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
-            this.notify();
-        }
+        this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+        restoreAmbientAudioSession();
+        this.notify();
     }
 
     private _isQuiet(): boolean {
@@ -379,11 +483,17 @@ class SpeechController {
     }
 
     private _cancelInternal(): void {
+        this._clearWatchdog();
+        this._debug('cancel');
+        this._emitLifecycle('before-cancel');
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             try {
-                window.speechSynthesis.cancel();
+                if (window.speechSynthesis.speaking || window.speechSynthesis.pending || this._state === 'speaking') {
+                    window.speechSynthesis.cancel();
+                }
             } catch (e) {}
         }
+        this._emitLifecycle('after-cancel');
         
         // Fire onEnd for the current request
         const onEnd = this._currentOnEnd;
@@ -404,6 +514,29 @@ class SpeechController {
                 console.error('SpeechController onEnd error:', e);
             }
         }
+    }
+
+    private _replacePendingObjectGuidance(text: string, options: SpeechOptions): void {
+        const previous = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = { text, options };
+        previous?.options.onEnd?.(false);
+    }
+
+    private _clearPendingObjectGuidance(): void {
+        const pending = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = null;
+        pending?.options.onEnd?.(false);
+    }
+
+    private _speakPendingObjectGuidance(): void {
+        const pending = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = null;
+        if (!pending) return;
+        if (pending.options.isRelevant && !pending.options.isRelevant()) {
+            pending.options.onEnd?.(false);
+            return;
+        }
+        this.speak(pending.text, pending.options);
     }
 
     private _startChunked(text: string, requestId: number, options: { rate: number, lang: string, channel: SpeechChannel }) {
@@ -449,6 +582,7 @@ class SpeechController {
     }
 
     private _speakDirect(text: string, requestId: number, options: { rate: number, lang: string }, isFirst = true, isChunked = false) {
+        configureAmbientAudioSession();
         try {
             if (window.speechSynthesis.paused) {
                 window.speechSynthesis.resume();
@@ -472,26 +606,33 @@ class SpeechController {
         utterance.onstart = () => {
             this._pendingUnlockSpeech = null;
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-start');
             if (isFirst && this._currentOnStart) {
                 const cb = this._currentOnStart;
                 this._currentOnStart = null;
                 cb();
             }
+            this._debug('start');
         };
 
         utterance.onend = () => {
+            this._clearWatchdog();
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-end');
             
             if (isChunked) {
                 this._chunkIndex++;
                 this._speakNextChunk(requestId);
             } else {
+                this._debug('end');
                 this._finishSuccess(requestId);
             }
         };
 
         utterance.onerror = (e) => {
+            this._clearWatchdog();
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-error', e.error);
             if (e.error === 'interrupted' || e.error === 'canceled') {
                 return; // handled by cancelInternal
             }
@@ -504,8 +645,22 @@ class SpeechController {
         this._activeUtterance = utterance;
         
         try {
+            this._clearWatchdog();
+            const maxDurationMs = Math.max(5000, Math.min(20000, text.length * 350));
+            this._speechWatchdogTimer = setTimeout(() => {
+                if (this._activeRequest === requestId && this._state === 'speaking') {
+                    console.warn('[speechController] Utterance watchdog timed out, forcing recovery');
+                    try {
+                        window.speechSynthesis.cancel();
+                    } catch {}
+                    this._finishSuccess(requestId);
+                }
+            }, maxDurationMs);
+
+            this._emitLifecycle('before-speech');
             window.speechSynthesis.speak(utterance);
         } catch (e) {
+            this._clearWatchdog();
             console.error('SpeechSynthesis.speak failed:', e);
             if (this._activeRequest === requestId) {
                 this._cancelInternal();
@@ -516,6 +671,7 @@ class SpeechController {
     }
     
     private _finishSuccess(requestId: number) {
+        this._clearWatchdog();
         if (this._activeRequest !== requestId) return;
         
         const cb = this._currentOnEnd;
@@ -537,6 +693,7 @@ class SpeechController {
                 console.error('SpeechController onEnd cb error:', e);
             }
         }
+        if (this._state === 'idle') this._speakPendingObjectGuidance();
     }
 }
 

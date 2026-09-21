@@ -34,8 +34,7 @@ describe('TTS and VoiceOver announcement ownership', () => {
         const chatOverlay = readSource('src/features/calling/components/BlindChatOverlay.tsx');
         const currencyScanner = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
 
-        expect(screen).toContain("'realtime'");
-        expect(screen).toContain("'result'");
+        expect(screen).toContain("'object-guidance'");
         expect(screen).toContain("speechController.stop();");
         expect(screen).not.toContain('ผู้ช่วย AI สำหรับผู้พิการทางสายตา');
         expect(screen).not.toContain('AI ผู้ช่วย พร้อม');

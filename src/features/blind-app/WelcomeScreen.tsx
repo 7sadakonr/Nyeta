@@ -75,11 +75,16 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
         speechController.speak('นัยตา', { channel: 'status' });
 
         try {
-            // Request camera and microphone permissions upfront
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment' }, 
-                audio: true 
-            });
+            // Request camera permission upfront (prefer environment rear camera, fallback to any camera)
+            let stream: MediaStream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: { ideal: 'environment' } } 
+                });
+            } catch {
+                // Fallback to basic video constraint if ideal environment fails
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
             
             // Release the devices immediately so the actual app hooks can claim them
             stream.getTracks().forEach(track => track.stop());
@@ -180,16 +185,35 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
                         <svg className="size-3.5 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                         </svg>
-                        <span>ระบบจะขออนุญาตใช้งานกล้องและไมโครโฟน</span>
+                        <span>ระบบจะขออนุญาตใช้งานกล้อง</span>
                     </div>
                 </div>
 
                 {/* Error Banner */}
                 {error && (
-                    <div className="mt-3 w-full rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-center">
+                    <div className="mt-3 w-full rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-center space-y-2.5">
                         <p className="text-xs font-semibold leading-relaxed text-red-300 sm:text-sm">
                             {error}
                         </p>
+                        <p className="text-[11px] text-slate-400">
+                            วิธีเปิดสิทธิ์ใน Safari: แตะไอคอนการตั้งค่าหน้าเว็บ (หรือ &apos;aA&apos; / &apos;กข&apos; บนแถบที่อยู่) &gt; การตั้งค่าเว็บไซต์ &gt; เปิดอนุญาต &quot;กล้อง&quot;
+                        </p>
+                        <div className="flex gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={handleStart}
+                                className="flex-1 rounded-xl bg-sky-500 py-2.5 px-3 text-xs font-bold text-white shadow-md hover:bg-sky-400 active:scale-95"
+                            >
+                                ลองใหม่อีกครั้ง
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onStart()}
+                                className="flex-1 rounded-xl border border-white/20 bg-white/10 py-2.5 px-3 text-xs font-medium text-slate-200 hover:bg-white/20 active:scale-95"
+                            >
+                                เข้าสู่แอปต่อไป
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

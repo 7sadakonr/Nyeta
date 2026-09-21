@@ -61,4 +61,35 @@ describe('useCamera', () => {
         expect(stop).toHaveBeenCalledOnce();
         expect(result.current.stream).toBeNull();
     });
+
+    it('sets muted and playsinline properties on video and configures ambient audio session', async () => {
+        const audioSession = { type: 'auto' };
+        Object.defineProperty(navigator, 'audioSession', {
+            configurable: true,
+            value: audioSession,
+        });
+
+        const fakeStream = { getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream;
+        const getUserMedia = vi.fn().mockResolvedValue(fakeStream);
+        Object.defineProperty(navigator, 'mediaDevices', {
+            configurable: true,
+            value: { getUserMedia },
+        });
+
+        const { result } = renderHook(() => useCamera());
+        const fakeVideo = document.createElement('video');
+        (result.current.videoRef as any).current = fakeVideo;
+
+        await act(async () => {
+            await result.current.initCamera();
+        });
+
+        expect(audioSession.type).toBe('ambient');
+        expect(fakeVideo.muted).toBe(true);
+        expect(fakeVideo.defaultMuted).toBe(true);
+        expect(fakeVideo.volume).toBe(0);
+        expect(fakeVideo.hasAttribute('playsinline')).toBe(true);
+        expect(fakeVideo.hasAttribute('webkit-playsinline')).toBe(true);
+    });
 });
+

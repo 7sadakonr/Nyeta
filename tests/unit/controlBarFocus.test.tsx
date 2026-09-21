@@ -4,6 +4,61 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
 describe('ControlBar', () => {
+    it('keeps the describe-scene button stable while showing an accessible thinking loader', () => {
+        const onCapture = vi.fn();
+        const props = {
+            mode: 'assistant' as const,
+            aiReady: true,
+            isSpeaking: false,
+            isListening: false,
+            docText: null,
+            isReading: false,
+            isProcessingDoc: false,
+            currencyResult: null,
+            currencyScanning: false,
+            currencyMonitoring: false,
+            readerAligned: false,
+            onCapture,
+            onStopSpeaking: vi.fn(),
+            onStartListening: vi.fn(),
+            onStopListening: vi.fn(),
+            onCurrencyCapture: vi.fn(),
+            onReplayCurrencyDetails: vi.fn(),
+            onClearTotal: vi.fn(),
+            onReadDocument: vi.fn(),
+            onReplayDocument: vi.fn(),
+            onStopReading: vi.fn(),
+        };
+        const { getByRole, queryByRole, queryByText, rerender } = render(
+            <ControlBar {...props} aiStatus="idle" />,
+        );
+
+        const idleButton = getByRole('button', { name: 'บรรยายสิ่งที่เห็น' });
+        const idleClassName = idleButton.className;
+
+        rerender(<ControlBar {...props} aiStatus="capturing" />);
+
+        const capturingButton = getByRole('button', { name: 'AI กำลังคิด รอสักครู่' });
+        expect(capturingButton).toBe(idleButton);
+        expect(capturingButton.querySelector('.ll-text')?.textContent).toBe('กำลังคิด...');
+
+        rerender(<ControlBar {...props} aiStatus="thinking" />);
+
+        const busyButton = getByRole('button', { name: 'AI กำลังคิด รอสักครู่' });
+        expect(busyButton).toBe(idleButton);
+        expect(busyButton.className).toBe(idleClassName);
+        expect(busyButton.querySelector('.ll-text')?.textContent).toBe('กำลังคิด...');
+        expect(queryByText('กำลังประมวลผล...')).toBeNull();
+        expect(busyButton.getAttribute('aria-busy')).toBe('true');
+        expect(busyButton.getAttribute('aria-disabled')).toBe('true');
+        expect(busyButton.querySelector('[aria-hidden="true"] .ll-root')).not.toBeNull();
+
+        fireEvent.click(busyButton);
+        expect(onCapture).not.toHaveBeenCalled();
+
+        expect(queryByRole('status')).toBeNull();
+    });
+
     beforeEach(() => {
         const canvasContext = {
             clearRect: () => {},

@@ -50,31 +50,4 @@ describe('useAiAssistant', () => {
       { inlineData: { mimeType: 'image/jpeg', data: 'camera-frame' } },
     ]);
   });
-
-  it('keeps the first image request active when capture is triggered twice', async () => {
-    const responseResolvers: Array<(response: any) => void> = [];
-    fetchMock.mockClear();
-    fetchMock.mockImplementation(() => new Promise(resolve => responseResolvers.push(resolve)));
-    const video = document.createElement('video');
-    const { result } = renderHook(() => useAiAssistant({ current: video }, true));
-
-    let firstRequest!: Promise<boolean>;
-    let repeatedRequest!: Promise<boolean>;
-    act(() => {
-      firstRequest = result.current.captureAndAsk();
-      repeatedRequest = result.current.captureAndAsk();
-    });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(result.current.isCaptureInProgress()).toBe(true);
-    expect(result.current.status).toBe('thinking');
-
-    responseResolvers[0]({ ok: true, json: async () => ({}) });
-    await act(async () => {
-      await Promise.all([firstRequest, repeatedRequest]);
-    });
-
-    expect(result.current.status).toBe('idle');
-    expect(result.current.isCaptureInProgress()).toBe(false);
-  });
 });

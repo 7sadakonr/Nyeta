@@ -1,6 +1,6 @@
 'use client';
 
-export type SpeechChannel = 'realtime' | 'result' | 'status' | 'critical';
+export type SpeechChannel = 'realtime' | 'result' | 'status' | 'critical' | 'object-guidance';
 
 export interface SpeechOptions {
     channel: SpeechChannel;
@@ -10,6 +10,7 @@ export interface SpeechOptions {
     dedupeMs?: number;
     onStart?: () => void;
     onEnd?: (completed?: boolean) => void;
+    isRelevant?: () => boolean;
 }
 
 export type SpeechState = 'idle' | 'speaking' | 'screen-reader-quiet' | 'listening';
@@ -42,7 +43,8 @@ class SpeechController {
         this._guidanceMuted = muted;
 
         if (muted) {
-            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+            this._clearPendingObjectGuidance();
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status' || this._currentChannel === 'object-guidance') {
                 this._cancelInternal();
                 this._activeRequest++;
                 this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
@@ -73,8 +75,9 @@ class SpeechController {
         this._guidanceSuppressed = suppressed;
 
         if (suppressed) {
+            this._clearPendingObjectGuidance();
             // Cancel any active guidance speech
-            if (this._currentChannel === 'realtime' || this._currentChannel === 'status') {
+            if (this._currentChannel === 'realtime' || this._currentChannel === 'status' || this._currentChannel === 'object-guidance') {
                 this._cancelInternal();
                 this._activeRequest++;
                 this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
@@ -106,6 +109,7 @@ class SpeechController {
         this._orientationBlocked = blocked;
 
         if (blocked) {
+            this._clearPendingObjectGuidance();
             // Immediately stop any non-critical speech
             if (this._currentChannel !== 'critical') {
                 this._cancelInternal();
@@ -162,6 +166,7 @@ class SpeechController {
     private _listeners = new Set<() => void>();
 
     private _activeUtterance: SpeechSynthesisUtterance | null = null;
+    private _pendingObjectGuidance: { text: string; options: SpeechOptions } | null = null;
     
     // Chunking state
     private _chunkIndex: number = 0;
@@ -170,6 +175,12 @@ class SpeechController {
 
     private notify() {
         this._listeners.forEach(listener => listener());
+    }
+
+    private _debug(stage: string, channel: SpeechChannel | null = this._currentChannel): void {
+        if (process.env.NODE_ENV === 'production' || typeof window === 'undefined') return;
+        if (new URLSearchParams(window.location.search).get('speechDebug') !== '1') return;
+        console.debug('[speech-controller]', { stage, channel });
     }
 
     public subscribe(listener: () => void): () => void {
@@ -211,7 +222,7 @@ class SpeechController {
             return false;
         }
 
-        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical') {
+        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical' && options.channel !== 'object-guidance') {
             options.onEnd?.(false);
             return false;
         }
@@ -221,7 +232,7 @@ class SpeechController {
             return false;
         }
 
-        if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status')) {
+        if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status' || options.channel === 'object-guidance')) {
             options.onEnd?.(false);
             return false;
         }
@@ -267,6 +278,13 @@ class SpeechController {
              this._lastRealtimeGuidance = null;
         }
 
+        if (options.channel === 'object-guidance' && this._state === 'speaking') {
+            if (this._currentChannel === 'object-guidance' || this._currentChannel === 'critical' || this._currentChannel === 'result') {
+                this._replacePendingObjectGuidance(cleanText, options);
+                return true;
+            }
+        }
+
         // Cancel previous
         this._cancelInternal();
 
@@ -304,6 +322,7 @@ class SpeechController {
 
     public stop(): void {
         this._resumeAfterNavigation = null;
+        this._clearPendingObjectGuidance();
         const hasPendingSpeech = this._state === 'speaking' ||
             this._pendingUnlockSpeech !== null ||
             this._activeUtterance !== null ||
@@ -347,6 +366,7 @@ class SpeechController {
 
     public beginListening(): void {
         this._resumeAfterNavigation = null;
+        this._clearPendingObjectGuidance();
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
@@ -379,6 +399,7 @@ class SpeechController {
     }
 
     private _cancelInternal(): void {
+        this._debug('cancel');
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
@@ -404,6 +425,29 @@ class SpeechController {
                 console.error('SpeechController onEnd error:', e);
             }
         }
+    }
+
+    private _replacePendingObjectGuidance(text: string, options: SpeechOptions): void {
+        const previous = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = { text, options };
+        previous?.options.onEnd?.(false);
+    }
+
+    private _clearPendingObjectGuidance(): void {
+        const pending = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = null;
+        pending?.options.onEnd?.(false);
+    }
+
+    private _speakPendingObjectGuidance(): void {
+        const pending = this._pendingObjectGuidance;
+        this._pendingObjectGuidance = null;
+        if (!pending) return;
+        if (pending.options.isRelevant && !pending.options.isRelevant()) {
+            pending.options.onEnd?.(false);
+            return;
+        }
+        this.speak(pending.text, pending.options);
     }
 
     private _startChunked(text: string, requestId: number, options: { rate: number, lang: string, channel: SpeechChannel }) {
@@ -477,6 +521,7 @@ class SpeechController {
                 this._currentOnStart = null;
                 cb();
             }
+            this._debug('start');
         };
 
         utterance.onend = () => {
@@ -486,6 +531,7 @@ class SpeechController {
                 this._chunkIndex++;
                 this._speakNextChunk(requestId);
             } else {
+                this._debug('end');
                 this._finishSuccess(requestId);
             }
         };
@@ -537,6 +583,7 @@ class SpeechController {
                 console.error('SpeechController onEnd cb error:', e);
             }
         }
+        if (this._state === 'idle') this._speakPendingObjectGuidance();
     }
 }
 

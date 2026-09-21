@@ -12,6 +12,8 @@ import {
 } from '@/features/blind-assistant/client/objectTargeting';
 import { getVisibleVideoRegion } from '@/features/blind-assistant/client/videoCoords';
 
+const DETECTION_INTERVAL_MS = 225;
+
 export interface UseObjectDetectorResult {
     isLoading: boolean;
     detections: DetectedObject[];
@@ -142,7 +144,7 @@ export function useObjectDetector(
             if (isActive) {
                 timeoutRef.current = setTimeout(() => {
                     if (isActive) animationFrameRef.current = requestAnimationFrame(detect);
-                }, 100);
+                }, DETECTION_INTERVAL_MS);
             }
         };
 

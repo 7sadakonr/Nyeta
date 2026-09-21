@@ -204,4 +204,22 @@ describe('speechController navigation quiet policy', () => {
         // Only the critical speech was spoken
         expect(utterances).toHaveLength(1);
     });
+
+    it('keeps only the latest object guidance pending without cancelling the current guidance', () => {
+        speechController.speak('มีเก้าอี้ทางซ้าย', { channel: 'object-guidance' as never });
+        (window.speechSynthesis.cancel as ReturnType<typeof vi.fn>).mockClear();
+
+        speechController.speak('ขยับซ้าย', { channel: 'object-guidance' as never });
+        speechController.speak('เก้าอี้อยู่ตรงกลางแล้ว', { channel: 'object-guidance' as never });
+
+        expect(window.speechSynthesis.cancel).not.toHaveBeenCalled();
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['มีเก้าอี้ทางซ้าย']);
+
+        utterances[0].onend?.();
+
+        expect(utterances.map((utterance) => utterance.text)).toEqual([
+            'มีเก้าอี้ทางซ้าย',
+            'เก้าอี้อยู่ตรงกลางแล้ว',
+        ]);
+    });
 });

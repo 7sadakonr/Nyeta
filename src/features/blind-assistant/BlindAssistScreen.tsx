@@ -95,6 +95,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         targetPhase,
         targetingEvent,
     } = useObjectDetector(videoRef, mode === 'assistant', cameraContainerRef);
+    const latestTargetingStateRef = useRef({ eventId: targetingEvent?.id ?? null, phase: targetPhase, mode });
+    latestTargetingStateRef.current = { eventId: targetingEvent?.id ?? null, phase: targetPhase, mode };
 
     const guidanceText = objGuidance?.message || '';
 
@@ -168,11 +170,44 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
         if (!pending.important && isSpeechQuiet) return;
 
+        const debugEnabled = process.env.NODE_ENV !== 'production'
+            && new URLSearchParams(window.location.search).get('speechDebug') === '1';
+        const objectTtsDisabled = process.env.NODE_ENV !== 'production'
+            && new URLSearchParams(window.location.search).get('objectTts') === 'off';
+        const logSpeech = (stage: string, completed?: boolean) => {
+            if (!debugEnabled) return;
+            const video = videoRef.current;
+            console.debug('[object-guidance]', {
+                stage,
+                completed,
+                eventId: pending.eventId,
+                eventType: targetingEvent?.type,
+                channel: 'object-guidance',
+                paused: video?.paused,
+                currentTime: video?.currentTime,
+                trackReadyState: (video?.srcObject as MediaStream | null)?.getVideoTracks()[0]?.readyState,
+                visibilityState: document.visibilityState,
+            });
+        };
+        if (objectTtsDisabled) {
+            logSpeech('skipped');
+            pendingObjectAnnouncementRef.current = null;
+            return;
+        }
+        logSpeech('before-speak');
+
         const didSpeak = speechController.speak(pending.text, {
-            channel: pending.important ? 'result' : 'realtime',
+            channel: 'object-guidance',
             key: 'object-guidance',
             rate: 1.2,
-            dedupeMs: pending.important ? 0 : 1200,
+            isRelevant: () => {
+                const latest = latestTargetingStateRef.current;
+                if (latest.mode !== 'assistant' || latest.eventId !== pending.eventId) return false;
+                if (targetingEvent?.type === 'target-lost') return latest.phase === 'searching';
+                return pending.candidate ? latest.phase === 'candidate' : latest.phase === 'locked';
+            },
+            onStart: () => logSpeech('start'),
+            onEnd: (completed) => logSpeech(completed ? 'end' : 'cancelled', completed),
         });
         
         if (didSpeak && pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {

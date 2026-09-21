@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import { captureMediaSnapshot, attachTrackListeners } from '../client/cameraMediaDebug';
+import { IOS27_DIAGNOSTICS_ENABLED } from '../client/investigationFlags';
 
 export interface UseCameraResult {
     videoRef: RefObject<HTMLVideoElement | null>;
@@ -53,7 +54,7 @@ export function useCamera(): UseCameraResult {
         video.muted = true;
 
         let cleanupDiag: (() => void) | null = null;
-        if (process.env.NODE_ENV !== 'production') {
+        if (IOS27_DIAGNOSTICS_ENABLED) {
             captureMediaSnapshot('camera-stream-bind', video);
             cleanupDiag = attachTrackListeners(video);
         }
@@ -61,7 +62,7 @@ export function useCamera(): UseCameraResult {
         const handleReady = () => {
             setIsReady(true);
             video.play().catch(() => {});
-            if (process.env.NODE_ENV !== 'production') {
+            if (IOS27_DIAGNOSTICS_ENABLED) {
                 captureMediaSnapshot('camera-ready', video);
             }
         };
@@ -85,7 +86,7 @@ export function useCamera(): UseCameraResult {
         operationIdRef.current = operationId;
         setIsReady(false);
         setError(null);
-        if (process.env.NODE_ENV !== 'production') {
+        if (IOS27_DIAGNOSTICS_ENABLED) {
             captureMediaSnapshot('before-initCamera', videoRef.current);
         }
         try {
@@ -103,7 +104,7 @@ export function useCamera(): UseCameraResult {
                 mediaStream.getTracks().forEach(track => track.stop());
                 return;
             }
-            if (process.env.NODE_ENV !== 'production') {
+            if (IOS27_DIAGNOSTICS_ENABLED) {
                 captureMediaSnapshot('after-getUserMedia-success', videoRef.current);
             }
             streamRef.current = mediaStream;
@@ -117,7 +118,7 @@ export function useCamera(): UseCameraResult {
     }, []);
 
     const stopCamera = useCallback(() => {
-        if (process.env.NODE_ENV !== 'production') {
+        if (IOS27_DIAGNOSTICS_ENABLED) {
             captureMediaSnapshot('before-stopCamera', videoRef.current);
         }
         operationIdRef.current += 1;
@@ -131,7 +132,7 @@ export function useCamera(): UseCameraResult {
         setStream(null);
         setIsReady(false);
         releaseWakeLock();
-        if (process.env.NODE_ENV !== 'production') {
+        if (IOS27_DIAGNOSTICS_ENABLED) {
             captureMediaSnapshot('after-stopCamera', videoRef.current);
         }
     }, []);

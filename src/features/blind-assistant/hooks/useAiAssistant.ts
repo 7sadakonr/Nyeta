@@ -7,6 +7,7 @@ import { EarconType } from '@/shared/accessibility/audio';
 export interface UseAiAssistantResult {
     status: AssistantStatus;
     messages: AssistantMessage[];
+    isCaptureInProgress: () => boolean;
     captureAndAsk: (customPrompt?: string | null) => Promise<boolean>;
     askTextOnly: (userText: string) => Promise<void>;
     clearMessages: () => void;
@@ -29,6 +30,11 @@ export function useAiAssistant(
 
     useEffect(() => { statusRef.current = status; }, [status]);
 
+    const isCaptureInProgress = useCallback(
+        () => statusRef.current === 'capturing' || statusRef.current === 'thinking',
+        [],
+    );
+
     useEffect(() => {
         return () => {
             if (abortControllerRef.current) {
@@ -45,9 +51,9 @@ export function useAiAssistant(
             return false;
         }
 
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
+        if (isCaptureInProgress()) return false;
+
+        statusRef.current = 'capturing';
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const signal = controller.signal;
@@ -104,6 +110,7 @@ export function useAiAssistant(
             };
             setMessages([newUserMessage]);
 
+            statusRef.current = 'thinking';
             setStatus('thinking');
             addLog?.('Sending to Gemini...');
 
@@ -173,9 +180,13 @@ export function useAiAssistant(
             return true;
         } finally {
             clearTimeout(timeoutId);
+            if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null;
+            }
+            statusRef.current = 'idle';
             setStatus('idle');
         }
-    }, [videoRef, isReady, feedback, addLog, cameraContainerRef]);
+    }, [videoRef, isReady, feedback, addLog, cameraContainerRef, isCaptureInProgress]);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();
@@ -194,5 +205,5 @@ export function useAiAssistant(
         feedback?.('button');
     }, [feedback]);
 
-    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking };
+    return { status, messages, isCaptureInProgress, captureAndAsk, askTextOnly, clearMessages, stopSpeaking };
 }

@@ -130,14 +130,29 @@ export function useCamera(): UseCameraResult {
             captureMediaSnapshot('before-initCamera', videoRef.current);
         }
         try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: 'environment',
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    aspectRatio: { ideal: 16 / 9 },
+            let mediaStream: MediaStream;
+            try {
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        aspectRatio: { ideal: 16 / 9 },
+                    }
+                });
+            } catch (constraintErr: any) {
+                if (constraintErr?.name === 'OverconstrainedError' || constraintErr?.name === 'NotFoundError') {
+                    mediaStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            aspectRatio: { ideal: 16 / 9 },
+                        }
+                    });
+                } else {
+                    throw constraintErr;
                 }
-            });
+            }
             // A tab switch can unmount this feature while the permission prompt is open.
             // Never retain a stream which resolves after that switch.
             if (!mountedRef.current || operationId !== operationIdRef.current) {

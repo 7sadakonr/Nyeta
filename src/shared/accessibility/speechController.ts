@@ -15,6 +15,16 @@ export interface SpeechOptions {
 
 export type SpeechState = 'idle' | 'speaking' | 'screen-reader-quiet' | 'listening';
 
+export type SpeechLifecycleEvent =
+    | 'before-speech'
+    | 'utterance-start'
+    | 'utterance-end'
+    | 'utterance-error'
+    | 'before-cancel'
+    | 'after-cancel';
+
+export type SpeechLifecycleListener = (event: SpeechLifecycleEvent, details?: any) => void;
+
 export interface SpeechSnapshot {
     state: SpeechState;
     channel: SpeechChannel | null;
@@ -173,8 +183,26 @@ class SpeechController {
     private _chunks: string[] = [];
     private _chunkOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> & { rate: number, lang: string } | null = null;
 
+    private _lifecycleListeners = new Set<SpeechLifecycleListener>();
+
     private notify() {
         this._listeners.forEach(listener => listener());
+    }
+
+    private _emitLifecycle(event: SpeechLifecycleEvent, details?: any): void {
+        if (this._lifecycleListeners.size === 0) return;
+        this._lifecycleListeners.forEach(listener => {
+            try {
+                listener(event, details);
+            } catch (e) {
+                console.error('[speech-controller] lifecycle listener error:', e);
+            }
+        });
+    }
+
+    public subscribeLifecycle(listener: SpeechLifecycleListener): () => void {
+        this._lifecycleListeners.add(listener);
+        return () => this._lifecycleListeners.delete(listener);
     }
 
     private _debug(stage: string, channel: SpeechChannel | null = this._currentChannel): void {
@@ -400,11 +428,13 @@ class SpeechController {
 
     private _cancelInternal(): void {
         this._debug('cancel');
+        this._emitLifecycle('before-cancel');
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
             try {
                 window.speechSynthesis.cancel();
             } catch (e) {}
         }
+        this._emitLifecycle('after-cancel');
         
         // Fire onEnd for the current request
         const onEnd = this._currentOnEnd;
@@ -516,6 +546,7 @@ class SpeechController {
         utterance.onstart = () => {
             this._pendingUnlockSpeech = null;
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-start');
             if (isFirst && this._currentOnStart) {
                 const cb = this._currentOnStart;
                 this._currentOnStart = null;
@@ -526,6 +557,7 @@ class SpeechController {
 
         utterance.onend = () => {
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-end');
             
             if (isChunked) {
                 this._chunkIndex++;
@@ -538,6 +570,7 @@ class SpeechController {
 
         utterance.onerror = (e) => {
             if (this._activeRequest !== requestId) return;
+            this._emitLifecycle('utterance-error', e.error);
             if (e.error === 'interrupted' || e.error === 'canceled') {
                 return; // handled by cancelInternal
             }
@@ -550,6 +583,7 @@ class SpeechController {
         this._activeUtterance = utterance;
         
         try {
+            this._emitLifecycle('before-speech');
             window.speechSynthesis.speak(utterance);
         } catch (e) {
             console.error('SpeechSynthesis.speak failed:', e);

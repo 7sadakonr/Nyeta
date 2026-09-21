@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
+import { captureMediaSnapshot, attachTrackListeners } from '../client/cameraMediaDebug';
 
 export interface UseCameraResult {
     videoRef: RefObject<HTMLVideoElement | null>;
@@ -51,9 +52,18 @@ export function useCamera(): UseCameraResult {
         video.srcObject = stream;
         video.muted = true;
 
+        let cleanupDiag: (() => void) | null = null;
+        if (process.env.NODE_ENV !== 'production') {
+            captureMediaSnapshot('camera-stream-bind', video);
+            cleanupDiag = attachTrackListeners(video);
+        }
+
         const handleReady = () => {
             setIsReady(true);
             video.play().catch(() => {});
+            if (process.env.NODE_ENV !== 'production') {
+                captureMediaSnapshot('camera-ready', video);
+            }
         };
 
         if (video.readyState >= 2) {
@@ -66,6 +76,7 @@ export function useCamera(): UseCameraResult {
         return () => {
             video.removeEventListener('loadedmetadata', handleReady);
             video.removeEventListener('canplay', handleReady);
+            cleanupDiag?.();
         };
     }, [stream]);
 
@@ -74,6 +85,9 @@ export function useCamera(): UseCameraResult {
         operationIdRef.current = operationId;
         setIsReady(false);
         setError(null);
+        if (process.env.NODE_ENV !== 'production') {
+            captureMediaSnapshot('before-initCamera', videoRef.current);
+        }
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({
                 video: {
@@ -89,6 +103,9 @@ export function useCamera(): UseCameraResult {
                 mediaStream.getTracks().forEach(track => track.stop());
                 return;
             }
+            if (process.env.NODE_ENV !== 'production') {
+                captureMediaSnapshot('after-getUserMedia-success', videoRef.current);
+            }
             streamRef.current = mediaStream;
             setStream(mediaStream);
             requestWakeLock();
@@ -100,6 +117,9 @@ export function useCamera(): UseCameraResult {
     }, []);
 
     const stopCamera = useCallback(() => {
+        if (process.env.NODE_ENV !== 'production') {
+            captureMediaSnapshot('before-stopCamera', videoRef.current);
+        }
         operationIdRef.current += 1;
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
@@ -111,6 +131,9 @@ export function useCamera(): UseCameraResult {
         setStream(null);
         setIsReady(false);
         releaseWakeLock();
+        if (process.env.NODE_ENV !== 'production') {
+            captureMediaSnapshot('after-stopCamera', videoRef.current);
+        }
     }, []);
 
     // Also handle visibility change for wake lock

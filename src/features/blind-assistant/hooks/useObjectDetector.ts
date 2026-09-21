@@ -11,6 +11,11 @@ import {
     TargetPhase,
 } from '@/features/blind-assistant/client/objectTargeting';
 import { getVisibleVideoRegion } from '@/features/blind-assistant/client/videoCoords';
+import {
+    isObjectDetectionDisabled,
+    getTfjsBackendOverride,
+    isCanvasDetectDisabled,
+} from '@/features/blind-assistant/client/investigationFlags';
 
 const DETECTION_INTERVAL_MS = 225;
 
@@ -30,6 +35,8 @@ export function useObjectDetector(
     enabled = false,
     containerRef?: RefObject<HTMLElement | null>,
 ): UseObjectDetectorResult {
+    const effectiveEnabled = enabled && !isObjectDetectionDisabled();
+
     const [isLoading, setIsLoading] = useState(true);
     const [detections, setDetections] = useState<DetectedObject[]>([]);
     const [targetObject, setTargetObject] = useState<DetectedObject | null>(null);
@@ -45,7 +52,7 @@ export function useObjectDetector(
     const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
-        if (typeof window === 'undefined' || !enabled) return;
+        if (typeof window === 'undefined' || !effectiveEnabled) return;
         if (modelRef.current) {
             setIsLoading(false);
             return;
@@ -54,7 +61,16 @@ export function useObjectDetector(
         let isMounted = true;
         const loadModel = async () => {
             try {
-                await import('@tensorflow/tfjs');
+                const tf = await import('@tensorflow/tfjs');
+                const backendOverride = getTfjsBackendOverride();
+                if (backendOverride && process.env.NODE_ENV !== 'production') {
+                    console.log(`[Investigation] Setting TFJS backend: ${backendOverride}`);
+                    await tf.setBackend(backendOverride);
+                    await tf.ready();
+                }
+                if (process.env.NODE_ENV !== 'production') {
+                    console.log(`[Investigation] TFJS active backend: ${tf.getBackend()}`);
+                }
                 const cocoSsd = await import('@tensorflow-models/coco-ssd');
                 const model = await cocoSsd.load();
                 if (isMounted) {
@@ -71,10 +87,10 @@ export function useObjectDetector(
         return () => {
             isMounted = false;
         };
-    }, [enabled]);
+    }, [effectiveEnabled]);
 
     useEffect(() => {
-        if (enabled) return;
+        if (effectiveEnabled) return;
         targetingStateRef.current = createInitialObjectTargetingState(targetingStateRef.current.eventId);
         setDetections([]);
         setTargetObject(null);
@@ -82,10 +98,10 @@ export function useObjectDetector(
         setTargetPhase('searching');
         setGuidance(null);
         setTargetingEvent(null);
-    }, [enabled]);
+    }, [effectiveEnabled]);
 
     useEffect(() => {
-        if (!enabled || isLoading || !modelRef.current) return;
+        if (!effectiveEnabled || isLoading || !modelRef.current) return;
 
         let isActive = true;
         const detect = async () => {
@@ -97,7 +113,7 @@ export function useObjectDetector(
                     const visible = container ? getVisibleVideoRegion(video, container) : null;
                     let rawPredictions: DetectedObject[];
 
-                    if (visible && (visible.width < video.videoWidth || visible.height < video.videoHeight)) {
+                    if (!isCanvasDetectDisabled() && visible && (visible.width < video.videoWidth || visible.height < video.videoHeight)) {
                         if (!detectCanvasRef.current) {
                             detectCanvasRef.current = document.createElement('canvas');
                         }

@@ -25,6 +25,8 @@ import TopNavBar from '@/features/blind-assistant/components/TopNavBar';
 import CameraView from '@/features/blind-assistant/components/CameraView';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
+import DiagnosticPanel from '@/features/blind-assistant/components/DiagnosticPanel';
+import { isObjectTtsDisabled } from '@/features/blind-assistant/client/investigationFlags';
 
 export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
@@ -171,9 +173,9 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         if (!pending.important && isSpeechQuiet) return;
 
         const debugEnabled = process.env.NODE_ENV !== 'production'
+            && typeof window !== 'undefined'
             && new URLSearchParams(window.location.search).get('speechDebug') === '1';
-        const objectTtsDisabled = process.env.NODE_ENV !== 'production'
-            && new URLSearchParams(window.location.search).get('objectTts') === 'off';
+        const objectTtsDisabled = isObjectTtsDisabled();
         const logSpeech = (stage: string, completed?: boolean) => {
             if (!debugEnabled) return;
             const video = videoRef.current;
@@ -509,6 +511,10 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                     />
                 </div>
             </div>
+
+            {process.env.NODE_ENV !== 'production' && (
+                <DiagnosticPanel videoRef={videoRef} />
+            )}
         </div>
     );
 });

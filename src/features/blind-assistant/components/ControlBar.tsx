@@ -1,7 +1,9 @@
 import React from 'react';
 import { BlindMode, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
-import { MicIcon, SendIcon, Volume2Icon, VolumeXIcon, TrashIcon, RotateCcwIcon } from '@/shared/ui/icons/ControlBarIcons';
+import VoiceWaveform from '@/shared/ui/VoiceWaveform';
+import { MicIcon, Volume2Icon, VolumeXIcon, TrashIcon, RotateCcwIcon } from '@/shared/ui/icons/ControlBarIcons';
+import LatticeLoader from '@/shared/ui/LatticeLoader';
 
 export interface ControlBarProps {
     mode: BlindMode;
@@ -100,7 +102,7 @@ export default function ControlBar({
     onReplayDocument,
     onStopReading,
 }: ControlBarProps) {
-    const isBusy = aiStatus === 'thinking';
+    const isBusy = aiStatus === 'capturing' || aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
     const canRead = aiReady && !isProcessingDoc && !isBusy;
     const describeSceneRef = React.useRef<HTMLDivElement | null>(null);
@@ -127,22 +129,45 @@ export default function ControlBar({
                         ref={describeSceneRef}
                         wide
                         tone="primary"
-                        disabled={!canCapture}
-                        onClick={onCapture}
+                        disabled={!aiReady || isListening}
+                        onClick={isBusy ? undefined : onCapture}
                         aria-busy={isBusy}
+                        aria-disabled={isBusy || !aiReady || isListening}
                         aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}
                     >
-                        {isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}
+                        {isBusy ? (
+                            <span className="inline-flex items-center justify-center" aria-hidden="true">
+                                <LatticeLoader
+                                    status="working"
+                                    pattern="orbit"
+                                    grid={3}
+                                    shape="round"
+                                    glow
+                                    showTimer={false}
+                                    elapsed={0}
+                                    label="กำลังคิด..."
+                                    cellSize={6}
+                                    gap={2}
+                                    fontSize={17}
+                                    style={{ gap: 8 }}
+                                />
+                            </span>
+                        ) : 'บรรยายสิ่งที่เห็น'}
                     </ActionButton>
                     <div className="grid grid-cols-3 gap-3">
                         <ActionButton
                             tone={isListening ? 'danger' : 'secondary'}
+                            className="overflow-hidden"
                             onClick={isListening ? onStopListening : onStartListening}
-                            aria-label={isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
+                            aria-label={isListening ? 'กำลังฟัง แตะอีกครั้งเพื่อหยุดและส่ง' : 'ถามด้วยเสียง'}
                             aria-pressed={isListening}
                         >
-                            {isListening ? <SendIcon className="size-7" /> : <MicIcon className="size-7" />}
-                            <span className="sr-only">{isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}</span>
+                            {isListening ? (
+                                <VoiceWaveform active color="#FF453A" className="h-7 w-16 max-w-full" />
+                            ) : (
+                                <MicIcon data-testid="voice-mic-icon" className="size-7" />
+                            )}
+                            <span className="sr-only">{isListening ? 'กำลังฟัง แตะอีกครั้งเพื่อหยุดและส่ง' : 'ถามด้วยเสียง'}</span>
                         </ActionButton>
                         {hasAssistantMessages ? (
                             <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">

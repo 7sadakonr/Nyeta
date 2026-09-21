@@ -301,6 +301,26 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
         }
     }, []);
 
+    const dumpCompactTimeline = useCallback(() => {
+        const log = getSnapshotLog();
+        const lines = log.map(s => {
+            const time = Math.round(s.timestamp);
+            const p = s.video?.paused ? 'PAUSED' : 'playing';
+            const rState = s.video?.readyState ?? 'n/a';
+            const cur = s.video?.currentTime !== undefined ? s.video.currentTime.toFixed(2) : 'n/a';
+            const spk = s.speech?.speaking ? 'SPEAK' : s.speech?.pending ? 'PEND' : 'idle';
+            return `[${time}ms] ${s.event} | ${p} rState=${rState} cur=${cur} | spk=${spk}`;
+        });
+        const text = `=== TIMELINE (${log.length} events) ===\n` + lines.join('\n');
+        console.log('[CameraDebug] Compact Timeline:\n', text);
+        try {
+            navigator.clipboard.writeText(text);
+            alert(`คัดลอก Timeline สรุป (${log.length} บรรทัด) แล้ว นำไปวางในแชทได้ครบแน่นอนครับ`);
+        } catch {
+            alert(`Logged to console.`);
+        }
+    }, []);
+
     // Current active flags status
     const objectTtsOff = isObjectTtsDisabled();
     const objectDetectionOff = isObjectDetectionDisabled();
@@ -386,13 +406,20 @@ export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
                     </div>
 
                     {/* Snapshot actions */}
-                    <div className="pt-2 border-t border-gray-800">
+                    <div className="pt-2 border-t border-gray-800 space-y-1.5">
+                        <button
+                            type="button"
+                            onClick={dumpCompactTimeline}
+                            className="w-full rounded bg-emerald-800 hover:bg-emerald-700 py-1.5 px-2 text-white font-bold text-[10px]"
+                        >
+                            📋 คัดลอก Timeline สรุป (สั้น โพสต์ได้ครบ)
+                        </button>
                         <button
                             type="button"
                             onClick={dumpLog}
-                            className="w-full rounded bg-blue-900/80 hover:bg-blue-800 py-1 px-2 text-white font-semibold text-[10px]"
+                            className="w-full rounded bg-gray-800 hover:bg-gray-700 py-1 px-2 text-gray-300 font-semibold text-[10px]"
                         >
-                            📋 คัดลอก Snapshot Log ({getSnapshotLog().length})
+                            📋 คัดลอก Full JSON Log ({getSnapshotLog().length})
                         </button>
                     </div>
                 </div>

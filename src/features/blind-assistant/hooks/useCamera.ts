@@ -81,9 +81,17 @@ export function useCamera(): UseCameraResult {
             if (document.visibilityState !== 'visible' || !streamRef.current || video.ended) return;
             configureAmbientAudioSession();
 
-            // WebKit on iOS may dispatch a transient pause event during audio category/speech transitions.
-            // Resume immediately on the next animation frame (~16ms) and via short fallback timer
-            // so the camera feed remains completely fluid and never stays frozen while TTS speaks.
+            const isSpeaking = speechController.isSpeaking ||
+                (typeof window !== 'undefined' && 'speechSynthesis' in window &&
+                    Boolean((window as any).speechSynthesis?.speaking || (window as any).speechSynthesis?.pending));
+
+            if (isSpeaking) {
+                // When speech synthesis is active, do not force video.play() in the exact same tick,
+                // as that can corrupt iOS WebKit's SpeechSynthesis engine.
+                // The speechController.subscribe listener below resumes playback the microsecond speech ends.
+                return;
+            }
+
             const resumePlayback = () => {
                 if (video.paused && !video.ended && streamRef.current && document.visibilityState === 'visible') {
                     video.play().catch(() => {});
@@ -98,6 +106,12 @@ export function useCamera(): UseCameraResult {
         };
 
         video.addEventListener('pause', handlePause);
+
+        const unsubscribeSpeech = speechController.subscribe(() => {
+            if (!speechController.isSpeaking && video.paused && !video.ended && streamRef.current && document.visibilityState === 'visible') {
+                video.play().catch(() => {});
+            }
+        });
 
         const videoTrack = stream.getVideoTracks?.()?.[0];
         const handleTrackUnmute = () => {
@@ -115,6 +129,7 @@ export function useCamera(): UseCameraResult {
         }
 
         return () => {
+            unsubscribeSpeech();
             if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
             if (pauseRecoveryTimer) clearTimeout(pauseRecoveryTimer);
             videoTrack?.removeEventListener('unmute', handleTrackUnmute);

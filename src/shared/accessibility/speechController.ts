@@ -61,22 +61,6 @@ export function configureAmbientAudioSession(): void {
 }
 
 /**
- * Configures the iOS Audio Session to 'play-and-record' mode via the W3C Audio Session API.
- * This category is REQUIRED on iOS Safari when recording audio or using Web Speech Recognition,
- * because 'ambient' mode strictly forbids microphone input.
- */
-export function configurePlayAndRecordAudioSession(): void {
-    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
-        try {
-            const session = (navigator as any).audioSession;
-            if (session && session.type !== 'play-and-record') {
-                session.type = 'play-and-record';
-            }
-        } catch {}
-    }
-}
-
-/**
  * Restores ambient audio session mode with retries to account for iOS Safari's
  * asynchronous release of the microphone input track.
  */
@@ -245,6 +229,14 @@ class SpeechController {
     private _chunkOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> & { rate: number, lang: string } | null = null;
 
     private _lifecycleListeners = new Set<SpeechLifecycleListener>();
+    private _speechWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+
+    private _clearWatchdog(): void {
+        if (this._speechWatchdogTimer) {
+            clearTimeout(this._speechWatchdogTimer);
+            this._speechWatchdogTimer = null;
+        }
+    }
 
     private notify() {
         this._listeners.forEach(listener => listener());
@@ -463,16 +455,13 @@ class SpeechController {
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
-        configurePlayAndRecordAudioSession();
         this.notify();
     }
 
     public endListening(): void {
-        if (this._state === 'listening') {
-            this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
-            restoreAmbientAudioSession();
-            this.notify();
-        }
+        this._state = this._isQuiet() ? 'screen-reader-quiet' : 'idle';
+        restoreAmbientAudioSession();
+        this.notify();
     }
 
     private _isQuiet(): boolean {
@@ -494,6 +483,7 @@ class SpeechController {
     }
 
     private _cancelInternal(): void {
+        this._clearWatchdog();
         this._debug('cancel');
         this._emitLifecycle('before-cancel');
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -626,6 +616,7 @@ class SpeechController {
         };
 
         utterance.onend = () => {
+            this._clearWatchdog();
             if (this._activeRequest !== requestId) return;
             this._emitLifecycle('utterance-end');
             
@@ -639,6 +630,7 @@ class SpeechController {
         };
 
         utterance.onerror = (e) => {
+            this._clearWatchdog();
             if (this._activeRequest !== requestId) return;
             this._emitLifecycle('utterance-error', e.error);
             if (e.error === 'interrupted' || e.error === 'canceled') {
@@ -653,9 +645,22 @@ class SpeechController {
         this._activeUtterance = utterance;
         
         try {
+            this._clearWatchdog();
+            const maxDurationMs = Math.max(5000, Math.min(20000, text.length * 350));
+            this._speechWatchdogTimer = setTimeout(() => {
+                if (this._activeRequest === requestId && this._state === 'speaking') {
+                    console.warn('[speechController] Utterance watchdog timed out, forcing recovery');
+                    try {
+                        window.speechSynthesis.cancel();
+                    } catch {}
+                    this._finishSuccess(requestId);
+                }
+            }, maxDurationMs);
+
             this._emitLifecycle('before-speech');
             window.speechSynthesis.speak(utterance);
         } catch (e) {
+            this._clearWatchdog();
             console.error('SpeechSynthesis.speak failed:', e);
             if (this._activeRequest === requestId) {
                 this._cancelInternal();
@@ -666,6 +671,7 @@ class SpeechController {
     }
     
     private _finishSuccess(requestId: number) {
+        this._clearWatchdog();
         if (this._activeRequest !== requestId) return;
         
         const cb = this._currentOnEnd;

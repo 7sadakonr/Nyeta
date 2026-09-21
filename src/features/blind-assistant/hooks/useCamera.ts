@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import { captureMediaSnapshot, attachTrackListeners } from '../client/cameraMediaDebug';
-import { IOS27_DIAGNOSTICS_ENABLED } from '../client/investigationFlags';
+import { isDiagnosticsEnabled } from '../client/investigationFlags';
 
 export interface UseCameraResult {
     videoRef: RefObject<HTMLVideoElement | null>;
@@ -54,7 +54,7 @@ export function useCamera(): UseCameraResult {
         video.muted = true;
 
         let cleanupDiag: (() => void) | null = null;
-        if (IOS27_DIAGNOSTICS_ENABLED) {
+        if (isDiagnosticsEnabled()) {
             captureMediaSnapshot('camera-stream-bind', video);
             cleanupDiag = attachTrackListeners(video);
         }
@@ -62,7 +62,7 @@ export function useCamera(): UseCameraResult {
         const handleReady = () => {
             setIsReady(true);
             video.play().catch(() => {});
-            if (IOS27_DIAGNOSTICS_ENABLED) {
+            if (isDiagnosticsEnabled()) {
                 captureMediaSnapshot('camera-ready', video);
             }
         };
@@ -86,7 +86,7 @@ export function useCamera(): UseCameraResult {
         operationIdRef.current = operationId;
         setIsReady(false);
         setError(null);
-        if (IOS27_DIAGNOSTICS_ENABLED) {
+        if (isDiagnosticsEnabled()) {
             captureMediaSnapshot('before-initCamera', videoRef.current);
         }
         try {
@@ -104,7 +104,7 @@ export function useCamera(): UseCameraResult {
                 mediaStream.getTracks().forEach(track => track.stop());
                 return;
             }
-            if (IOS27_DIAGNOSTICS_ENABLED) {
+            if (isDiagnosticsEnabled()) {
                 captureMediaSnapshot('after-getUserMedia-success', videoRef.current);
             }
             streamRef.current = mediaStream;
@@ -118,7 +118,7 @@ export function useCamera(): UseCameraResult {
     }, []);
 
     const stopCamera = useCallback(() => {
-        if (IOS27_DIAGNOSTICS_ENABLED) {
+        if (isDiagnosticsEnabled()) {
             captureMediaSnapshot('before-stopCamera', videoRef.current);
         }
         operationIdRef.current += 1;
@@ -132,7 +132,7 @@ export function useCamera(): UseCameraResult {
         setStream(null);
         setIsReady(false);
         releaseWakeLock();
-        if (IOS27_DIAGNOSTICS_ENABLED) {
+        if (isDiagnosticsEnabled()) {
             captureMediaSnapshot('after-stopCamera', videoRef.current);
         }
     }, []);

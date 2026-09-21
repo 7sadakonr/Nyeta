@@ -8,7 +8,7 @@ import {
     FreezeProbeResult,
 } from '../client/cameraMediaDebug';
 import {
-    IOS27_DIAGNOSTICS_ENABLED,
+    isDiagnosticsEnabled,
     isObjectTtsDisabled,
     isObjectDetectionDisabled,
     getTfjsBackendOverride,
@@ -20,7 +20,7 @@ interface DiagnosticPanelProps {
 }
 
 export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
-    if (!IOS27_DIAGNOSTICS_ENABLED) return null;
+    if (!isDiagnosticsEnabled()) return null;
 
     const [isOpen, setIsOpen] = useState(false);
     const [probeResult, setProbeResult] = useState<FreezeProbeResult | null>(null);

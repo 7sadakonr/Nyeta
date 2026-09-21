@@ -1,4 +1,4 @@
-import { IOS27_DIAGNOSTICS_ENABLED } from './investigationFlags';
+import { isDiagnosticsEnabled } from './investigationFlags';
 
 export interface MediaSnapshot {
     timestamp: number;
@@ -61,7 +61,7 @@ export function captureMediaSnapshot(
     event: string,
     video?: HTMLVideoElement | null
 ): MediaSnapshot | null {
-    if (!IOS27_DIAGNOSTICS_ENABLED) return null;
+    if (!isDiagnosticsEnabled()) return null;
     const v = video || _currentVideo;
     const track = getVideoTrack(v);
 
@@ -115,7 +115,7 @@ export function captureMediaSnapshot(
 }
 
 export function attachTrackListeners(video: HTMLVideoElement): () => void {
-    if (!IOS27_DIAGNOSTICS_ENABLED) return () => {};
+    if (!isDiagnosticsEnabled()) return () => {};
     _currentVideo = video;
     if (_trackListenersAttached) return () => {};
 
@@ -189,7 +189,7 @@ export function startFrameFreezeProbe(
     video: HTMLVideoElement,
     durationMs = 3000
 ): Promise<FreezeProbeResult> {
-    if (!IOS27_DIAGNOSTICS_ENABLED) {
+    if (!isDiagnosticsEnabled()) {
         return Promise.resolve({
             case: 'none',
             description: 'Production mode',
@@ -276,7 +276,7 @@ export function startFrameFreezeProbe(
 }
 
 export function getSnapshotLog(): MediaSnapshot[] {
-    return IOS27_DIAGNOSTICS_ENABLED ? [..._snapshotLog] : [];
+    return isDiagnosticsEnabled() ? [..._snapshotLog] : [];
 }
 
 export function clearSnapshotLog(): void {

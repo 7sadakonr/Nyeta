@@ -1,6 +1,23 @@
 let _audioCtx: AudioContext | null = null;
 
+/** Diagnostic isolation (?earcon=off): every earcon/beep path goes through getAudioContext, which callers wrap in try/catch. */
+function isEarconDisabledForDiagnostics(): boolean {
+    try {
+        return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('earcon') === 'off';
+    } catch {
+        return false;
+    }
+}
+
+/** Read-only AudioContext state for diagnostics; never creates or resumes the context. */
+export function getAudioContextState(): string {
+    return _audioCtx ? _audioCtx.state : 'none';
+}
+
 function getAudioContext(): AudioContext {
+    if (isEarconDisabledForDiagnostics()) {
+        throw new Error('earcon disabled by ?earcon=off');
+    }
     if (!_audioCtx) {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         _audioCtx = new AudioContextClass();

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import EyeIcon from '@/shared/ui/icons/EyeIcon';
 import { speechController } from '@/shared/accessibility/speechController';
 import { playEarcon } from '@/shared/accessibility/audio';
+import { isWelcomeAudioDisabled } from '@/features/blind-assistant/client/investigationFlags';
 
 interface WelcomeScreenProps {
     onStart: () => void;
@@ -78,7 +79,7 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
             // Request camera and microphone permissions upfront
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 video: { facingMode: 'environment' }, 
-                audio: true 
+                audio: !isWelcomeAudioDisabled(),
             });
             
             // Release the devices immediately so the actual app hooks can claim them

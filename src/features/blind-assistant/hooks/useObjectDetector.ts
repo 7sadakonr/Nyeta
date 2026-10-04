@@ -17,6 +17,7 @@ import {
     isCanvasDetectDisabled,
     isDiagnosticsEnabled,
 } from '@/features/blind-assistant/client/investigationFlags';
+import { recordDetectTiming } from '@/features/blind-assistant/client/cameraMediaDebug';
 
 export interface UseObjectDetectorResult {
     isLoading: boolean;
@@ -103,8 +104,10 @@ export function useObjectDetector(
         if (!effectiveEnabled || isLoading || !modelRef.current) return;
 
         let isActive = true;
+        let lastDetectEndedAt = 0;
         const detect = async () => {
             if (!isActive) return;
+            const detectStartedAt = performance.now();
             const video = videoRef.current;
             if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
                 try {
@@ -137,6 +140,13 @@ export function useObjectDetector(
                     }
 
                     if (!isActive) return;
+                    const detectEndedAt = performance.now();
+                    recordDetectTiming({
+                        t: Date.now(),
+                        detectMs: Math.round(detectEndedAt - detectStartedAt),
+                        gapMs: lastDetectEndedAt ? Math.round(detectStartedAt - lastDetectEndedAt) : 0,
+                    });
+                    lastDetectEndedAt = detectEndedAt;
                     const next = advanceObjectTargeting(
                         targetingStateRef.current,
                         rawPredictions,
@@ -169,7 +179,7 @@ export function useObjectDetector(
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
             if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
         };
-    }, [containerRef, enabled, isLoading, videoRef]);
+    }, [containerRef, effectiveEnabled, isLoading, videoRef]);
 
     return { isLoading, detections, targetObject, targetIndex, targetPhase, guidance, targetingEvent };
 }

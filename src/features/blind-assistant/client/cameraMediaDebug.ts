@@ -1,6 +1,6 @@
 import { isDiagnosticsEnabled } from './investigationFlags';
 
-export interface MediaSnapshot {
+export interface MediaSnapshot extends MediaSnapshotExtras {
     timestamp: number;
     event: string;
     video: {
@@ -41,6 +41,49 @@ export interface FreezeProbeResult {
 }
 
 import { speechController, SpeechLifecycleEvent } from '@/shared/accessibility/speechController';
+import { getAudioContextState } from '@/shared/accessibility/audio';
+
+/** Frame/audio-session fields below are filled by captureMediaSnapshot; kept optional for old log entries. */
+export interface MediaSnapshotExtras {
+    /** requestVideoFrameCallback frames seen since the video was attached, and ms since the latest one. */
+    frames?: { count: number; lastFrameAgoMs: number | null };
+    audio?: { sessionType: string | null; sessionState: string | null; ctxState: string };
+}
+
+export interface DetectTiming {
+    t: number;
+    detectMs: number;
+    /** ms between the previous detect() finishing and this one starting (rAF + 100ms timer + main-thread stalls). */
+    gapMs: number;
+}
+
+const MAX_DETECT_TIMINGS = 200;
+const HEARTBEAT_MS = 1000;
+let _detectTimings: DetectTiming[] = [];
+let _frameCount = 0;
+let _lastFrameAt: number | null = null;
+let _heartbeatId: ReturnType<typeof setInterval> | null = null;
+
+function readAudioSession(): { type: string | null; state: string | null } {
+    try {
+        const session = typeof navigator !== 'undefined' ? (navigator as any).audioSession : null;
+        return { type: session?.type ?? null, state: session?.state ?? null };
+    } catch {
+        return { type: null, state: null };
+    }
+}
+
+export function recordDetectTiming(timing: DetectTiming): void {
+    if (!isDiagnosticsEnabled()) return;
+    _detectTimings.push(timing);
+    if (_detectTimings.length > MAX_DETECT_TIMINGS) {
+        _detectTimings = _detectTimings.slice(-MAX_DETECT_TIMINGS);
+    }
+}
+
+export function getDetectTimings(): DetectTiming[] {
+    return isDiagnosticsEnabled() ? [..._detectTimings] : [];
+}
 
 let _snapshotLog: MediaSnapshot[] = [];
 let _trackListenersAttached = false;
@@ -59,10 +102,12 @@ function getVideoTrack(v?: HTMLVideoElement | null): MediaStreamTrack | null {
 
 export function captureMediaSnapshot(
     event: string,
-    video?: HTMLVideoElement | null
+    video?: HTMLVideoElement | null,
+    quiet = false,
 ): MediaSnapshot | null {
     if (!isDiagnosticsEnabled()) return null;
     const v = video || _currentVideo;
+    const audioSession = readAudioSession();
     const track = getVideoTrack(v);
 
     const snapshot: MediaSnapshot = {
@@ -91,6 +136,15 @@ export function captureMediaSnapshot(
             paused: Boolean((window as any).speechSynthesis?.['paused']),
         } : null,
         visibility: typeof document !== 'undefined' ? document.visibilityState : 'unknown',
+        frames: {
+            count: _frameCount,
+            lastFrameAgoMs: _lastFrameAt === null ? null : Math.round(performance.now() - _lastFrameAt),
+        },
+        audio: {
+            sessionType: audioSession.type,
+            sessionState: audioSession.state,
+            ctxState: getAudioContextState(),
+        },
     };
 
     _snapshotLog.push(snapshot);
@@ -98,7 +152,7 @@ export function captureMediaSnapshot(
         _snapshotLog = _snapshotLog.slice(-200);
     }
 
-    console.log(`[CameraDebug] ${event}`, snapshot);
+    if (!quiet) console.log(`[CameraDebug] ${event}`, snapshot);
     return snapshot;
 }
 
@@ -122,6 +176,40 @@ export function attachTrackListeners(video: HTMLVideoElement): () => void {
     const onPlaying = () => captureMediaSnapshot('video-playing', video);
     const onStalled = () => captureMediaSnapshot('video-stalled', video);
     const onSuspend = () => captureMediaSnapshot('video-suspend', video);
+    const onPlay = () => captureMediaSnapshot('video-play', video);
+    const onWaiting = () => captureMediaSnapshot('video-waiting', video);
+    const onEmptied = () => captureMediaSnapshot('video-emptied', video);
+    const onResize = () => captureMediaSnapshot('video-resize', video);
+
+    video.addEventListener('play', onPlay);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('emptied', onEmptied);
+    video.addEventListener('resize', onResize);
+
+    // requestVideoFrameCallback fires only when a new frame is composited, so unlike currentTime
+    // (which follows the MediaStream clock) it shows whether the picture is actually updating.
+    _frameCount = 0;
+    _lastFrameAt = null;
+    let frameCallbackId: number | null = null;
+    const rVFC = (video as any).requestVideoFrameCallback?.bind(video);
+    const onFrame = () => {
+        _frameCount += 1;
+        _lastFrameAt = performance.now();
+        frameCallbackId = rVFC(onFrame);
+    };
+    if (rVFC) frameCallbackId = rVFC(onFrame);
+
+    // Quiet heartbeat: lets the timeline show when frames stopped relative to speech events.
+    _heartbeatId = setInterval(() => captureMediaSnapshot('heartbeat', video, true), HEARTBEAT_MS);
+
+    if (typeof window !== 'undefined') {
+        (window as any).__nyetaDiag = {
+            timeline: () => JSON.stringify({ snapshots: _snapshotLog, detect: _detectTimings }),
+            snapshots: () => [..._snapshotLog],
+            detect: () => [..._detectTimings],
+            clear: () => { _snapshotLog = []; _detectTimings = []; },
+        };
+    }
 
     video.addEventListener('pause', onPause);
     video.addEventListener('playing', onPlaying);
@@ -155,6 +243,17 @@ export function attachTrackListeners(video: HTMLVideoElement): () => void {
     return () => {
         _trackListenersAttached = false;
         _currentVideo = null;
+        video.removeEventListener('play', onPlay);
+        video.removeEventListener('waiting', onWaiting);
+        video.removeEventListener('emptied', onEmptied);
+        video.removeEventListener('resize', onResize);
+        if (frameCallbackId !== null) {
+            try { (video as any).cancelVideoFrameCallback?.(frameCallbackId); } catch {}
+        }
+        if (_heartbeatId) {
+            clearInterval(_heartbeatId);
+            _heartbeatId = null;
+        }
         video.removeEventListener('pause', onPause);
         video.removeEventListener('playing', onPlaying);
         video.removeEventListener('stalled', onStalled);

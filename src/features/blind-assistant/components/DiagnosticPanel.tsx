@@ -21,7 +21,10 @@ interface DiagnosticPanelProps {
 
 export default function DiagnosticPanel({ videoRef }: DiagnosticPanelProps) {
     if (!isDiagnosticsEnabled()) return null;
+    return <DiagnosticPanelContent videoRef={videoRef} />;
+}
 
+function DiagnosticPanelContent({ videoRef }: DiagnosticPanelProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [probeResult, setProbeResult] = useState<FreezeProbeResult | null>(null);
     const [probing, setProbing] = useState(false);

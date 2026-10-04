@@ -26,7 +26,7 @@ import CameraView from '@/features/blind-assistant/components/CameraView';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 import DiagnosticPanel from '@/features/blind-assistant/components/DiagnosticPanel';
-import { isObjectTtsDisabled, isDiagnosticsEnabled } from '@/features/blind-assistant/client/investigationFlags';
+import { isObjectTtsDisabled, isDiagnosticsEnabled, applyAudioSessionOverride } from '@/features/blind-assistant/client/investigationFlags';
 
 export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
@@ -72,6 +72,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera } = useCamera();
 
     useEffect(() => {
+        applyAudioSessionOverride();
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
@@ -213,7 +214,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         if (didSpeak && pendingObjectAnnouncementRef.current?.eventId === pending.eventId) {
             pendingObjectAnnouncementRef.current = null;
         }
-    }, [isSpeechQuiet, mode, targetPhase, targetingEvent]);
+    }, [isSpeechQuiet, mode, targetPhase, targetingEvent, videoRef]);
 
     useEffect(() => () => {
         stopWaitingSound();

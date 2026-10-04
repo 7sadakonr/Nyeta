@@ -23,6 +23,9 @@ export function isDiagnosticsEnabled(): boolean {
                     params.has('speechTest') ||
                     params.has('tfjsBackend') ||
                     params.has('canvasDetect') ||
+                    params.has('earcon') ||
+                    params.has('welcomeAudio') ||
+                    params.has('audioSession') ||
                     params.get('debug') === '1'
                 ) {
                     return true;
@@ -75,4 +78,26 @@ export function getTfjsBackendOverride(): string | null {
 /** Phase 8: Force model.detect directly on video (skip canvas drawImage). */
 export function isCanvasDetectDisabled(): boolean {
     return getUrlParam('canvasDetect') === 'off';
+}
+
+/** Isolation: Welcome screen asks for camera only, skipping the microphone permission probe. */
+export function isWelcomeAudioDisabled(): boolean {
+    return getUrlParam('welcomeAudio') === 'off';
+}
+
+/**
+ * Isolation (?audioSession=ambient|playback|auto|transient|transient-solo|play-and-record).
+ * Applies navigator.audioSession.type once so the camera-freeze matrix can compare categories.
+ */
+export function applyAudioSessionOverride(): string | null {
+    const value = getUrlParam('audioSession');
+    if (!value || typeof navigator === 'undefined') return null;
+    try {
+        const session = (navigator as any).audioSession;
+        if (!session) return null;
+        session.type = value;
+        return session.type ?? null;
+    } catch {
+        return null;
+    }
 }

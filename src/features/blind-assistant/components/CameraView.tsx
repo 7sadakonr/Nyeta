@@ -16,6 +16,7 @@ export interface CameraViewProps {
     currencyResult: CapturedCurrency | null;
     currencyScanning?: boolean;
     currencyHint?: string;
+    captureMessage?: string;
     isBlocked?: boolean;
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
@@ -35,6 +36,7 @@ export default function CameraView({
     currencyResult,
     currencyScanning = false,
     currencyHint = '',
+    captureMessage = '',
     isBlocked = false,
     aiStatus = 'idle',
     readerGuidance = '',
@@ -106,7 +108,7 @@ export default function CameraView({
                     )}
 
                     <p role="status" className="sr-only">
-                        {currencyResult ? `ครั้งนี้ ${currencyResult.total.toLocaleString()} บาท` : ''}
+                        {currencyResult ? `ครั้งนี้ ${currencyResult.total.toLocaleString()} บาท` : captureMessage}
                     </p>
                     <div
                         ref={currencyDetailsRef}

@@ -301,6 +301,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         currencyScanning,
         currencyMonitoring,
         currencyHint,
+        captureMessage: currencyCaptureMessage,
         currencyBounds,
         totalAmount,
         captureCurrency,
@@ -424,6 +425,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             currencyResult={currencyResult}
                             currencyScanning={currencyScanning}
                             currencyHint={currencyHint}
+                            captureMessage={currencyCaptureMessage}
                             isBlocked={currencyBlocked}
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}

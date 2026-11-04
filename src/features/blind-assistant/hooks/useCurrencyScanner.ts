@@ -9,7 +9,7 @@ export interface CapturedCurrency extends CurrencyBatch { captureId: number; sou
 export interface CurrencyHistoryItem extends CurrencyBatch { id: number; timestamp: number; }
 export interface UseCurrencyScannerResult {
     currencyResult: CapturedCurrency | null; currencyScanning: boolean; currencyMonitoring: boolean;
-    currencyHint: string; currencyBounds: BoundingBox | null; totalAmount: number; scannedHistory: CurrencyHistoryItem[];
+    currencyHint: string; captureMessage: string; currencyBounds: BoundingBox | null; totalAmount: number; scannedHistory: CurrencyHistoryItem[];
     scannedCount: number; isBlocked: boolean;
     captureCurrency: () => Promise<void>;
     replayCurrencyDetails: () => void;
@@ -37,6 +37,7 @@ export function useCurrencyScanner(
     const [currencyResult, setCurrencyResult] = useState<CapturedCurrency | null>(null);
     const [phase, setPhase] = useState<CurrencyScanPhase>('idle');
     const [currencyHint, setCurrencyHint] = useState('');
+    const [captureMessage, setCaptureMessage] = useState('');
     const [totalAmount, setTotalAmount] = useState(0);
     const [scannedHistory, setScannedHistory] = useState<CurrencyHistoryItem[]>([]);
     const [isBlocked, setIsBlocked] = useState(false);
@@ -165,6 +166,7 @@ export function useCurrencyScanner(
                 setResult(captured);
                 setTotalAmount(newTotal);
                 setScannedHistory(historyRef.current);
+                setCaptureMessage('');
                 setHintIfChanged(`ตรวจพบ ${captured.total} บาท`);
                 removalBaselineRef.current = fingerprint;
                 removalNotFoundCountRef.current = 0;
@@ -172,6 +174,16 @@ export function useCurrencyScanner(
                 feedback?.('success');
                 // Result is announced from the semantic DOM (status region in CameraView), not TTS.
                 setPhaseIfChanged('waiting-removal');
+                return;
+            }
+
+            if (source === 'manual') {
+                // A user-initiated capture must always report why it produced no result.
+                setCaptureMessage(result.status === 'blocked'
+                    ? 'กล้องโดนบัง กรุณาเปิดหน้ากล้องแล้วกดถ่ายเองอีกครั้ง'
+                    : 'ไม่พบธนบัตรหรือเหรียญ ลองวางให้อยู่กลางกล้องแล้วกดถ่ายเองอีกครั้ง');
+                feedback?.('error');
+                setPhaseIfChanged('searching');
                 return;
             }
 
@@ -203,6 +215,14 @@ export function useCurrencyScanner(
             const delay = NETWORK_BACKOFF_MS[Math.min(networkFailureCountRef.current - 1, NETWORK_BACKOFF_MS.length - 1)];
             retryAtRef.current = Date.now() + delay;
             addLog?.(`Currency capture error: ${message}`);
+            if (source === 'manual') {
+                retryAtRef.current = 0;
+                networkFailureCountRef.current = 0;
+                setCaptureMessage('เครือข่ายมีปัญหา กรุณากดถ่ายเองอีกครั้ง');
+                feedback?.('error');
+                setPhaseIfChanged('searching');
+                return;
+            }
             setHintIfChanged('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ');
             if (!networkAnnouncedRef.current) {
                 networkAnnouncedRef.current = true;
@@ -283,15 +303,44 @@ export function useCurrencyScanner(
     }, [cancelPendingRequest, enabled, isReady, monitorFrame, setHintIfChanged, setPhaseIfChanged]);
 
     const captureCurrency = useCallback(async () => {
-        if (!enabledRef.current || !readyRef.current || !visibleRef.current || requestRef.current || Date.now() < retryAtRef.current) return;
+        if (!enabledRef.current || !readyRef.current || !visibleRef.current) {
+            feedback?.('error');
+            return;
+        }
+
+        // User-initiated: override the auto-scan backoff, any in-flight auto probe and removal gating.
+        cancelPendingRequest();
+        retryAtRef.current = 0;
+        networkFailureCountRef.current = 0;
+        networkAnnouncedRef.current = false;
+        removalBaselineRef.current = null;
+        removalNotFoundCountRef.current = 0;
+        removalConfirmAtRef.current = 0;
         totalRef.current = 0;
         historyRef.current = [];
         setTotalAmount(0);
         setScannedHistory([]);
         setResult(null);
+        setCaptureMessage('');
         feedback?.('capture');
-        monitorFrame('manual');
-    }, [feedback, monitorFrame, setResult]);
+
+        if (!canvasRef.current && typeof document !== 'undefined') canvasRef.current = document.createElement('canvas');
+        const analysis = analyzeCurrencyFrame(videoRef.current, canvasRef.current, cameraContainerRef?.current);
+        setPhaseIfChanged('searching');
+        if (analysis.quality === 'blocked') {
+            setBlockedIfChanged(true);
+            setCaptureMessage('กล้องโดนบัง กรุณาเปิดหน้ากล้องแล้วกดถ่ายเองอีกครั้ง');
+            feedback?.('error');
+            return;
+        }
+        if (analysis.quality === 'invalid' || !analysis.fingerprint) {
+            setCaptureMessage('กล้องยังไม่พร้อม กรุณารอสักครู่แล้วกดถ่ายเองอีกครั้ง');
+            feedback?.('error');
+            return;
+        }
+        clearBlocked();
+        await requestProbe('manual', analysis.fingerprint, 'searching');
+    }, [cameraContainerRef, cancelPendingRequest, clearBlocked, feedback, requestProbe, setBlockedIfChanged, setPhaseIfChanged, setResult, videoRef]);
 
     const replayCurrencyDetails = useCallback(() => {
         if (!resultRef.current) return;
@@ -308,5 +357,5 @@ export function useCurrencyScanner(
     const scannedCount = scannedHistory.reduce((count, batch) => count + batch.items.reduce((sum, item) => sum + item.quantity, 0), 0);
     const currencyScanning = phase === 'checking';
     const currencyMonitoring = enabled && isReady && phase !== 'idle' && phase !== 'paused';
-    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, captureCurrency, replayCurrencyDetails, clearTotal };
+    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, captureMessage, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, captureCurrency, replayCurrencyDetails, clearTotal };
 }

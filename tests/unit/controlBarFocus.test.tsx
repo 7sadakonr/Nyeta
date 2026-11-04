@@ -349,4 +349,36 @@ describe('ControlBar', () => {
         fireEvent.click(describeScene);
         expect(onCapture).toHaveBeenCalledOnce();
     });
+    it('keeps the manual currency capture button usable while auto-scan is checking', () => {
+        const onCurrencyCapture = vi.fn();
+        const { getByRole } = render(
+            <ControlBar
+                mode="currency"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning
+                currencyMonitoring
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={onCurrencyCapture}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+            />,
+        );
+
+        const capture = getByRole('button', { name: 'ถ่ายเองเพื่อสแกนเงินตอนนี้' });
+        expect(capture.getAttribute('aria-disabled')).toBeNull();
+        fireEvent.click(capture);
+        expect(onCurrencyCapture).toHaveBeenCalledOnce();
+    });
 });

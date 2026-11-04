@@ -30,7 +30,11 @@ const STABLE_FRAME_THRESHOLD = 6;
 const BLOCKED_ANNOUNCEMENT_MS = 2000;
 const NETWORK_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000];
 
+// A daily quota does not come back in seconds; do not hammer the API every few seconds.
+const QUOTA_BACKOFF_MS = 5 * 60 * 1000;
+
 function autoRetryMessage(error: unknown): string {
+    if (error instanceof GeminiRequestError && error.kind === 'quota') return 'โควตา AI ของวันนี้เต็มแล้ว ระบบจะลองใหม่ภายหลัง';
     const offline = (error instanceof GeminiRequestError && error.kind === 'offline')
         || (typeof navigator !== 'undefined' && navigator.onLine === false);
     return offline ? 'ไม่มีอินเทอร์เน็ต ระบบจะลองใหม่อัตโนมัติ' : 'ระบบ AI ยุ่งอยู่ ระบบจะลองใหม่อัตโนมัติ';
@@ -227,7 +231,10 @@ export function useCurrencyScanner(
             if (requestRef.current !== token || token.generation !== generationRef.current || controller.signal.aborted || !isActive()) return;
             const message = error instanceof Error ? error.message : 'Currency scan failed';
             networkFailureCountRef.current += 1;
-            const delay = NETWORK_BACKOFF_MS[Math.min(networkFailureCountRef.current - 1, NETWORK_BACKOFF_MS.length - 1)];
+            const quotaExhausted = error instanceof GeminiRequestError && error.kind === 'quota';
+            const delay = quotaExhausted
+                ? QUOTA_BACKOFF_MS
+                : NETWORK_BACKOFF_MS[Math.min(networkFailureCountRef.current - 1, NETWORK_BACKOFF_MS.length - 1)];
             retryAtRef.current = Date.now() + delay;
             addLog?.(`Currency capture error: ${message}`);
             if (source === 'manual') {

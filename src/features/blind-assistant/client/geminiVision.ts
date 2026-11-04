@@ -19,6 +19,7 @@ export interface GeminiResponseData {
     }>;
     error?: {
         message?: string;
+        status?: string;
     };
 }
 
@@ -44,38 +45,70 @@ export function extractGeminiText(data: GeminiResponseData | null | undefined): 
     return fallbackParts.join('\n').trim();
 }
 
-export type GeminiErrorKind = 'offline' | 'busy' | 'rate_limited' | 'timeout' | 'server';
+export type GeminiErrorKind = 'offline' | 'busy' | 'rate_limited' | 'quota' | 'timeout' | 'server';
 
 /** A failed Gemini request, classified so the UI can tell the user what actually went wrong. */
 export class GeminiRequestError extends Error {
     readonly kind: GeminiErrorKind;
     readonly status?: number;
+    /** Seconds the server (our limiter) or Google asked us to wait, when known. */
+    readonly retryAfterSeconds?: number;
 
-    constructor(kind: GeminiErrorKind, message: string, status?: number) {
+    constructor(kind: GeminiErrorKind, message: string, status?: number, retryAfterSeconds?: number) {
         super(message);
         this.name = 'GeminiRequestError';
         this.kind = kind;
         this.status = status;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 
 const GEMINI_ERROR_MESSAGES: Record<GeminiErrorKind, string> = {
     offline: 'ไม่มีอินเทอร์เน็ต ตรวจสอบการเชื่อมต่อแล้วลองใหม่ครับ',
     busy: 'ระบบ AI ยุ่งอยู่ กรุณาลองใหม่อีกครั้งครับ',
-    rate_limited: 'ระบบยุ่งมาก กรุณารอ 30 วินาทีแล้วลองใหม่ครับ',
+    rate_limited: 'ระบบยุ่งมาก กรุณารอสักครู่แล้วลองใหม่ครับ',
+    quota: 'โควตาการใช้ AI ของวันนี้เต็มแล้ว กรุณาลองใหม่ภายหลัง หรือแจ้งผู้ดูแลระบบครับ',
     timeout: 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ',
     server: 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้งครับ',
 };
 
 /** Thai, user-facing description of a failed Gemini request. Only claims "no internet" when that is the cause. */
 export function describeGeminiError(error: unknown): string {
-    if (error instanceof GeminiRequestError) return GEMINI_ERROR_MESSAGES[error.kind];
+    if (error instanceof GeminiRequestError) {
+        const seconds = error.retryAfterSeconds;
+        if (error.kind === 'rate_limited' && seconds && seconds > 0) {
+            return `ส่งคำขอถี่เกินไป กรุณารอ ${Math.ceil(seconds)} วินาทีแล้วลองใหม่ครับ`;
+        }
+        if (error.kind === 'quota' && seconds && seconds >= 3600) {
+            return `โควตาการใช้ AI ของวันนี้เต็มแล้ว ลองใหม่ได้อีกราว ${Math.round(seconds / 3600)} ชั่วโมง หรือแจ้งผู้ดูแลระบบครับ`;
+        }
+        return GEMINI_ERROR_MESSAGES[error.kind];
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return GEMINI_ERROR_MESSAGES.offline;
     return GEMINI_ERROR_MESSAGES.server;
 }
 
 export function isAbortError(error: unknown): boolean {
     return error instanceof Error && error.name === 'AbortError';
+}
+
+/** "Please retry in 15h45m12.7s" (Google) → seconds. */
+function parseRetryDelaySeconds(message: string): number | undefined {
+    const match = message.match(/retry in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/i);
+    if (!match || (!match[1] && !match[2] && !match[3])) return undefined;
+    return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+}
+
+/**
+ * HTTP 429 means two different things: our own per-IP limiter (wait a few seconds) or Google's quota for the API key
+ * (RESOURCE_EXHAUSTED, e.g. the free tier's requests-per-day limit, which lasts hours). Telling the user to "wait 30
+ * seconds" for the second case was simply untrue.
+ */
+function classifyTooManyRequests(message: string, upstreamStatus: string | undefined, retryAfterHeader: string | null): { kind: GeminiErrorKind; retryAfterSeconds?: number } {
+    const googleQuota = upstreamStatus === 'RESOURCE_EXHAUSTED' || /quota/i.test(message);
+    if (googleQuota) return { kind: 'quota', retryAfterSeconds: parseRetryDelaySeconds(message) };
+    const header = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+    return { kind: 'rate_limited', retryAfterSeconds: Number.isFinite(header) ? header : undefined };
 }
 
 function statusToKind(status: number): GeminiErrorKind {
@@ -147,6 +180,10 @@ export async function callGeminiVision({
 
     if (!response.ok) {
         const message = data?.error?.message || `Gemini HTTP ${response.status}`;
+        if (response.status === 429) {
+            const { kind, retryAfterSeconds } = classifyTooManyRequests(message, (data?.error as { status?: string } | undefined)?.status, response.headers.get('Retry-After'));
+            throw new GeminiRequestError(kind, message, response.status, retryAfterSeconds);
+        }
         throw new GeminiRequestError(statusToKind(response.status), message, response.status);
     }
     if (!data) {

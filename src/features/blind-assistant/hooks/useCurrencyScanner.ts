@@ -44,7 +44,6 @@ export function useCurrencyScanner(
     const enabledRef = useRef(enabled);
     const readyRef = useRef(isReady);
     const audioReadyRef = useRef(audioReady);
-    const pendingResultSpeechRef = useRef<string | null>(null);
     const visibleRef = useRef(typeof document === 'undefined' || document.visibilityState !== 'hidden');
     const phaseRef = useRef<CurrencyScanPhase>('idle');
     const resumePhaseRef = useRef<CurrencyScanPhase>('searching');
@@ -72,13 +71,6 @@ export function useCurrencyScanner(
     enabledRef.current = enabled;
     readyRef.current = isReady;
     audioReadyRef.current = audioReady;
-
-    useEffect(() => {
-        if (!enabled || !pendingResultSpeechRef.current) return;
-        const text = pendingResultSpeechRef.current;
-        pendingResultSpeechRef.current = null;
-        speechController.speak(text, { channel: 'result' });
-    }, [enabled]);
 
     const setPhaseIfChanged = useCallback((next: CurrencyScanPhase) => {
         if (phaseRef.current === next) return;
@@ -178,8 +170,7 @@ export function useCurrencyScanner(
                 removalNotFoundCountRef.current = 0;
                 removalConfirmAtRef.current = 0;
                 feedback?.('success');
-                const speech = 'ครั้งนี้ ' + captured.total + ' บาท';
-                speechController.speak(speech, { channel: 'result' });
+                // Result is announced from the semantic DOM (status region in CameraView), not TTS.
                 setPhaseIfChanged('waiting-removal');
                 return;
             }
@@ -303,9 +294,7 @@ export function useCurrencyScanner(
     }, [feedback, monitorFrame, setResult]);
 
     const replayCurrencyDetails = useCallback(() => {
-        const result = resultRef.current;
-        if (!result) return;
-        speechController.speak(formatCurrencySpeech(result, null, true), { channel: 'result' });
+        if (!resultRef.current) return;
         feedback?.('capture');
     }, [feedback]);
     const clearTotal = useCallback(() => {

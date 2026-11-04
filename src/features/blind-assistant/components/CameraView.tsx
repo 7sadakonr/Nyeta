@@ -20,6 +20,7 @@ export interface CameraViewProps {
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
     showCapturedText?: boolean;
+    currencyDetailsRef?: RefObject<HTMLDivElement | null>;
 }
 
 export default function CameraView({
@@ -38,6 +39,7 @@ export default function CameraView({
     aiStatus = 'idle',
     readerGuidance = '',
     showCapturedText = false,
+    currencyDetailsRef,
 }: CameraViewProps) {
     return (
         <div
@@ -103,9 +105,13 @@ export default function CameraView({
                         </div>
                     )}
 
-                    <section
-                        className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 grid grid-cols-2 gap-3"
-                        aria-label="สรุปการตรวจเงิน"
+                    <p role="status" className="sr-only">
+                        {currencyResult ? `ครั้งนี้ ${currencyResult.total.toLocaleString()} บาท` : ''}
+                    </p>
+                    <div
+                        ref={currencyDetailsRef}
+                        tabIndex={-1}
+                        className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 grid grid-cols-2 gap-3 outline-none"
                     >
                         <div className="rounded-xl bg-[#090909]/60 px-3 py-3 text-center backdrop-blur-2xl">
                             <p className="text-[13px] font-semibold text-[#EBEBF5]/60">ตรวจพบล่าสุด</p>
@@ -119,7 +125,7 @@ export default function CameraView({
                                 {currencyResult ? formatCurrencyDisplay(currencyResult) : '—'}
                             </p>
                         </div>
-                    </section>
+                    </div>
                 </>
             )}
         </div>

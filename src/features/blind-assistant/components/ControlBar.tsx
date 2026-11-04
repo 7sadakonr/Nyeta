@@ -35,39 +35,30 @@ export interface ControlBarProps {
     onStopReading?: () => void;
 }
 
-interface ActionButtonProps extends React.HTMLAttributes<HTMLDivElement> {
+interface ActionButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> {
     tone?: 'primary' | 'secondary' | 'danger';
     wide?: boolean;
     disabled?: boolean;
 }
 
-const ActionButton = React.forwardRef<HTMLDivElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, className = '', children, onClick, ...props }, ref) {
+const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, disabled = false, className = '', children, onClick, ...props }, ref) {
     const toneClass = tone === 'primary'
         ? 'bg-[#0A84FF] text-white active:bg-[#0070DF]'
         : tone === 'danger'
             ? 'bg-[#3A1418] text-[#FF453A] active:bg-[#4A1A1F]'
             : 'bg-[#2C2C2E] text-white active:bg-[#3A3A3C]';
 
-    const disabled = props.disabled;
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-        if (!disabled && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            onClick?.(e as any);
-        }
-    };
-
     return (
-        <div
+        <button
             ref={ref}
-            role="button"
-            tabIndex={disabled ? -1 : 0}
+            type="button"
+            aria-disabled={disabled || undefined}
             className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-[3.5rem] items-center justify-center rounded-xl px-4 text-[17px] font-semibold transition-colors cursor-pointer ${disabled ? 'cursor-not-allowed opacity-40' : ''} ${toneClass} ${className}`}
             onClick={disabled ? undefined : onClick}
-            onKeyDown={handleKeyDown}
             {...props}
         >
             {children}
-        </div>
+        </button>
     );
 });
 
@@ -103,7 +94,7 @@ export default function ControlBar({
     const isBusy = aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
     const canRead = aiReady && !isProcessingDoc && !isBusy;
-    const describeSceneRef = React.useRef<HTMLDivElement | null>(null);
+    const describeSceneRef = React.useRef<HTMLButtonElement | null>(null);
     const hasFocusedDescribeSceneRef = React.useRef(false);
 
     React.useEffect(() => {
@@ -120,7 +111,7 @@ export default function ControlBar({
     }, [canCapture, mode]);
 
     return (
-        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#090909]/80 px-4 pb-4 pt-3 backdrop-blur-2xl" role="group" aria-label="ปุ่มควบคุม">
+        <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#090909]/80 px-4 pb-4 pt-3 backdrop-blur-2xl">
             {mode === 'assistant' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
                     <ActionButton
@@ -142,12 +133,10 @@ export default function ControlBar({
                             aria-pressed={isListening}
                         >
                             {isListening ? <SendIcon className="size-7" /> : <MicIcon className="size-7" />}
-                            <span className="sr-only">{isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}</span>
                         </ActionButton>
                         {hasAssistantMessages ? (
                             <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">
                                 <RotateCcwIcon className="size-7" />
-                                <span className="sr-only">อ่านใหม่</span>
                             </ActionButton>
                         ) : (
                             <ActionButton
@@ -157,12 +146,10 @@ export default function ControlBar({
                                 aria-pressed={isGuidanceMuted}
                             >
                                 {isGuidanceMuted ? <VolumeXIcon className="size-7" /> : <Volume2Icon className="size-7" />}
-                                <span className="sr-only">{isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}</span>
                             </ActionButton>
                         )}
                         <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">
                             <TrashIcon className="size-7" />
-                            <span className="sr-only">ล้างแชท</span>
                         </ActionButton>
                     </div>
                 </div>

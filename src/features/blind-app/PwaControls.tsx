@@ -33,7 +33,6 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
         };
         const onOffline = () => {
             setOnline(false);
-            if (audioReady) speechController.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { channel: 'critical' });
         };
         const onBeforeInstallPrompt = (event: Event) => {
             event.preventDefault();
@@ -92,7 +91,7 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
 
     return (
         <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-50 mx-auto flex w-full max-w-xl flex-col items-center gap-2 px-4">
-            {!online && <p className="pointer-events-auto rounded-full bg-[#0F172A] px-4 py-2 text-center text-sm font-semibold text-white" aria-label="สถานะเครือข่าย: ออฟไลน์">ออฟไลน์ — AI และการโทรต้องใช้อินเทอร์เน็ต</p>}
+            {!online && <p className="pointer-events-auto rounded-full bg-[#0F172A] px-4 py-2 text-center text-sm font-semibold text-white">ออฟไลน์ — AI และการโทรต้องใช้อินเทอร์เน็ต</p>}
             {installPrompt && <button type="button" onClick={install} className="pointer-events-auto rounded-full bg-[#1D4ED8] px-4 py-2 text-sm font-bold text-white">ติดตั้ง Nyeta</button>}
             {showIosInstall && (
                 <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow">

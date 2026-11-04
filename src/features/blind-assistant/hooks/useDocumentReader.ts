@@ -114,7 +114,7 @@ export function useDocumentReader(
             setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
             addLog?.(`Read document error: ${error.message}`);
             feedback?.('error');
-            if (audioReadyRef.current) speechController.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', { channel: 'critical' });
+            // Error text is placed in docText; focus moves there so it is read from the DOM.
         } finally {
             abortControllerRef.current = null;
             setIsProcessing(false);

@@ -1,6 +1,5 @@
 'use client';
 
-import { KeyboardEvent, useRef } from 'react';
 import type { BlindAppTab } from './types';
 
 import React from 'react';
@@ -19,64 +18,28 @@ interface BlindBottomNavigationProps {
 }
 
 export default function BlindBottomNavigation({ activeTab, callLocked, onSelect }: BlindBottomNavigationProps) {
-    const tabRefs = useRef<Array<HTMLDivElement | null>>([]);
     const isDisabled = (tab: BlindAppTab) => callLocked && tab !== 'volunteer';
 
-    const move = (startIndex: number, direction: -1 | 1) => {
-        let index = startIndex;
-        do {
-            index = (index + direction + TABS.length) % TABS.length;
-        } while (isDisabled(TABS[index].id) && index !== startIndex);
-        tabRefs.current[index]?.focus();
-        onSelect(TABS[index].id);
-    };
-
-    const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, index: number) => {
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-            event.preventDefault();
-            move(index, 1);
-        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            move(index, -1);
-        } else if (event.key === 'Home') {
-            event.preventDefault();
-            tabRefs.current.find((element, tabIndex) => !isDisabled(TABS[tabIndex].id))?.focus();
-            onSelect(TABS.find(tab => !isDisabled(tab.id))!.id);
-        } else if (event.key === 'End') {
-            event.preventDefault();
-            const indexFromEnd = [...TABS].reverse().findIndex(tab => !isDisabled(tab.id));
-            const targetIndex = TABS.length - 1 - indexFromEnd;
-            tabRefs.current[targetIndex]?.focus();
-            onSelect(TABS[targetIndex].id);
-        } else if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            onSelect(TABS[index].id);
-        }
-    };
-
     return (
-        <nav className="shrink-0 border-t border-white/[0.15] bg-[#090909]/80 backdrop-blur-2xl" role="tablist" aria-label="เมนูหลักสำหรับผู้พิการทางสายตา">
+        <nav className="shrink-0 border-t border-white/[0.15] bg-[#090909]/80 backdrop-blur-2xl" aria-label="เมนูหลัก">
             <div className="mx-auto grid max-w-xl grid-cols-4 px-2 pt-1.5 pb-2">
-                {TABS.map((tab, index) => {
+                {TABS.map((tab) => {
                     const disabled = isDisabled(tab.id);
+                    const active = activeTab === tab.id;
                     return (
-                        <div
+                        <button
                             key={tab.id}
-                            ref={(element) => { tabRefs.current[index] = element; }}
+                            type="button"
                             id={`blind-app-tab-${tab.id}`}
-                            role="tab"
                             aria-label={tab.ariaLabel}
-                            aria-controls="blind-app-panel"
-                            aria-selected={activeTab === tab.id}
+                            aria-current={active ? 'page' : undefined}
                             aria-disabled={disabled || undefined}
-                            tabIndex={activeTab === tab.id ? 0 : -1}
                             onClick={() => onSelect(tab.id)}
-                            onKeyDown={(event) => onKeyDown(event, index)}
-                            className={`flex min-h-[3.5rem] flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-semibold outline-none transition-colors ${activeTab === tab.id ? 'text-[#0A84FF]' : 'text-[#8E8E93]'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}
+                            className={`flex min-h-[3.5rem] flex-col items-center justify-center gap-1 rounded-xl px-2 py-1 text-[11px] font-semibold outline-none transition-colors ${active ? 'text-[#0A84FF]' : 'text-[#8E8E93]'} ${disabled ? 'opacity-40' : 'active:opacity-70'}`}
                         >
                             {tab.icon}
                             {tab.label}
-                        </div>
+                        </button>
                     );
                 })}
             </div>

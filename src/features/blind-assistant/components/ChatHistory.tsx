@@ -55,10 +55,8 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
     const latestId = latestMessage.id || `msg-${aiMessages.length - 1}`;
 
     return (
-        <section
+        <div
             className="space-y-4 px-4 pb-3 pt-4"
-            aria-label="คำบรรยาย"
-            role="region"
             tabIndex={-1}
             {...resultRegionProps}
         >
@@ -75,6 +73,6 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
                     />
                 </div>
             </div>
-        </section>
+        </div>
     );
 }

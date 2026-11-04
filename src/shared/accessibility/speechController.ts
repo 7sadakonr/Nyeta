@@ -23,6 +23,71 @@ export interface SpeechSnapshot {
 }
 
 const ACCESSIBILITY_QUIET_DURATION_MS = 3500;
+const MAX_CHUNK_LENGTH = 150;
+
+const CHANNEL_PRIORITY: Record<SpeechChannel, number> = {
+    realtime: 0,
+    status: 1,
+    result: 2,
+    critical: 3,
+};
+
+type StoredSpeech = { text: string; options: Omit<SpeechOptions, 'onStart' | 'onEnd'> };
+
+/**
+ * Splits text into chunks of at most `max` characters. Thai has no spaces between words,
+ * so oversized pieces are cut on word boundaries from Intl.Segmenter when available.
+ */
+export function splitSpeechText(text: string, max = MAX_CHUNK_LENGTH): string[] {
+    const pieces: string[] = [];
+    for (const word of text.split(/[\n\s]+/).filter(Boolean)) {
+        if (word.length <= max) {
+            pieces.push(word);
+            continue;
+        }
+        let segments: string[] | null = null;
+        const SegmenterCtor = (Intl as unknown as { Segmenter?: new (locale: string, options: { granularity: string }) => { segment: (input: string) => Iterable<{ segment: string }> } }).Segmenter;
+        if (SegmenterCtor) {
+            try {
+                segments = Array.from(new SegmenterCtor('th', { granularity: 'word' }).segment(word), (item) => item.segment);
+            } catch {
+                segments = null;
+            }
+        }
+        let current = '';
+        for (const segment of segments ?? []) {
+            if (segment.length > max) {
+                if (current) pieces.push(current);
+                current = '';
+                for (let index = 0; index < segment.length; index += max) pieces.push(segment.substring(index, index + max));
+            } else if (current.length + segment.length > max) {
+                pieces.push(current);
+                current = segment;
+            } else {
+                current += segment;
+            }
+        }
+        if (segments) {
+            if (current) pieces.push(current);
+        } else {
+            for (let index = 0; index < word.length; index += max) pieces.push(word.substring(index, index + max));
+        }
+    }
+
+    const chunks: string[] = [];
+    let currentChunk = '';
+    for (const piece of pieces) {
+        if (piece.length >= max || (currentChunk && currentChunk.length + 1 + piece.length > max)) {
+            if (currentChunk) chunks.push(currentChunk);
+            currentChunk = piece.length >= max ? '' : piece;
+            if (piece.length >= max) chunks.push(piece);
+        } else {
+            currentChunk += (currentChunk ? ' ' : '') + piece;
+        }
+    }
+    if (currentChunk) chunks.push(currentChunk);
+    return chunks;
+}
 
 class SpeechController {
     private _audioUnlocked = false;
@@ -151,7 +216,8 @@ class SpeechController {
     private _currentOnStart: (() => void) | null = null;
     private _currentOnEnd: ((completed?: boolean) => void) | null = null;
     private _currentSpeechOptions: Omit<SpeechOptions, 'onStart' | 'onEnd'> | null = null;
-    private _resumeAfterNavigation: { text: string; options: Omit<SpeechOptions, 'onStart' | 'onEnd'> } | null = null;
+    private _resumeAfterNavigation: StoredSpeech | null = null;
+    private _pendingCritical: StoredSpeech | null = null;
     
     // Internal deduplication and tracking
     private _lastRealtimeGuidance: string | null = null;
@@ -211,7 +277,11 @@ class SpeechController {
             return false;
         }
 
-        if (this._state === 'speaking' && this._currentChannel === 'critical' && options.channel !== 'critical') {
+        if (
+            this._state === 'speaking' &&
+            this._currentChannel !== null &&
+            CHANNEL_PRIORITY[options.channel] < CHANNEL_PRIORITY[this._currentChannel]
+        ) {
             options.onEnd?.(false);
             return false;
         }
@@ -224,6 +294,22 @@ class SpeechController {
         if ((this._guidanceMuted || this._guidanceSuppressed) && (options.channel === 'realtime' || options.channel === 'status')) {
             options.onEnd?.(false);
             return false;
+        }
+
+        if (this._isQuiet() && options.channel === 'critical') {
+            // Do not talk over the screen reader: hold the latest critical message until the quiet window ends.
+            this._pendingCritical = {
+                text: cleanText,
+                options: {
+                    channel: options.channel,
+                    key: options.key,
+                    rate: options.rate,
+                    lang: options.lang,
+                    dedupeMs: options.dedupeMs,
+                },
+            };
+            options.onEnd?.(false);
+            return true;
         }
 
         if (this._isQuiet() && options.channel !== 'critical') {
@@ -294,7 +380,7 @@ class SpeechController {
         const rate = options.rate || 1.1;
         const lang = options.lang || 'th-TH';
 
-        if (cleanText.length > 150) {
+        if (cleanText.length > MAX_CHUNK_LENGTH) {
             this._startChunked(cleanText, requestId, { rate, lang, channel: options.channel });
         } else {
             this._speakDirect(cleanText, requestId, { rate, lang });
@@ -304,6 +390,7 @@ class SpeechController {
 
     public stop(): void {
         this._resumeAfterNavigation = null;
+        this._pendingCritical = null;
         const hasPendingSpeech = this._state === 'speaking' ||
             this._pendingUnlockSpeech !== null ||
             this._activeUtterance !== null ||
@@ -335,9 +422,21 @@ class SpeechController {
             if (this._state === 'screen-reader-quiet') {
                 this._state = 'idle';
             }
+            const pendingCritical = this._pendingCritical;
+            this._pendingCritical = null;
             const pendingResult = this._resumeAfterNavigation;
-            this._resumeAfterNavigation = null;
-            if (pendingResult) {
+            if (pendingCritical) {
+                // Critical goes first; the interrupted result is replayed after it finishes.
+                this.speak(pendingCritical.text, {
+                    ...pendingCritical.options,
+                    onEnd: pendingResult
+                        ? (completed) => {
+                            if (completed) this.speak(pendingResult.text, pendingResult.options);
+                        }
+                        : undefined,
+                });
+            } else if (pendingResult) {
+                this._resumeAfterNavigation = null;
                 this.speak(pendingResult.text, pendingResult.options);
             } else {
                 this.notify();
@@ -347,6 +446,7 @@ class SpeechController {
 
     public beginListening(): void {
         this._resumeAfterNavigation = null;
+        this._pendingCritical = null;
         this._cancelInternal();
         this._activeRequest++;
         this._state = 'listening';
@@ -407,26 +507,7 @@ class SpeechController {
     }
 
     private _startChunked(text: string, requestId: number, options: { rate: number, lang: string, channel: SpeechChannel }) {
-        // Split by sentences or approx 150 chars
-        const words = text.split(/[\n\s]+/).filter(Boolean);
-        const chunks: string[] = [];
-        let currentChunk = '';
-        
-        for (const word of words) {
-            if (word.length > 150) {
-                if (currentChunk) chunks.push(currentChunk);
-                for (let index = 0; index < word.length; index += 150) {
-                    chunks.push(word.substring(index, index + 150));
-                }
-                currentChunk = '';
-            } else if (currentChunk.length + word.length > 150) {
-                chunks.push(currentChunk);
-                currentChunk = word;
-            } else {
-                currentChunk += (currentChunk ? ' ' : '') + word;
-            }
-        }
-        if (currentChunk) chunks.push(currentChunk);
+        const chunks = splitSpeechText(text);
 
         this._chunks = chunks;
         this._chunkIndex = 0;

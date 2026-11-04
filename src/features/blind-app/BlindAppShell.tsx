@@ -51,31 +51,24 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
             assistantRef.current?.prepareForCall();
         }
 
-        let tabName = '';
         switch(nextTab) {
             case 'assistant': {
                 playEarcon('mode-assistant');
-                tabName = 'AI ผู้ช่วย';
                 break;
             }
             case 'reader': {
                 playEarcon('mode-reader');
-                tabName = 'อ่านเอกสาร';
                 break;
             }
             case 'currency': {
                 playEarcon('mode-currency');
-                tabName = 'สแกนธนบัตร';
                 break;
             }
             case 'volunteer': {
                 playEarcon('mode-volunteer');
-                tabName = 'ขอความช่วยเหลือ';
                 break;
             }
         }
-        speechController.speak(tabName, { channel: 'status' });
-
         if (isAssistantTab(nextTab)) {
             window.localStorage.setItem('nyeta_blind_mode', nextTab);
         }
@@ -115,13 +108,13 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
         >
             <HapticFeedback ref={hapticRef} />
             <PwaControls callActive={callLocked} audioReady={true} />
-            <section id="blind-app-panel" role="tabpanel" aria-labelledby={`blind-app-tab-${activeTab}`} className="min-h-0 flex-1 overflow-hidden">
+            <div id="blind-app-panel" className="min-h-0 flex-1 overflow-hidden">
                 {activeTab === 'volunteer' ? (
                     <BlindCallScreen ref={callRef} presentation="embedded" onStatusChange={setCallStatus} audioReady={true} />
                 ) : (
                     <BlindAssistScreen ref={assistantRef} mode={activeTab} presentation="embedded" audioReady={true} />
                 )}
-            </section>
+            </div>
             <BlindBottomNavigation activeTab={activeTab} callLocked={callLocked} onSelect={selectTab} />
         </div>
     );

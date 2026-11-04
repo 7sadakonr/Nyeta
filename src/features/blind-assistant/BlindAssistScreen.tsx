@@ -199,6 +199,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady, cameraContainerRef);
 
     const latestResultRef = useRef<HTMLParagraphElement | null>(null);
+    const docResultRef = useRef<HTMLParagraphElement | null>(null);
+    const currencyDetailsRef = useRef<HTMLDivElement | null>(null);
     const lastFocusedMessageIdRef = useRef<string | null>(null);
 
     // Be My Eyes capture flow:
@@ -247,17 +249,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const [isGuidanceMuted, setIsGuidanceMuted] = useState(false);
 
     const handleToggleGuidance = useCallback(() => {
-        setIsGuidanceMuted(prev => {
-            const next = !prev;
-            speechController.setGuidanceMuted(next);
-            feedback('button');
-            if (next) {
-                speechController.speak('ปิดเสียงนำทางแล้ว', { channel: 'critical' });
-            } else {
-                speechController.speak('เปิดเสียงนำทางแล้ว', { channel: 'critical' });
-            }
-            return next;
-        });
+        // State is read from the controller (source of truth); the button's aria-pressed/label announces the change.
+        const next = !speechController.isGuidanceMuted;
+        speechController.setGuidanceMuted(next);
+        setIsGuidanceMuted(next);
+        feedback('button');
     }, [feedback]);
 
     // One-shot focus on new AI message without re-focusing on subsequent re-renders
@@ -328,6 +324,19 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         resetDocument
     } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog, cameraContainerRef);
 
+    // Move focus to the OCR result once per new document so assistive tech reads it from the DOM.
+    const lastFocusedDocRef = useRef('');
+    useEffect(() => {
+        if (!docText) {
+            lastFocusedDocRef.current = '';
+            return;
+        }
+        if (mode !== 'reader' || lastFocusedDocRef.current === docText) return;
+        lastFocusedDocRef.current = docText;
+        stopWaitingSound();
+        requestAnimationFrame(() => docResultRef.current?.focus());
+    }, [docText, mode, stopWaitingSound]);
+
     // 3. Mode Switcher
     const previousModeRef = useRef<AssistantMode>(mode);
     useEffect(() => {
@@ -357,6 +366,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         speechController.setGuidanceSuppressed(false);
         resetSuppression();
     }, [cancelListening, resetDocument, resetSuppression, stopCamera, stopReading, stopSpeaking, stopWaitingSound]);
+
+    const handleReplayCurrencyDetails = useCallback(() => {
+        replayCurrencyDetails();
+        requestAnimationFrame(() => currencyDetailsRef.current?.focus());
+    }, [replayCurrencyDetails]);
 
     const handleClearMessages = useCallback(() => {
         stopWaitingSound();
@@ -414,6 +428,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
                             showCapturedText={showCapturedText}
+                            currencyDetailsRef={currencyDetailsRef}
                         />
 
                         {mode === 'assistant' && showCapturedText && (
@@ -425,16 +440,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         )}
 
                         {mode === 'reader' && showCapturedText && (
-                            <section
+                            <div
                                 className="mx-4 mt-4 rounded-xl bg-[#1C1C1E] px-5 py-6"
-                                aria-label="เนื้อหาเอกสาร"
-                                role="region"
                                 tabIndex={-1}
                                 {...resultRegionProps}
                             >
                                 <h2 className="text-[17px] font-semibold text-white">เนื้อหาเอกสาร</h2>
-                                <p className="mt-3 whitespace-pre-wrap text-[17px] leading-relaxed text-[#EBEBF5]">{docText}</p>
-                            </section>
+                                <p
+                                    ref={docResultRef}
+                                    tabIndex={-1}
+                                    className="mt-3 whitespace-pre-wrap text-[17px] leading-relaxed text-[#EBEBF5] outline-none"
+                                >{docText}</p>
+                            </div>
                         )}
                     </div>
                 </section>
@@ -463,7 +480,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onStartListening={toggleListening}
                         onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}
-                        onReplayCurrencyDetails={replayCurrencyDetails}
+                        onReplayCurrencyDetails={handleReplayCurrencyDetails}
                         onClearTotal={clearTotal}
                         onClearMessages={handleClearMessages}
                         onReadAgain={handleReadAgain}

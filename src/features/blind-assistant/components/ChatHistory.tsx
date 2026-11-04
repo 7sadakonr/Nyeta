@@ -21,7 +21,7 @@ function MessageContent({
     contentRef?: React.Ref<HTMLParagraphElement>;
     blockId?: string;
 }) {
-    const isError = message.content.startsWith('Error') || message.content.startsWith('ขอโทษ') || message.content.startsWith('เกิดข้อผิดพลาด');
+    const isError = message.isError === true;
 
     if (message.role === 'user' && message.image) {
         return (

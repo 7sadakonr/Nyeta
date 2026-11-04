@@ -11,6 +11,7 @@ import { useObjectDetector } from '@/features/blind-assistant/hooks/useObjectDet
 import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
 import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
+import { formatOcrText } from '@/features/blind-assistant/client/ocrText';
 import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
 import { speechController } from '@/shared/accessibility/speechController';
 import { useResultRegionSuppression } from '@/shared/accessibility/useResultRegionSuppression';
@@ -313,6 +314,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     // E. Document Reader
     const {
         docText,
+        docIsError,
         isReading,
         isProcessing: isDocProcessing,
         readerGuidance,
@@ -448,11 +450,15 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                                 {...resultRegionProps}
                             >
                                 <h2 className="text-[17px] font-semibold text-white">เนื้อหาเอกสาร</h2>
-                                <p
-                                    ref={docResultRef}
-                                    tabIndex={-1}
-                                    className="mt-3 whitespace-pre-wrap text-[17px] leading-relaxed text-[#EBEBF5] outline-none"
-                                >{docText}</p>
+                                {/* One paragraph per element so a screen-reader user can swipe through a long document. */}
+                                {formatOcrText(docText).map((paragraph, index) => (
+                                    <p
+                                        key={index}
+                                        ref={index === 0 ? docResultRef : undefined}
+                                        tabIndex={index === 0 ? -1 : undefined}
+                                        className={`${index === 0 ? 'mt-3' : 'mt-4'} whitespace-pre-wrap text-[17px] leading-relaxed outline-none ${docIsError ? 'text-[#FF453A]' : 'text-[#EBEBF5]'}`}
+                                    >{paragraph}</p>
+                                ))}
                             </div>
                         )}
                     </div>
@@ -489,6 +495,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onReadDocument={readDocument}
                         onReplayDocument={replayDocument}
                         onStopReading={stopReading}
+                        onDisabledPress={() => feedback('error')}
                     />
                 </div>
             </div>

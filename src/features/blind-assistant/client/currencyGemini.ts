@@ -8,7 +8,7 @@ interface FrameCaptureResult { imageDataUrl: string; isBlocked: boolean; }
 
 function captureFrameWithOcclusionCheck(video: HTMLVideoElement | null, options: CaptureFrameOptions = {}): FrameCaptureResult | null {
     if (!video || video.readyState < 2) return null;
-    const { cropRegion, maxDimension = 768, quality = 0.72 } = options;
+    const { cropRegion, maxDimension = 640, quality = 0.7 } = options;
     const srcW = video.videoWidth || 1280;
     const srcH = video.videoHeight || 720;
     const sx = cropRegion ? Math.max(0, Math.round(cropRegion.x)) : 0;
@@ -43,7 +43,7 @@ export async function detectCurrencyWithGemini(video: HTMLVideoElement | null, o
     const text = await callGeminiVision({
         mode: 'currency', imageDataUrl: frame.imageDataUrl,
         userPrompt: 'ตรวจนับธนบัตรและเหรียญบาทไทยทุกชิ้นในภาพตามรูปแบบ JSON ที่กำหนด',
-        maxTokens: 512, temperature: 0, signal: options.signal,
+        maxTokens: 384, temperature: 0, signal: options.signal,
     });
     return { result: parseCurrencyResult(text), rawText: text.trim() };
 }

@@ -4,12 +4,16 @@ import { getSystemPromptForMode, VALID_MODES } from './visionPrompts';
 export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export const MAX_IMAGE_BASE64_LENGTH = 5.5 * 1024 * 1024; // ~4MB raw image size
 export const MAX_TEXT_LENGTH = 4000;
+export const MAX_DEFAULT_TOKENS = 1500;
+// A full page of Thai text needs far more than the default ceiling, otherwise OCR output is cut off.
+export const MAX_READER_TOKENS = 4096;
 
 /**
  * Clamp generation parameters to safe production boundaries.
  */
-export function clampGenerationConfig(maxTokens?: unknown, temperature?: unknown): { maxOutputTokens: number; temperature: number } {
-    const safeMaxTokens = Math.min(Math.max(16, Number(maxTokens) || 800), 1500);
+export function clampGenerationConfig(maxTokens?: unknown, temperature?: unknown, mode?: string): { maxOutputTokens: number; temperature: number } {
+    const tokenCeiling = mode === 'reader' ? MAX_READER_TOKENS : MAX_DEFAULT_TOKENS;
+    const safeMaxTokens = Math.min(Math.max(16, Number(maxTokens) || 800), tokenCeiling);
     const safeTemperature = Math.min(Math.max(0.0, Number(temperature) || 0.4), 1.0);
     return {
         maxOutputTokens: safeMaxTokens,
@@ -160,7 +164,7 @@ export function validateRequestBody(body: unknown): {
         }
     }
 
-    const { maxOutputTokens, temperature: safeTemperature } = clampGenerationConfig(maxTokens, temperature);
+    const { maxOutputTokens, temperature: safeTemperature } = clampGenerationConfig(maxTokens, temperature, safeMode);
 
     let payloadContents: ContentItem[];
     if (contents) {
@@ -209,6 +213,7 @@ export function validateRequestBody(body: unknown): {
             systemPrompt,
             maxOutputTokens,
             temperature: safeTemperature,
+            mode: safeMode,
         },
     };
 }

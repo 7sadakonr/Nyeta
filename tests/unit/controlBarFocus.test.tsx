@@ -381,4 +381,73 @@ describe('ControlBar', () => {
         fireEvent.click(capture);
         expect(onCurrencyCapture).toHaveBeenCalledOnce();
     });
+    it('never leaves a locked capture button silent and says why in its name', () => {
+        const onDisabledPress = vi.fn();
+        const onCapture = vi.fn();
+        const base = {
+            mode: 'assistant' as const,
+            aiStatus: 'idle' as const,
+            isSpeaking: false,
+            docText: null,
+            isReading: false,
+            isProcessingDoc: false,
+            currencyResult: null,
+            currencyScanning: false,
+            currencyMonitoring: false,
+            readerAligned: false,
+            onCapture,
+            onStopSpeaking: vi.fn(),
+            onStartListening: vi.fn(),
+            onStopListening: vi.fn(),
+            onCurrencyCapture: vi.fn(),
+            onReplayCurrencyDetails: vi.fn(),
+            onClearTotal: vi.fn(),
+            onReadDocument: vi.fn(),
+            onDisabledPress,
+        };
+
+        const camera = render(<ControlBar {...base} aiReady={false} isListening={false} />);
+        const waiting = camera.getByRole('button', { name: 'กล้องยังไม่พร้อม รอสักครู่' });
+        fireEvent.click(waiting);
+        expect(onDisabledPress).toHaveBeenCalledTimes(1);
+        expect(onCapture).not.toHaveBeenCalled();
+        camera.unmount();
+
+        const thinking = render(<ControlBar {...base} aiReady aiStatus="thinking" isListening={false} />);
+        fireEvent.click(thinking.getByRole('button', { name: 'AI กำลังคิด รอสักครู่' }));
+        expect(onDisabledPress).toHaveBeenCalledTimes(2);
+        thinking.unmount();
+
+        const listening = render(<ControlBar {...base} aiReady isListening />);
+        fireEvent.click(listening.getByRole('button', { name: 'กำลังฟังอยู่ กดหยุดและส่งก่อน' }));
+        expect(onDisabledPress).toHaveBeenCalledTimes(3);
+        expect(onCapture).not.toHaveBeenCalled();
+    });
+
+    it('offers to read a new page once a document has been read', () => {
+        const { getByRole } = render(
+            <ControlBar
+                mode="reader"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText="ข้อความที่อ่านแล้ว"
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                readerAligned={false}
+                onCapture={vi.fn()}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onReadDocument={vi.fn()}
+            />,
+        );
+        expect(getByRole('button', { name: 'อ่านหน้าใหม่' })).toBeTruthy();
+    });
 });

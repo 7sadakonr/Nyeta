@@ -22,6 +22,8 @@ export interface GeminiGenerateOptions {
     systemPrompt: string;
     maxOutputTokens: number;
     temperature: number;
+    /** Request mode; the currency scanner retries less so automatic scans stay fast. */
+    mode?: string;
 }
 
 export interface GeminiClientResult {

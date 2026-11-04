@@ -89,7 +89,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
             hapticRef.current?.trigger(2);
         }
         if (status === 'connected') {
-            speechController.stop();
+            // Do not stop speech here: the "connected" announcement above must be heard.
             playEarcon('connect');
             hapticRef.current?.trigger(3);
         }

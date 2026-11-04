@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
-import { captureFrameFromVideo, extractGeminiText } from '@/features/blind-assistant/client/geminiVision';
+import { callGeminiVision, captureFrameFromVideo, describeGeminiError, isAbortError } from '@/features/blind-assistant/client/geminiVision';
 import { AssistantMessage, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
 
@@ -56,7 +56,7 @@ export function useAiAssistant(
         const timeoutId = setTimeout(() => {
             timedOut = true;
             controller.abort();
-        }, 35000);
+        }, 55000);
 
         try {
             setStatus('capturing');
@@ -117,58 +117,33 @@ export function useAiAssistant(
                 },
             ];
 
-            const response = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const replyText = await callGeminiVision({
+                mode: 'assistant',
+                contents,
+                maxTokens: 800,
+                temperature: 0.4,
                 signal,
-                body: JSON.stringify({
-                    mode: 'assistant',
-                    contents,
-                    maxTokens: 800,
-                    temperature: 0.4,
-                }),
             });
 
-            if (!response.ok) {
-                if (response.status === 429) {
-                    const msg = 'ระบบยุ่งมาก กรุณารอ 30 วินาทีแล้วลองใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                    feedback?.('error');
-                    setStatus('idle');
-                    return true;
-                }
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.error) {
-                const msg = 'เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ';
-                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                feedback?.('error');
+            if (replyText) {
+                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: replyText }]);
+                feedback?.('success');
             } else {
-                const replyText = extractGeminiText(data);
-                if (replyText) {
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: replyText }]);
-                    feedback?.('success');
-                } else {
-                    const msg = 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                    feedback?.('error');
-                }
+                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ', isError: true }]);
+                feedback?.('error');
             }
             return true;
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
+        } catch (error: unknown) {
+            if (isAbortError(error)) {
                 if (timedOut) {
-                    const msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ', isError: true }]);
                     feedback?.('error');
                 }
                 return true;
             }
             console.error('Capture Error:', error);
-            const msg = 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่ครับ';
-            setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
+            addLog?.(`AI request failed: ${error instanceof Error ? error.message : String(error)}`);
+            setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: describeGeminiError(error), isError: true }]);
             feedback?.('error');
             return true;
         } finally {

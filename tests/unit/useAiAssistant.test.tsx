@@ -1,41 +1,40 @@
 // @vitest-environment jsdom
 
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { captureFrameFromVideo, extractGeminiText } = vi.hoisted(() => ({
+const { captureFrameFromVideo, callGeminiVision } = vi.hoisted(() => ({
   captureFrameFromVideo: vi.fn(() => 'data:image/jpeg;base64,camera-frame'),
-  extractGeminiText: vi.fn(() => 'คำตอบจาก AI'),
+  callGeminiVision: vi.fn(),
 }));
 
-const { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio } = vi.hoisted(() => ({
-    speak: vi.fn(), stop: vi.fn(), beginListening: vi.fn(), endListening: vi.fn(), notifyUserNavigation: vi.fn(), getSnapshot: vi.fn(), unlockAudio: vi.fn()
-}));
+const { speak, stop } = vi.hoisted(() => ({ speak: vi.fn(), stop: vi.fn() }));
 
 vi.mock('@/shared/accessibility/speechController', () => ({
-    speechController: { speak, stop, beginListening, endListening, notifyUserNavigation, getSnapshot, unlockAudio }
+    speechController: { speak, stop },
 }));
 
-vi.mock('@/features/blind-assistant/client/geminiVision', () => ({
+vi.mock('@/features/blind-assistant/client/geminiVision', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/blind-assistant/client/geminiVision')>()),
   captureFrameFromVideo,
-  extractGeminiText,
+  callGeminiVision,
 }));
 
+import { GeminiRequestError } from '@/features/blind-assistant/client/geminiVision';
 import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
 
 describe('useAiAssistant', () => {
-  const fetchMock = vi.fn();
+  const feedback = vi.fn();
 
   beforeEach(() => {
-    captureFrameFromVideo.mockClear();
-    extractGeminiText.mockClear();
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.clearAllMocks();
+    captureFrameFromVideo.mockReturnValue('data:image/jpeg;base64,camera-frame');
+    callGeminiVision.mockResolvedValue('คำตอบจาก AI');
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  const setup = () => renderHook(() => useAiAssistant({ current: document.createElement('video') }, true, feedback));
 
-  it('captures the current frame when submitting a voice question', async () => {
+  it('captures the current frame and sends it with the voice question', async () => {
     const video = document.createElement('video');
     const { result } = renderHook(() => useAiAssistant({ current: video }, true));
 
@@ -44,10 +43,45 @@ describe('useAiAssistant', () => {
     });
 
     expect(captureFrameFromVideo).toHaveBeenCalledWith(video, { maxDimension: 800, quality: 0.70 });
-    const request = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const request = callGeminiVision.mock.calls[0][0];
+    expect(request.mode).toBe('assistant');
     expect(request.contents[0].parts).toEqual([
       { text: '(พูด): "นี่คืออะไร"' },
       { inlineData: { mimeType: 'image/jpeg', data: 'camera-frame' } },
     ]);
+    expect(result.current.messages.at(-1)).toMatchObject({ role: 'ai', content: 'คำตอบจาก AI' });
+    expect(result.current.messages.at(-1)?.isError).toBeUndefined();
+  });
+
+  it('does not blame the internet when the model is busy (HTTP 503)', async () => {
+    callGeminiVision.mockRejectedValue(new GeminiRequestError('busy', 'high demand', 503));
+    const { result } = setup();
+
+    await act(async () => { await result.current.captureAndAsk(); });
+
+    const reply = result.current.messages.at(-1);
+    expect(reply?.isError).toBe(true);
+    expect(reply?.content).toContain('ยุ่ง');
+    expect(reply?.content).not.toContain('อินเทอร์เน็ต');
+    expect(feedback).toHaveBeenCalledWith('error');
+  });
+
+  it('reports a real connection failure as an internet problem', async () => {
+    callGeminiVision.mockRejectedValue(new GeminiRequestError('offline', 'Failed to fetch'));
+    const { result } = setup();
+
+    await act(async () => { await result.current.captureAndAsk(); });
+
+    expect(result.current.messages.at(-1)).toMatchObject({ isError: true });
+    expect(result.current.messages.at(-1)?.content).toContain('อินเทอร์เน็ต');
+  });
+
+  it('marks an empty answer as an error', async () => {
+    callGeminiVision.mockResolvedValue('');
+    const { result } = setup();
+
+    await act(async () => { await result.current.captureAndAsk(); });
+
+    expect(result.current.messages.at(-1)).toMatchObject({ isError: true });
   });
 });

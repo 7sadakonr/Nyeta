@@ -33,15 +33,18 @@ export interface ControlBarProps {
     onReadDocument: () => void;
     onReplayDocument?: () => void;
     onStopReading?: () => void;
+    /** Called when a locked (aria-disabled) button is pressed, so the press is never silent. */
+    onDisabledPress?: () => void;
 }
 
 interface ActionButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'> {
     tone?: 'primary' | 'secondary' | 'danger';
     wide?: boolean;
     disabled?: boolean;
+    onDisabledPress?: () => void;
 }
 
-const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, disabled = false, className = '', children, onClick, ...props }, ref) {
+const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton({ tone = 'secondary', wide = false, disabled = false, className = '', children, onClick, onDisabledPress, ...props }, ref) {
     const toneClass = tone === 'primary'
         ? 'bg-[#0A84FF] text-white active:bg-[#0070DF]'
         : tone === 'danger'
@@ -54,7 +57,7 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(func
             type="button"
             aria-disabled={disabled || undefined}
             className={`${wide ? 'w-full' : 'min-w-0'} flex min-h-[3.5rem] items-center justify-center rounded-xl px-4 text-[17px] font-semibold transition-colors cursor-pointer ${disabled ? 'cursor-not-allowed opacity-40' : ''} ${toneClass} ${className}`}
-            onClick={disabled ? undefined : onClick}
+            onClick={disabled ? () => onDisabledPress?.() : onClick}
             {...props}
         >
             {children}
@@ -90,6 +93,7 @@ export default function ControlBar({
     onReadDocument,
     onReplayDocument,
     onStopReading,
+    onDisabledPress,
 }: ControlBarProps) {
     const isBusy = aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
@@ -120,10 +124,17 @@ export default function ControlBar({
                         tone="primary"
                         disabled={!canCapture}
                         onClick={onCapture}
+                        onDisabledPress={onDisabledPress}
                         aria-busy={isBusy}
-                        aria-label={isBusy ? 'AI กำลังคิด รอสักครู่' : 'บรรยายสิ่งที่เห็น'}
+                        aria-label={isBusy
+                            ? 'AI กำลังคิด รอสักครู่'
+                            : !aiReady
+                                ? 'กล้องยังไม่พร้อม รอสักครู่'
+                                : isListening
+                                    ? 'กำลังฟังอยู่ กดหยุดและส่งก่อน'
+                                    : 'บรรยายสิ่งที่เห็น'}
                     >
-                        {isBusy ? 'กำลังประมวลผล...' : 'บรรยายสิ่งที่เห็น'}
+                        {isBusy ? 'กำลังประมวลผล...' : !aiReady ? 'กำลังเปิดกล้อง...' : 'บรรยายสิ่งที่เห็น'}
                     </ActionButton>
                     <div className="grid grid-cols-3 gap-3">
                         <ActionButton
@@ -167,7 +178,7 @@ export default function ControlBar({
 
             {mode === 'reader' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่าน'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : 'อ่านเอกสาร'}</ActionButton>
+                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} onDisabledPress={onDisabledPress} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : docText ? 'อ่านหน้าใหม่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่าน'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : docText ? 'อ่านหน้าใหม่' : 'อ่านเอกสาร'}</ActionButton>
                 </div>
             )}
         </div>

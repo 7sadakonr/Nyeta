@@ -8,9 +8,25 @@ describe('Rate Limiter Policies & Enforcement', () => {
 
     it('should include all required rate limiter types', () => {
         expect(VALID_LIMITER_TYPES).toContain('gemini');
+        expect(VALID_LIMITER_TYPES).toContain('gemini_currency');
         expect(VALID_LIMITER_TYPES).toContain('pusher_trigger');
         expect(VALID_LIMITER_TYPES).toContain('session');
         expect(VALID_LIMITER_TYPES).toContain('calls_accept');
+    });
+
+    it('should give the currency scanner its own, larger quota than the shared gemini limit', async () => {
+        const identifier = `test_ip_currency_${Date.now()}`;
+
+        // Exhaust the shared gemini quota; currency scanning must be unaffected.
+        for (let i = 0; i < 20; i++) {
+            expect((await checkRateLimit(identifier, 'gemini')).success).toBe(true);
+        }
+        expect((await checkRateLimit(identifier, 'gemini')).success).toBe(false);
+
+        for (let i = 0; i < 40; i++) {
+            expect((await checkRateLimit(identifier, 'gemini_currency')).success).toBe(true);
+        }
+        expect((await checkRateLimit(identifier, 'gemini_currency')).success).toBe(false);
     });
 
     it('should enforce calls_accept rate limit (10 requests per minute)', async () => {

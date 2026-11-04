@@ -92,4 +92,10 @@ describe('TTS and VoiceOver announcement ownership', () => {
             }
         }
     });
+    it('does not cut the "connected" announcement short on the call screen', () => {
+        const callScreen = readSource('src/features/calling/BlindCallScreen.tsx');
+        const connectedBlock = callScreen.slice(callScreen.indexOf("if (status === 'connected')"));
+        const blockEnd = connectedBlock.indexOf('}');
+        expect(connectedBlock.slice(0, blockEnd)).not.toContain('speechController.stop()');
+    });
 });

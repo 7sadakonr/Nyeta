@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect, RefObject } from 'react';
 import { analyzeCurrencyFrame, detectCurrencyWithGemini, hasCurrencySceneChanged } from '@/features/blind-assistant/client/currencyGemini';
-import { CurrencyBatch, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
+import { CurrencyBatch } from '@/features/blind-assistant/client/currencyUtils';
+import { describeGeminiError, GeminiRequestError } from '@/features/blind-assistant/client/geminiVision';
 import { speechController } from '@/shared/accessibility/speechController';
 import { BoundingBox } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
@@ -20,10 +21,20 @@ type CurrencyScanPhase = 'idle' | 'searching' | 'checking' | 'waiting-removal' |
 type RequestSource = 'auto' | 'manual';
 
 const ANALYSIS_INTERVAL_MS = 160;
-const FALLBACK_PROBE_MS = 5000;
-const AUTO_REQUEST_INTERVAL_MS = 3250;
+const FALLBACK_PROBE_MS = 8000;
+const AUTO_REQUEST_INTERVAL_MS = 1500;
+// The scene must hold still this many analysis frames (~160 ms each) before an automatic probe,
+// so a hand still moving the note into view does not waste a request on a blurry frame.
+const SETTLED_FRAMES_REQUIRED = 2;
+const STABLE_FRAME_THRESHOLD = 6;
 const BLOCKED_ANNOUNCEMENT_MS = 2000;
-const NETWORK_BACKOFF_MS = [2000, 4000, 8000, 16000, 30000];
+const NETWORK_BACKOFF_MS = [1500, 3000, 6000, 12000, 20000];
+
+function autoRetryMessage(error: unknown): string {
+    const offline = (error instanceof GeminiRequestError && error.kind === 'offline')
+        || (typeof navigator !== 'undefined' && navigator.onLine === false);
+    return offline ? 'ไม่มีอินเทอร์เน็ต ระบบจะลองใหม่อัตโนมัติ' : 'ระบบ AI ยุ่งอยู่ ระบบจะลองใหม่อัตโนมัติ';
+}
 
 export function useCurrencyScanner(
     videoRef: RefObject<HTMLVideoElement | null>,
@@ -61,6 +72,8 @@ export function useCurrencyScanner(
     const blockedAnnouncedRef = useRef(false);
     const readyAnnouncedRef = useRef(false);
     const lastProbeFingerprintRef = useRef<Uint8Array | null>(null);
+    const previousFrameFingerprintRef = useRef<Uint8Array | null>(null);
+    const stableFrameCountRef = useRef(0);
     const lastProbeAtRef = useRef(0);
     const removalBaselineRef = useRef<Uint8Array | null>(null);
     const removalNotFoundCountRef = useRef(0);
@@ -150,7 +163,8 @@ export function useCurrencyScanner(
             retryAtRef.current = 0;
 
             if (result.status === 'detected') {
-                if (token.returnPhase === 'waiting-removal') {
+                // The same note still in view keeps us waiting; a different one is a new result, so notes can be swapped back to back.
+                if (token.returnPhase === 'waiting-removal' && result.signature === resultRef.current?.signature) {
                     removalNotFoundCountRef.current = 0;
                     removalConfirmAtRef.current = 0;
                     removalBaselineRef.current = fingerprint;
@@ -189,13 +203,8 @@ export function useCurrencyScanner(
 
             if (result.status === 'not_found') {
                 if (token.returnPhase === 'waiting-removal') {
-                    removalNotFoundCountRef.current += 1;
-                    if (removalNotFoundCountRef.current >= 2) {
-                        finishRemoval();
-                    } else {
-                        removalConfirmAtRef.current = Date.now() + AUTO_REQUEST_INTERVAL_MS;
-                        setPhaseIfChanged('waiting-removal');
-                    }
+                    // The scene changed and no currency is left, so the note was removed.
+                    finishRemoval();
                 } else {
                     setPhaseIfChanged('searching');
                 }
@@ -218,15 +227,16 @@ export function useCurrencyScanner(
             if (source === 'manual') {
                 retryAtRef.current = 0;
                 networkFailureCountRef.current = 0;
-                setCaptureMessage('เครือข่ายมีปัญหา กรุณากดถ่ายเองอีกครั้ง');
+                setCaptureMessage(describeGeminiError(error));
                 feedback?.('error');
                 setPhaseIfChanged('searching');
                 return;
             }
-            setHintIfChanged('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ');
+            const retryMessage = autoRetryMessage(error);
+            setHintIfChanged(retryMessage);
             if (!networkAnnouncedRef.current) {
                 networkAnnouncedRef.current = true;
-                speechController.speak('เครือข่ายมีปัญหา ระบบจะลองใหม่อัตโนมัติ', { channel: 'critical', dedupeMs: delay });
+                speechController.speak(retryMessage, { channel: 'critical', dedupeMs: delay });
             }
             setPhaseIfChanged(token.returnPhase);
         } finally {
@@ -245,12 +255,19 @@ export function useCurrencyScanner(
         clearBlocked();
         if (analysis.quality !== 'usable' || !analysis.fingerprint) return;
 
+        // Track how long the scene has held still; automatic probes wait for it to settle.
+        stableFrameCountRef.current = hasCurrencySceneChanged(previousFrameFingerprintRef.current, analysis.fingerprint, STABLE_FRAME_THRESHOLD)
+            ? 0
+            : stableFrameCountRef.current + 1;
+        previousFrameFingerprintRef.current = analysis.fingerprint;
+        const settled = source === 'manual' || stableFrameCountRef.current >= SETTLED_FRAMES_REQUIRED;
+
         const now = Date.now();
         const currentPhase = phaseRef.current;
         if (currentPhase === 'waiting-removal') {
             const sceneChanged = hasCurrencySceneChanged(removalBaselineRef.current, analysis.fingerprint);
             const needsConfirmation = removalNotFoundCountRef.current === 1 && now >= removalConfirmAtRef.current;
-            if (!sceneChanged && !needsConfirmation) return;
+            if ((!sceneChanged && !needsConfirmation) || !settled) return;
             void requestProbe(source, analysis.fingerprint, 'waiting-removal');
             return;
         }
@@ -258,7 +275,7 @@ export function useCurrencyScanner(
 
         const sceneChanged = hasCurrencySceneChanged(lastProbeFingerprintRef.current, analysis.fingerprint);
         const fallbackDue = now - lastProbeAtRef.current >= FALLBACK_PROBE_MS;
-        if (source === 'manual' || !lastProbeFingerprintRef.current || sceneChanged || fallbackDue) {
+        if (source === 'manual' || (settled && (!lastProbeFingerprintRef.current || sceneChanged || fallbackDue))) {
             void requestProbe(source, analysis.fingerprint, 'searching');
         }
     }, [cameraContainerRef, clearBlocked, isActive, markBlocked, requestProbe, videoRef]);

@@ -29,6 +29,8 @@ export interface ControlBarProps {
     onClearMessages?: () => void;
     onReadAgain?: () => void;
     onReadDocument: () => void;
+    /** Clears the read document, or cancels the read while it is still in progress. */
+    onClearDocument?: () => void;
     onRetryCamera?: () => void;
     /** Called when a locked (aria-disabled) button is pressed, so the press is never silent. */
     onDisabledPress?: () => void;
@@ -90,6 +92,7 @@ export default function ControlBar({
     onClearMessages,
     onReadAgain,
     onReadDocument,
+    onClearDocument,
     onRetryCamera,
     onDisabledPress,
 }: ControlBarProps) {
@@ -180,7 +183,8 @@ export default function ControlBar({
                             disabled={!hasAssistantMessages}
                             onClick={onClearMessages}
                             onDisabledPress={onDisabledPress}
-                            aria-label="ล้างแชท"
+                            // Same button, same place: while a request is running, clearing also means cancelling it.
+                            aria-label={isBusy ? 'ยกเลิกคำขอ' : 'ล้างแชท'}
                         >
                             <TrashIcon className="size-7" aria-hidden="true" />
                         </ActionButton>
@@ -221,7 +225,15 @@ export default function ControlBar({
                     >
                         {readLabel}
                     </ActionButton>
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                        <ActionButton
+                            tone="danger"
+                            disabled={!docText && !isProcessingDoc}
+                            onClick={onClearDocument}
+                            onDisabledPress={onDisabledPress}
+                        >
+                            {isProcessingDoc ? 'ยกเลิกการอ่าน' : 'ล้างเอกสาร'}
+                        </ActionButton>
                         {guidanceSwitch}
                     </div>
                 </div>

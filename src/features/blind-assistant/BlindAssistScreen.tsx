@@ -29,6 +29,8 @@ import CameraView from '@/features/blind-assistant/components/CameraView';
 import ChatHistory from '@/features/blind-assistant/components/ChatHistory';
 import ControlBar from '@/features/blind-assistant/components/ControlBar';
 
+const CLEAR_DOCUMENT_HOLD_MS = 1500;
+
 export function getCameraHeightClass(showCapturedText: boolean, expandCameraPreview = false) {
     if (expandCameraPreview) return 'h-full min-h-0 flex-1';
 
@@ -419,7 +421,15 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         requestAnimationFrame(() => focusProgrammatically(currencyDetailsRef.current));
     }, [replayCurrencyDetails]);
 
+    // The result area disappears when cleared, so focus would be lost; put it on the main action instead.
+    const dockRef = useRef<HTMLDivElement | null>(null);
+    const focusMainAction = useCallback(() => {
+        requestAnimationFrame(() => focusProgrammatically(dockRef.current?.querySelector<HTMLElement>('button')));
+    }, []);
+
     const handleClearMessages = useCallback(() => {
+        // A request still in flight must not bring its answer back after the chat was cleared.
+        cancelAiRequest();
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
         pendingObjectAnnouncementRef.current = null;
@@ -427,7 +437,20 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         speechController.setGuidanceSuppressed(false);
         resetSuppression();
         clearMessages();
-    }, [clearMessages, resetSuppression, stopWaitingSound]);
+        announce('ล้างแชทแล้ว');
+        focusMainAction();
+    }, [cancelAiRequest, clearMessages, focusMainAction, resetSuppression, stopWaitingSound]);
+
+    const handleClearDocument = useCallback(() => {
+        const wasReading = isDocProcessing;
+        // Short hold so a page still in view is not captured again the instant it is cleared.
+        resetDocument(CLEAR_DOCUMENT_HOLD_MS);
+        stopWaitingSound();
+        resetSuppression();
+        feedback('button');
+        announce(wasReading ? 'ยกเลิกการอ่านแล้ว' : 'ล้างเอกสารแล้ว');
+        focusMainAction();
+    }, [feedback, focusMainAction, isDocProcessing, resetDocument, resetSuppression, stopWaitingSound]);
 
     useImperativeHandle(ref, () => ({ prepareForCall }), [prepareForCall]);
 
@@ -514,7 +537,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                     </div>
                 </section>
 
-                <div className="shrink-0 bg-[#090909] pt-2">
+                <div ref={dockRef} className="shrink-0 bg-[#090909] pt-2">
                     <ControlBar
                         mode={mode}
                         aiReady={aiReady}
@@ -540,6 +563,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onClearMessages={handleClearMessages}
                         onReadAgain={handleReadAgain}
                         onReadDocument={handleReadDocument}
+                        onClearDocument={handleClearDocument}
                         onDisabledPress={() => feedback('error')}
                     />
                 </div>

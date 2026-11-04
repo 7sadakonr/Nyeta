@@ -17,7 +17,8 @@ export interface UseDocumentReaderResult {
     readDocument: () => Promise<void>;
     /** Leave the current result and go back to finding the next page. */
     restartScan: () => void;
-    resetDocument: () => void;
+    /** Cancel any read in progress and clear the result. `holdMs` delays automatic capture (time to move the page away). */
+    resetDocument: (holdMs?: number) => void;
 }
 
 const DOCUMENT_IMAGE_MAX_DIMENSION = 2048;
@@ -339,12 +340,13 @@ export function useDocumentReader(
         };
     }, [enabled, isReady, videoRef, feedback, cameraContainerRef]);
 
-    const resetDocument = useCallback(() => {
+    const resetDocument = useCallback((holdMs = 0) => {
         abortControllerRef.current?.abort();
         abortControllerRef.current = null;
         setDocText('');
         setDocIsError(false);
         autoCaptureFiredRef.current = false;
+        autoCaptureHoldUntilRef.current = holdMs > 0 ? Date.now() + holdMs : 0;
         
         speechController.stop();
     }, []);

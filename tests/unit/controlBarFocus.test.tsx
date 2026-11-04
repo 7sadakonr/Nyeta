@@ -199,6 +199,43 @@ describe('ControlBar', () => {
         expect(getByRole('button', { name: 'อ่านหน้าใหม่' })).toBeTruthy();
     });
 
+    it('lets the user clear a read document, locked until there is something to clear', () => {
+        const onClearDocument = vi.fn();
+        const onDisabledPress = vi.fn();
+
+        const empty = renderBar({ mode: 'reader', onClearDocument, onDisabledPress });
+        const locked = empty.getByRole('button', { name: 'ล้างเอกสาร' });
+        expect(locked.getAttribute('aria-disabled')).toBe('true');
+        fireEvent.click(locked);
+        expect(onClearDocument).not.toHaveBeenCalled();
+        expect(onDisabledPress).toHaveBeenCalledOnce();
+        empty.unmount();
+
+        const read = renderBar({ mode: 'reader', docText: 'เนื้อหา', onClearDocument });
+        fireEvent.click(read.getByRole('button', { name: 'ล้างเอกสาร' }));
+        expect(onClearDocument).toHaveBeenCalledOnce();
+    });
+
+    it('turns the clear-document button into a cancel while a document is being read', () => {
+        const onClearDocument = vi.fn();
+        const { getByRole, queryByRole } = renderBar({ mode: 'reader', isProcessingDoc: true, onClearDocument });
+
+        const cancel = getByRole('button', { name: 'ยกเลิกการอ่าน' });
+        expect(cancel.getAttribute('aria-disabled')).toBeNull();
+        expect(queryByRole('button', { name: 'ล้างเอกสาร' })).toBeNull();
+        fireEvent.click(cancel);
+        expect(onClearDocument).toHaveBeenCalledOnce();
+    });
+
+    it('names the clear-chat button "cancel request" while the AI is thinking, in the same place', () => {
+        const onClearMessages = vi.fn();
+        const { getByRole, queryByRole } = renderBar({ aiStatus: 'thinking', hasAssistantMessages: true, onClearMessages });
+
+        expect(queryByRole('button', { name: 'ล้างแชท' })).toBeNull();
+        fireEvent.click(getByRole('button', { name: 'ยกเลิกคำขอ' }));
+        expect(onClearMessages).toHaveBeenCalledOnce();
+    });
+
     it('moves focus to the describe button once, and only when nothing else has focus', async () => {
         vi.useFakeTimers();
         try {

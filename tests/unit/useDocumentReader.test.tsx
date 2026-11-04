@@ -97,4 +97,38 @@ describe('useDocumentReader lifecycle', () => {
         expect(result.current.docText).toBe('');
         expect(result.current.docIsError).toBe(false);
     });
+    it('cancels a read in progress when the document is cleared, and no result appears later', async () => {
+        let finishRequest: ((text: string) => void) | undefined;
+        let requestSignal: AbortSignal | undefined;
+        callGeminiVision.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise<string>((resolve, reject) => {
+            requestSignal = signal;
+            finishRequest = resolve;
+            signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+        }));
+        const { result } = setup();
+
+        let reading: Promise<void> | undefined;
+        await act(async () => { reading = result.current.readDocument(); });
+        expect(result.current.isProcessing).toBe(true);
+
+        act(() => result.current.resetDocument(1500));
+        await act(async () => { finishRequest?.('ผลที่มาช้า'); await reading; });
+
+        expect(requestSignal?.aborted).toBe(true);
+        expect(result.current.docText).toBe('');
+        expect(result.current.isProcessing).toBe(false);
+    });
+
+    it('clears an error result as well so the next attempt starts clean', async () => {
+        callGeminiVision.mockRejectedValue(new Error('boom'));
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        const { result } = setup();
+        await act(async () => { await result.current.readDocument(); });
+        expect(result.current.docIsError).toBe(true);
+
+        act(() => result.current.resetDocument());
+
+        expect(result.current.docText).toBe('');
+        expect(result.current.docIsError).toBe(false);
+    });
 });

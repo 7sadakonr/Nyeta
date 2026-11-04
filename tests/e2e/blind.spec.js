@@ -5,9 +5,10 @@ test.describe('Blind Assistance shell', () => {
         await page.goto('/');
         const shell = page.getByTestId('blind-assistant-shell');
         await expect(shell).toBeVisible();
-        const assistantTab = page.getByRole('button', { name: 'AI' });
-        const currencyTab = page.getByRole('button', { name: /สแกนธนบัตร|เงิน/ });
-        const readerTab = page.getByRole('button', { name: 'อ่าน' });
+        const nav = page.getByRole('navigation', { name: 'เมนูหลัก' });
+        const assistantTab = nav.getByRole('button', { name: 'AI' });
+        const currencyTab = nav.getByRole('button', { name: /สแกนธนบัตร|เงิน/ });
+        const readerTab = nav.getByRole('button', { name: 'อ่าน' });
 
         await currencyTab.click();
         await expect(currencyTab).toHaveAttribute('aria-current', 'page');

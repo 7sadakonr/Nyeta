@@ -6,9 +6,9 @@ test.describe('Nyeta blind app', () => {
 
         const tabs = page.getByRole('navigation', { name: 'เมนูหลัก' });
         await expect(tabs).toBeVisible();
-        await expect(page.getByRole('button', { name: 'AI' })).toHaveAttribute('aria-current', 'page');
-        await expect(page.getByRole('button', { name: /สแกนธนบัตร|เงิน/ })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'อ่าน' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'อาสา' })).toBeVisible();
+        await expect(tabs.getByRole('button', { name: 'AI' })).toHaveAttribute('aria-current', 'page');
+        await expect(tabs.getByRole('button', { name: /สแกนธนบัตร|เงิน/ })).toBeVisible();
+        await expect(tabs.getByRole('button', { name: 'อ่าน' })).toBeVisible();
+        await expect(tabs.getByRole('button', { name: 'อาสา' })).toBeVisible();
     });
 });

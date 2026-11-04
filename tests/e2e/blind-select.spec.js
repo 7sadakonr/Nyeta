@@ -4,6 +4,6 @@ test.describe('Legacy blind selection route', () => {
     test('redirects to the blind app shell', async ({ page }) => {
         await page.goto('/blind/select');
         await expect(page).toHaveURL(/\/$/);
-        await expect(page.getByRole('button', { name: 'AI' })).toHaveAttribute('aria-current', 'page');
+        await expect(page.getByRole('navigation', { name: 'เมนูหลัก' }).getByRole('button', { name: 'AI' })).toHaveAttribute('aria-current', 'page');
     });
 });

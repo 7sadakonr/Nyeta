@@ -111,7 +111,7 @@ export function useCurrencyScanner(
         resultRef.current = result;
         setCurrencyResult(result);
     }, []);
-    const isActive = useCallback(() => enabledRef.current && readyRef.current && visibleRef.current, []);
+    const isActive = useCallback(() => enabledRef.current && readyRef.current && visibleRef.current && !speechController.isOrientationBlocked, []);
 
     const cancelPendingRequest = useCallback(() => {
         generationRef.current += 1;

@@ -1,16 +1,12 @@
 import ClientEntryPoint from '@/features/blind-app/ClientEntryPoint';
 import ErrorBoundary from '@/shared/ui/ErrorBoundary';
-import type { BlindAppTab } from '@/features/blind-app/types';
 
-const TABS: readonly BlindAppTab[] = ['assistant', 'currency', 'reader', 'volunteer'];
-
-export default async function Home({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const params = await searchParams;
-  const initialTab = TABS.includes(params.tab as BlindAppTab) ? params.tab as BlindAppTab : 'assistant';
-
+// Deliberately does not read searchParams: that made every open a server render. The initial tab is resolved on the
+// client (see ClientEntryPoint), so this page can be served statically and from the service worker cache.
+export default function Home() {
   return (
     <ErrorBoundary>
-      <ClientEntryPoint initialTab={initialTab} />
+      <ClientEntryPoint />
     </ErrorBoundary>
   );
 }

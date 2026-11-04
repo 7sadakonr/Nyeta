@@ -84,4 +84,46 @@ describe('useAiAssistant', () => {
 
     expect(result.current.messages.at(-1)).toMatchObject({ isError: true });
   });
+  const deferredRequests = () => {
+    const pending: Array<{ resolve: (text: string) => void; signal: AbortSignal }> = [];
+    callGeminiVision.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise<string>((resolve, reject) => {
+      pending.push({ resolve, signal });
+      signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    }));
+    return pending;
+  };
+
+  it('does not let an aborted older request mark a running newer request idle', async () => {
+    const pending = deferredRequests();
+    const { result } = setup();
+
+    let first: Promise<boolean> | undefined;
+    let second: Promise<boolean> | undefined;
+    await act(async () => { first = result.current.captureAndAsk('ถามแรก'); });
+    await act(async () => { second = result.current.captureAndAsk('ถามใหม่'); });
+    await act(async () => { await first; });
+
+    // The first request was aborted by the second; it must not reset the status while the second still runs.
+    expect(pending[0].signal.aborted).toBe(true);
+    expect(result.current.status).toBe('thinking');
+
+    await act(async () => { pending[1].resolve('คำตอบของคำถามใหม่'); await second; });
+    expect(result.current.status).toBe('idle');
+    expect(result.current.messages.at(-1)).toMatchObject({ content: 'คำตอบของคำถามใหม่' });
+  });
+
+  it('cancel() stops a request in flight without adding a message', async () => {
+    const pending = deferredRequests();
+    const { result } = setup();
+
+    let request: Promise<boolean> | undefined;
+    await act(async () => { request = result.current.captureAndAsk(); });
+    expect(result.current.status).toBe('thinking');
+
+    await act(async () => { result.current.cancel(); await request; });
+
+    expect(pending[0].signal.aborted).toBe(true);
+    expect(result.current.status).toBe('idle');
+    expect(result.current.messages.some((message) => message.role === 'ai')).toBe(false);
+  });
 });

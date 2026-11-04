@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
 let audioReady = false;
+const { announceMock, playEarcon } = vi.hoisted(() => ({ announceMock: vi.fn(), playEarcon: vi.fn() }));
 const { speak, stop, notifyUserNavigation, unlockAudio } = vi.hoisted(() => ({
     speak: vi.fn(),
     stop: vi.fn(),
@@ -53,6 +54,9 @@ vi.mock('@/shared/hooks/useSpeechStatus', () => ({
         isQuiet: false,
     }),
 }));
+
+vi.mock('@/shared/accessibility/audio', () => ({ playEarcon }));
+vi.mock('@/shared/accessibility/announcer', () => ({ announce: (...args: unknown[]) => announceMock(...args) }));
 
 import BlindAppShell from '@/features/blind-app/BlindAppShell';
 
@@ -119,5 +123,26 @@ describe('BlindAppShell', () => {
         expect(getByTestId('mock-call')).toBeTruthy();
         expect(callPrepareForExit).not.toHaveBeenCalled();
         expect(speak).not.toHaveBeenCalledWith('กรุณาวางสายก่อนเปลี่ยนเมนู', expect.anything());
+    });
+    it('has one main landmark whose heading names the current mode, and keeps the address in step with the tab', () => {
+        const { getByRole } = render(<BlindAppShell initialTab="assistant" />);
+
+        expect(getByRole('main').querySelectorAll('h1')).toHaveLength(1);
+        expect(getByRole('heading', { level: 1 }).textContent).toBe('AI ผู้ช่วย');
+
+        fireEvent.click(getByRole('button', { name: 'อ่านเอกสาร' }));
+        expect(getByRole('heading', { level: 1 }).textContent).toBe('อ่านเอกสาร');
+        expect(new URL(window.location.href).searchParams.get('tab')).toBe('reader');
+    });
+
+    it('says why a locked tab does not respond during a call, audibly', () => {
+        const { getByRole, getByTestId } = render(<BlindAppShell initialTab="assistant" />);
+        fireEvent.click(getByRole('button', { name: 'ขอความช่วยเหลือจากอาสา' }));
+        fireEvent.click(getByTestId('mock-call'));
+
+        fireEvent.click(getByRole('button', { name: 'สแกนธนบัตร' }));
+
+        expect(announceMock).toHaveBeenCalledWith('วางสายก่อนเปลี่ยนเมนู');
+        expect(playEarcon).toHaveBeenCalledWith('error');
     });
 });

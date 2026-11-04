@@ -66,6 +66,15 @@ export default function PortraitGuardian() {
         }
     }, [isLandscape]);
 
+    // While the overlay is up the app behind it must not be reachable by VoiceOver or touch.
+    useEffect(() => {
+        const app = document.getElementById('nyeta-app');
+        if (!app) return;
+        if (isLandscape) app.setAttribute('inert', '');
+        else app.removeAttribute('inert');
+        return () => app.removeAttribute('inert');
+    }, [isLandscape]);
+
     return (
         <div
             data-testid="portrait-guardian"
@@ -96,7 +105,7 @@ export default function PortraitGuardian() {
             <p className="text-base text-gray-300 max-w-sm leading-relaxed mb-2">
                 ระบบ Nyeta ใช้งานได้เฉพาะในแนวตั้งเท่านั้น
             </p>
-            <p className="text-xs text-gray-500 tracking-wide">
+            <p lang="en" className="text-xs text-gray-500 tracking-wide">
                 Please rotate your device back to portrait mode
             </p>
         </div>

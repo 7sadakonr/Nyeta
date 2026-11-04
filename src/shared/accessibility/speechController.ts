@@ -208,6 +208,24 @@ class SpeechController {
         } catch {}
     }
 
+    private _voices: SpeechSynthesisVoice[] = [];
+    private _voicesListening = false;
+
+    /** iOS often returns no voices on the first call and fills them in later (voiceschanged), so cache and refresh. */
+    private _getVoices(): SpeechSynthesisVoice[] {
+        try {
+            if (!this._voicesListening && typeof window.speechSynthesis.addEventListener === 'function') {
+                this._voicesListening = true;
+                window.speechSynthesis.addEventListener('voiceschanged', () => {
+                    this._voices = window.speechSynthesis.getVoices();
+                });
+            }
+            const current = window.speechSynthesis.getVoices();
+            if (current.length > 0) this._voices = current;
+        } catch {}
+        return this._voices;
+    }
+
     private _state: SpeechState = 'idle';
     private _activeRequest: number = 0;
     private _currentChannel: SpeechChannel | null = null;
@@ -544,7 +562,7 @@ class SpeechController {
         utterance.rate = options.rate;
         
         // Setup voice
-        const voices = window.speechSynthesis.getVoices();
+        const voices = this._getVoices();
         const thVoice = voices.find(v => 
             (v.lang && v.lang.replace('_', '-').toLowerCase().startsWith('th')) ||
             (v.name && /thai|kanya|narisa|ภาษาไทย/i.test(v.name))

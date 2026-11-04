@@ -23,6 +23,9 @@ function MessageContent({
 }) {
     const isError = message.isError === true;
 
+    // Voice questions are stored as `(พูด): "<question>"`; show what the user actually asked.
+    const spokenQuestion = message.content.match(/^\(พูด\): "([\s\S]*)"$/)?.[1]?.trim();
+
     if (message.role === 'user' && message.image) {
         return (
             <p
@@ -30,7 +33,7 @@ function MessageContent({
                 tabIndex={-1}
                 className="text-[15px] font-medium text-[#8E8E93] outline-none"
             >
-                คุณส่งภาพเพื่อให้บรรยาย
+                {spokenQuestion ? `คุณถามว่า ${spokenQuestion}` : 'คุณส่งภาพเพื่อให้บรรยาย'}
             </p>
         );
     }

@@ -8,6 +8,7 @@ import { useDataChannel } from '@/features/calling/hooks/useDataChannel';
 import { useCaptureHandler } from '@/features/calling/hooks/useCaptureHandler';
 import BlindChatOverlay from '@/features/calling/components/BlindChatOverlay';
 import { speechController } from '@/shared/accessibility/speechController';
+import { announce } from '@/shared/accessibility/announcer';
 import { playEarcon, startRingEarcon, stopRingEarcon } from '@/shared/accessibility/audio';
 
 const STATUS_SPEECH: Record<string, string> = {
@@ -34,6 +35,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
     const { request: requestWakeLock, release: releaseWakeLock } = useWakeLock();
     const hapticRef = useRef<HapticFeedbackHandle | null>(null);
     const lastSpokenRef = useRef<string>('');
+    const callStartedAtRef = useRef(0);
     const previousStatusRef = useRef(status);
 
     const dataChannel = useDataChannel(rawDataChannel, 'blind');
@@ -61,10 +63,12 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         }
     }, [dataChannel]);
 
+    // Call status goes through the live region: speech synthesis was being dropped right after the tap that
+    // started the call (the quiet window), so the user heard nothing but a ring tone.
     const speak = useCallback((text: string) => {
         if (!text || text === lastSpokenRef.current) return;
         lastSpokenRef.current = text;
-        speechController.speak(text, { channel: 'status' });
+        announce(text);
     }, []);
 
     // React to status changes: announce, earcon, haptic.
@@ -159,7 +163,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
                 />
             )}
 
-            <main className="flex-1 flex flex-col items-center justify-center px-8 text-center">
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
                 {/* Visual status indicator */}
                 <div
                     className={`size-32 rounded-full flex items-center justify-center mb-8 transition-colors duration-500 ${
@@ -175,20 +179,20 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
                     </svg>
                 </div>
 
-                <h1 className="text-[28px] font-bold tracking-tight mb-2 text-white">{statusLabel}</h1>
+                <h2 className="text-[28px] font-bold tracking-tight mb-2 text-white">{statusLabel}</h2>
                 {!isActive && !isFinished && (
                     <p className="text-[17px] text-[#8E8E93] leading-relaxed">
                         กดปุ่มด้านล่างเพื่อโทรขอความช่วยเหลือจากอาสาสมัคร
                     </p>
                 )}
-            </main>
+            </div>
 
             {/* Bottom control */}
             <div className="px-4 pb-4 pt-2" role="group" aria-label="การควบคุมการโทร">
                 {!isActive ? (
                     <button
                         type="button"
-                        onClick={() => { playEarcon('ding'); onStatusChange?.('calling'); reset(); startCall(); }}
+                        onClick={() => { playEarcon('ding'); callStartedAtRef.current = Date.now(); lastSpokenRef.current = ''; onStatusChange?.('calling'); reset(); startCall(); }}
                         className="w-full py-4 rounded-xl text-[17px] font-semibold bg-[#0A84FF] text-white active:bg-[#007AFF] transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#0A84FF]/40"
                         aria-label={isFinished ? 'เรียกอาสาสมัครอีกครั้ง' : 'เรียกอาสาสมัคร'}
                     >
@@ -197,7 +201,9 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
                 ) : (
                     <button
                         type="button"
-                        onClick={() => endCall(true)}
+                        // The same button changes from "call" to "hang up" under the finger: ignore an immediate second
+                        // activation (a VoiceOver double-tap repeated) so it cannot cancel the call that was just placed.
+                        onClick={() => { if (Date.now() - callStartedAtRef.current < 1200) return; endCall(true); }}
                         className="w-full py-4 rounded-xl text-[17px] font-semibold bg-[#FF453A] text-white active:bg-[#D70015] transition-colors focus:outline-none focus-visible:ring-4 focus-visible:ring-[#FF453A]/40"
                         aria-label="วางสาย"
                     >

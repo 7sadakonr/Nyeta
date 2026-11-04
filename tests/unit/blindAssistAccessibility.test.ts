@@ -45,17 +45,19 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(screen).not.toContain('โหมดสแกนธนบัตร พร้อม');
         expect(blindShell).toContain("localStorage.setItem('nyeta_blind_mode', nextTab)");
         expect(blindShell).toContain('void hapticRef.current?.trigger(1);');
-        expect(blindShell).not.toContain('กรุณาวางสายก่อนเปลี่ยนเมนู');
+        expect(blindShell).toContain('announce(');
         expect(screen).not.toMatch(/VoiceOver|voiceover|accessibilitySupport|screenReader/i);
         expect(currencyScanner).not.toContain('โหมดดูสกุลเงินพร้อมแล้ว');
         expect(currencyScanner).toContain("speechController.speak('พร้อมสแกนใบถัดไป'");
-        expect(callScreen).toContain("'status'");
-        expect(chatOverlay).toContain("'result'");
+        // Call status and volunteer messages go through the live region, not speech synthesis.
+        expect(callScreen).toContain('announce(text)');
+        expect(callScreen).not.toContain('speechController.speak');
+        expect(chatOverlay).toContain('announce(');
+        expect(chatOverlay).not.toContain('speechController.speak');
     });
 
     it('preserves focus and navigation accessibility', () => {
         const cameraView = readSource('src/features/blind-assistant/components/CameraView.tsx');
-        const modeSwitcher = readSource('src/features/blind-assistant/components/ModeSwitcher.tsx');
         const controlBar = readSource('src/features/blind-assistant/components/ControlBar.tsx');
         const chatHistory = readSource('src/features/blind-assistant/components/ChatHistory.tsx');
         const screen = readSource('src/features/blind-assistant/BlindAssistScreen.tsx');
@@ -63,9 +65,6 @@ describe('TTS and VoiceOver announcement ownership', () => {
 
         expect(cameraView).toContain('aria-hidden="true"');
         expect(cameraView).not.toMatch(/<(?:button|a|input|select|textarea)\b/i);
-        expect(modeSwitcher).toContain('role="tablist"');
-        expect(modeSwitcher).toContain('role="tab"');
-        expect(modeSwitcher).toContain('aria-selected={mode === item.id}');
         expect(controlBar).toContain('role="switch"');
         expect(controlBar).not.toContain('aria-pressed');
         expect(controlBar).not.toMatch(/on(?:Mouse|Touch)(?:Down|Up|Start|End|Leave)=/);

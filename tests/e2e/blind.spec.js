@@ -5,17 +5,17 @@ test.describe('Blind Assistance shell', () => {
         await page.goto('/');
         const shell = page.getByTestId('blind-assistant-shell');
         await expect(shell).toBeVisible();
-        const assistantTab = page.getByRole('tab', { name: 'AI' });
-        const currencyTab = page.getByRole('tab', { name: /สแกนธนบัตร|เงิน/ });
-        const readerTab = page.getByRole('tab', { name: 'อ่าน' });
+        const assistantTab = page.getByRole('button', { name: 'AI' });
+        const currencyTab = page.getByRole('button', { name: /สแกนธนบัตร|เงิน/ });
+        const readerTab = page.getByRole('button', { name: 'อ่าน' });
 
         await currencyTab.click();
-        await expect(currencyTab).toHaveAttribute('aria-selected', 'true');
-        await expect(assistantTab).toHaveAttribute('aria-selected', 'false');
+        await expect(currencyTab).toHaveAttribute('aria-current', 'page');
+        await expect(assistantTab).not.toHaveAttribute('aria-current', 'page');
         await readerTab.click();
-        await expect(readerTab).toHaveAttribute('aria-selected', 'true');
+        await expect(readerTab).toHaveAttribute('aria-current', 'page');
         await assistantTab.click();
-        await expect(assistantTab).toHaveAttribute('aria-selected', 'true');
+        await expect(assistantTab).toHaveAttribute('aria-current', 'page');
     });
 
     test('keeps TTS-owned screens free of duplicate live regions', async ({ page }) => {

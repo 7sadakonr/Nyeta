@@ -11,6 +11,8 @@ export interface UseAiAssistantResult {
     askTextOnly: (userText: string) => Promise<void>;
     clearMessages: () => void;
     stopSpeaking: () => void;
+    /** Abort any request in flight (used when leaving the tab) without touching the visible messages. */
+    cancel: () => void;
 }
 
 export function useAiAssistant(
@@ -26,6 +28,8 @@ export function useAiAssistant(
 
     const statusRef = useRef<AssistantStatus>(status);
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Only the newest request may reset the status; an aborted older one must not mark a running request idle.
+    const requestIdRef = useRef(0);
 
     useEffect(() => { statusRef.current = status; }, [status]);
 
@@ -48,6 +52,7 @@ export function useAiAssistant(
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
+        const requestId = ++requestIdRef.current;
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const signal = controller.signal;
@@ -148,9 +153,16 @@ export function useAiAssistant(
             return true;
         } finally {
             clearTimeout(timeoutId);
-            setStatus('idle');
+            if (requestIdRef.current === requestId) setStatus('idle');
         }
     }, [videoRef, isReady, feedback, addLog, cameraContainerRef]);
+
+    const cancel = useCallback(() => {
+        requestIdRef.current += 1;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setStatus('idle');
+    }, []);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();
@@ -169,5 +181,5 @@ export function useAiAssistant(
         feedback?.('button');
     }, [feedback]);
 
-    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking };
+    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking, cancel };
 }

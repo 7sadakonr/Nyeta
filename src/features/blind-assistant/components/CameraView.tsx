@@ -1,6 +1,6 @@
 import React, { RefObject } from 'react';
 import DetectionOverlay from './DetectionOverlay';
-import { formatCurrencyDisplay } from '@/features/blind-assistant/client/currencyUtils';
+import { formatCurrencyDisplay, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { BlindMode, BoundingBox, QuadCorners, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 
@@ -16,12 +16,11 @@ export interface CameraViewProps {
     currencyResult: CapturedCurrency | null;
     currencyScanning?: boolean;
     currencyHint?: string;
-    captureMessage?: string;
     isBlocked?: boolean;
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
     showCapturedText?: boolean;
-    currencyDetailsRef?: RefObject<HTMLDivElement | null>;
+    currencyDetailsRef?: RefObject<HTMLParagraphElement | null>;
 }
 
 export default function CameraView({
@@ -36,7 +35,6 @@ export default function CameraView({
     currencyResult,
     currencyScanning = false,
     currencyHint = '',
-    captureMessage = '',
     isBlocked = false,
     aiStatus = 'idle',
     readerGuidance = '',
@@ -107,13 +105,13 @@ export default function CameraView({
                         </div>
                     )}
 
-                    <p role="status" className="sr-only">
-                        {currencyResult ? `ครั้งนี้ ${currencyResult.total.toLocaleString()} บาท` : captureMessage}
+                    {/* The one readable form of the result (the visible tiles below are decorative duplicates). */}
+                    <p ref={currencyDetailsRef} tabIndex={-1} className="sr-only">
+                        {currencyResult ? `ตรวจพบล่าสุด ${formatCurrencySpeech(currencyResult, null, true)}` : ''}
                     </p>
                     <div
-                        ref={currencyDetailsRef}
-                        tabIndex={-1}
-                        className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 grid grid-cols-2 gap-3 outline-none"
+                        aria-hidden="true"
+                        className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 grid grid-cols-2 gap-3"
                     >
                         <div className="rounded-xl bg-[#090909]/60 px-3 py-3 text-center backdrop-blur-2xl">
                             <p className="text-[13px] font-semibold text-[#EBEBF5]/60">ตรวจพบล่าสุด</p>

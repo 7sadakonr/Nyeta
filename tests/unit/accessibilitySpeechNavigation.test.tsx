@@ -43,3 +43,20 @@ describe('accessibility speech navigation delegation', () => {
 
 });
 
+
+describe('programmatic focus', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('does not treat focus the app moves itself as the user navigating', async () => {
+    const { focusProgrammatically } = await import('@/shared/accessibility/programmaticFocus');
+    const { getByRole } = render(<NavigationHarness />);
+    // Consume the "first focus is ignored" allowance so only the programmatic rule is under test.
+    fireEvent.focusIn(getByRole('button'));
+    notifyUserNavigation.mockClear();
+
+    const tab = getByRole('tab');
+    focusProgrammatically(tab);
+    fireEvent.focusIn(tab);
+    expect(notifyUserNavigation).not.toHaveBeenCalled();
+  });
+});

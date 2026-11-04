@@ -66,7 +66,8 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(modeSwitcher).toContain('role="tablist"');
         expect(modeSwitcher).toContain('role="tab"');
         expect(modeSwitcher).toContain('aria-selected={mode === item.id}');
-        expect(controlBar).toContain('aria-pressed={isListening}');
+        expect(controlBar).toContain('role="switch"');
+        expect(controlBar).not.toContain('aria-pressed');
         expect(controlBar).not.toMatch(/on(?:Mouse|Touch)(?:Down|Up|Start|End|Leave)=/);
         expect(chatHistory).not.toMatch(/role\s*=\s*["']region["']/);
         expect(chatHistory).not.toContain('<details');

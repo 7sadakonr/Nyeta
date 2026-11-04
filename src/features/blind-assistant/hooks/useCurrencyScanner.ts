@@ -10,7 +10,7 @@ export interface CapturedCurrency extends CurrencyBatch { captureId: number; sou
 export interface CurrencyHistoryItem extends CurrencyBatch { id: number; timestamp: number; }
 export interface UseCurrencyScannerResult {
     currencyResult: CapturedCurrency | null; currencyScanning: boolean; currencyMonitoring: boolean;
-    currencyHint: string; captureMessage: string; currencyBounds: BoundingBox | null; totalAmount: number; scannedHistory: CurrencyHistoryItem[];
+    currencyHint: string; captureMessage: string; captureNoticeId: number; currencyBounds: BoundingBox | null; totalAmount: number; scannedHistory: CurrencyHistoryItem[];
     scannedCount: number; isBlocked: boolean;
     captureCurrency: () => Promise<void>;
     replayCurrencyDetails: () => void;
@@ -48,7 +48,13 @@ export function useCurrencyScanner(
     const [currencyResult, setCurrencyResult] = useState<CapturedCurrency | null>(null);
     const [phase, setPhase] = useState<CurrencyScanPhase>('idle');
     const [currencyHint, setCurrencyHint] = useState('');
-    const [captureMessage, setCaptureMessage] = useState('');
+    const [captureMessage, setCaptureMessageText] = useState('');
+    // Bumped on every notice so an identical message (the same failure twice) is announced again.
+    const [captureNoticeId, setCaptureNoticeId] = useState(0);
+    const setCaptureMessage = useCallback((text: string) => {
+        setCaptureMessageText(text);
+        if (text) setCaptureNoticeId((id) => id + 1);
+    }, []);
     const [totalAmount, setTotalAmount] = useState(0);
     const [scannedHistory, setScannedHistory] = useState<CurrencyHistoryItem[]>([]);
     const [isBlocked, setIsBlocked] = useState(false);
@@ -242,7 +248,7 @@ export function useCurrencyScanner(
         } finally {
             if (requestRef.current === token) requestRef.current = null;
         }
-    }, [addLog, cameraContainerRef, feedback, finishRemoval, isActive, markBlocked, setHintIfChanged, setPhaseIfChanged, setResult, videoRef]);
+    }, [addLog, cameraContainerRef, feedback, finishRemoval, isActive, markBlocked, setCaptureMessage, setHintIfChanged, setPhaseIfChanged, setResult, videoRef]);
 
     const monitorFrame = useCallback((source: RequestSource = 'auto') => {
         if (!isActive() || requestRef.current) return;
@@ -357,7 +363,7 @@ export function useCurrencyScanner(
         }
         clearBlocked();
         await requestProbe('manual', analysis.fingerprint, 'searching');
-    }, [cameraContainerRef, cancelPendingRequest, clearBlocked, feedback, requestProbe, setBlockedIfChanged, setPhaseIfChanged, setResult, videoRef]);
+    }, [cameraContainerRef, cancelPendingRequest, clearBlocked, feedback, requestProbe, setBlockedIfChanged, setCaptureMessage, setPhaseIfChanged, setResult, videoRef]);
 
     const replayCurrencyDetails = useCallback(() => {
         if (!resultRef.current) return;
@@ -369,10 +375,19 @@ export function useCurrencyScanner(
         setTotalAmount(0);
         setScannedHistory([]);
         setResult(null);
-    }, [setResult]);
+        setCaptureMessage('');
+        // Back to searching with a clean slate: otherwise the stale "detected X baht" hint stays and the same note
+        // is ignored until it moves.
+        removalBaselineRef.current = null;
+        removalNotFoundCountRef.current = 0;
+        removalConfirmAtRef.current = 0;
+        lastProbeFingerprintRef.current = null;
+        if (phaseRef.current === 'waiting-removal') setPhaseIfChanged('searching');
+        setHintIfChanged('กำลังค้นหาเงินอัตโนมัติ');
+    }, [setCaptureMessage, setHintIfChanged, setPhaseIfChanged, setResult]);
 
     const scannedCount = scannedHistory.reduce((count, batch) => count + batch.items.reduce((sum, item) => sum + item.quantity, 0), 0);
     const currencyScanning = phase === 'checking';
     const currencyMonitoring = enabled && isReady && phase !== 'idle' && phase !== 'paused';
-    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, captureMessage, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, captureCurrency, replayCurrencyDetails, clearTotal };
+    return { currencyResult, currencyScanning, currencyMonitoring, currencyHint, captureMessage, captureNoticeId, currencyBounds: null, totalAmount, scannedHistory, scannedCount, isBlocked, captureCurrency, replayCurrencyDetails, clearTotal };
 }

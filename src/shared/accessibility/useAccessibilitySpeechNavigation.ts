@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
+import { isProgrammaticFocusActive } from '@/shared/accessibility/programmaticFocus';
 
 export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
   'a[href]',
@@ -31,7 +32,6 @@ export const INTERACTIVE_ACCESSIBILITY_SELECTOR = [
 ].join(',');
 
 const SAME_CONTROL_DEDUP_MS = 250;
-
 type NavigationCallback = () => void;
 
 /**
@@ -52,6 +52,8 @@ export function useAccessibilitySpeechNavigation(
 
     const now = Date.now();
     const previous = lastInteractionRef.current;
+
+    if (type === 'focus' && isProgrammaticFocusActive()) return;
 
     // Shell mount can transfer focus to its first control. That is not VoiceOver
     // navigation and must not cancel the activation speech that just unlocked TTS.

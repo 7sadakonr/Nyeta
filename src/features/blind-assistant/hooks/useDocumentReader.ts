@@ -9,15 +9,14 @@ import { EarconType, startProcessingEarcon } from '@/shared/accessibility/audio'
 export interface UseDocumentReaderResult {
     docText: string;
     docIsError: boolean;
-    isReading: boolean;
     isProcessing: boolean;
     readerGuidance: string;
     readerAligned: boolean;
     pageBounds: BoundingBox | null;
     pageCorners: QuadCorners | null;
     readDocument: () => Promise<void>;
-    replayDocument: () => void;
-    stopReading: () => void;
+    /** Leave the current result and go back to finding the next page. */
+    restartScan: () => void;
     resetDocument: () => void;
 }
 
@@ -30,9 +29,11 @@ const PAGE_CROP_PADDING = 0.04;
 const CAPTURABLE_FRAMES_REQUIRED = 2;
 // Guidance is spoken once it is stable for this many frames, and may repeat after this interval.
 const GUIDANCE_STABLE_FRAMES = 2;
-const GUIDANCE_REPEAT_MS = 4000;
+const GUIDANCE_REPEAT_MS = 6000;
 const NO_PAGE_HINT_AFTER_MS = 3000;
-const NO_PAGE_HINT_REPEAT_MS = 6000;
+const NEXT_PAGE_HOLD_MS = 3000;
+const NO_PAGE_HINT_REPEAT_MS = 10000;
+const NO_PAGE_HINT_MAX_PER_ABSENCE = 2;
 const NO_PAGE_HINT = 'ยังไม่เจอเอกสาร วางเอกสารบนพื้นเรียบให้เห็นทั้งแผ่น แล้วยกโทรศัพท์ขึ้นตรงๆ';
 
 /** Expand a box by a fraction of its size on every side, clamped to the video frame. */
@@ -57,11 +58,12 @@ export function useDocumentReader(
     aiStatus: AssistantStatus,
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void,
-    cameraContainerRef?: RefObject<HTMLElement | null>
+    cameraContainerRef?: RefObject<HTMLElement | null>,
+    /** Container to crop the captured photo to. Defaults to the camera container; null means the whole frame. */
+    captureContainerRef?: RefObject<HTMLElement | null>,
 ): UseDocumentReaderResult {
     const [docText, setDocText] = useState<string>('');
     const [docIsError, setDocIsError] = useState<boolean>(false);
-    const [isReading, setIsReading] = useState<boolean>(false);
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [readerGuidance, setReaderGuidance] = useState<string>('');
     const [readerAligned, setReaderAligned] = useState<boolean>(false);
@@ -76,7 +78,10 @@ export function useDocumentReader(
     const lastSpokenPageRef = useRef<string>('');
     const lastSpokenPageAtRef = useRef<number>(0);
     const noPageSinceRef = useRef<number>(0);
+    // After "read a new page" give the user time to turn the page before automatic capture may fire again.
+    const autoCaptureHoldUntilRef = useRef<number>(0);
     const lastNoPageHintAtRef = useRef<number>(0);
+    const noPageHintCountRef = useRef<number>(0);
     const alignedCountRef = useRef<number>(0);
     const pageSeenCountRef = useRef<number>(0);
     const pageOverlayActiveRef = useRef<boolean>(false);
@@ -89,22 +94,23 @@ export function useDocumentReader(
 
     // Status refs for effect closures
     const aiStatusRef = useRef<AssistantStatus>(aiStatus);
-    const isReadingRef = useRef<boolean>(isReading);
     useEffect(() => { aiStatusRef.current = aiStatus; }, [aiStatus]);
-    useEffect(() => { isReadingRef.current = isReading; }, [isReading]);
 
     const pageBoundsRef = useRef<BoundingBox | null>(null);
     useEffect(() => { pageBoundsRef.current = pageBounds; }, [pageBounds]);
 
     const readDocument = useCallback(async () => {
-        if (isProcessing || !enabled) return;
+        if (isProcessing || !enabled || speechController.isOrientationBlocked) return;
         if (!isReady || !videoRef.current) {
             feedback?.('error');
             if (audioReadyRef.current) speechController.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', { channel: 'critical' });
             return;
         }
 
+        // Registered before any await so leaving the tab (resetDocument) can cancel even the frame capture.
+        abortControllerRef.current?.abort();
         const controller = new AbortController();
+        abortControllerRef.current = controller;
         let timedOut = false;
         const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, DOCUMENT_REQUEST_TIMEOUT_MS);
         let stopProcessingSound: (() => void) | null = null;
@@ -118,8 +124,9 @@ export function useDocumentReader(
                 maxDimension: DOCUMENT_IMAGE_MAX_DIMENSION,
                 quality: DOCUMENT_IMAGE_QUALITY,
             };
-            if (cameraContainerRef?.current) {
-                captureOptions.container = cameraContainerRef.current;
+            const captureContainer = captureContainerRef ? captureContainerRef.current : cameraContainerRef?.current;
+            if (captureContainer) {
+                captureOptions.container = captureContainer;
             }
             // Crop to the detected page so the OCR model sees the text at the highest possible resolution.
             const video = videoRef.current;
@@ -127,7 +134,10 @@ export function useDocumentReader(
                 captureOptions.cropRegion = padBounds(pageBoundsRef.current, PAGE_CROP_PADDING, video.videoWidth, video.videoHeight);
             }
             const imageDataUrl = await captureSharpestFrame(video, captureOptions);
+            if (controller.signal.aborted) return;
             if (!imageDataUrl) {
+                // Capture failed before anything was sent: automatic capture must be able to try again.
+                autoCaptureFiredRef.current = false;
                 feedback?.('error');
                 if (audioReadyRef.current) speechController.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
                 return;
@@ -135,12 +145,9 @@ export function useDocumentReader(
 
             autoCaptureFiredRef.current = true;
             speechController.stop();
-            setIsReading(false);
             setDocIsError(false);
             setDocText('');
 
-            abortControllerRef.current?.abort();
-            abortControllerRef.current = controller;
             stopProcessingSound = startProcessingEarcon();
 
             const text = await callGeminiVision({
@@ -184,7 +191,7 @@ export function useDocumentReader(
             if (abortControllerRef.current === controller) abortControllerRef.current = null;
             setIsProcessing(false);
         }
-    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog, cameraContainerRef]);
+    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog, cameraContainerRef, captureContainerRef]);
 
     // Use a stable ref for readDocument to use inside the interval
     const readDocumentRef = useRef<() => Promise<void>>(readDocument);
@@ -207,7 +214,7 @@ export function useDocumentReader(
 
         const speakPageGuidance = (text: string) => {
             if (!text) return;
-            if (aiStatusRef.current !== 'idle' || isReadingRef.current) return;
+            if (aiStatusRef.current !== 'idle') return;
 
             if (text !== guidanceCandidateRef.current) {
                 guidanceCandidateRef.current = text;
@@ -234,12 +241,14 @@ export function useDocumentReader(
         // With no page in view the guidance is empty, which used to leave the user in silence.
         const hintNoPage = () => {
             const now = Date.now();
-            if (!noPageSinceRef.current) noPageSinceRef.current = now;
-            if (docTextRef.current || aiStatusRef.current !== 'idle' || isReadingRef.current || !audioReadyRef.current) return;
+            if (!noPageSinceRef.current) { noPageSinceRef.current = now; noPageHintCountRef.current = 0; }
+            if (noPageHintCountRef.current >= NO_PAGE_HINT_MAX_PER_ABSENCE) return;
+            if (docTextRef.current || aiStatusRef.current !== 'idle' || !audioReadyRef.current) return;
             if (now - noPageSinceRef.current < NO_PAGE_HINT_AFTER_MS) return;
             if (now - lastNoPageHintAtRef.current < NO_PAGE_HINT_REPEAT_MS) return;
             if (speechController.speak(NO_PAGE_HINT, { channel: 'realtime', key: 'reader-no-page', dedupeMs: NO_PAGE_HINT_REPEAT_MS })) {
                 lastNoPageHintAtRef.current = now;
+                noPageHintCountRef.current += 1;
             }
         };
 
@@ -266,7 +275,7 @@ export function useDocumentReader(
         const analyze = async () => {
             if (scanBusyRef.current) return;
             if (!videoRef.current || videoRef.current.readyState < 2) return;
-            if (aiStatusRef.current === 'thinking' || isReadingRef.current) return;
+            if (aiStatusRef.current === 'thinking' || speechController.isOrientationBlocked) return;
 
             scanBusyRef.current = true;
             try {
@@ -291,7 +300,7 @@ export function useDocumentReader(
                 applyPageOverlay(result);
 
                 // Capture as soon as the page is readable (fully in frame, reasonable size); exact alignment is not required.
-                const canAutoCapture = !autoCaptureFiredRef.current && !docTextRef.current && aiStatusRef.current === 'idle';
+                const canAutoCapture = !autoCaptureFiredRef.current && !docTextRef.current && aiStatusRef.current === 'idle' && Date.now() >= autoCaptureHoldUntilRef.current;
                 if (!(result.capturable && canAutoCapture)) speakPageGuidance(result.guidance);
 
                 if (result.capturable && canAutoCapture) {
@@ -330,28 +339,29 @@ export function useDocumentReader(
         };
     }, [enabled, isReady, videoRef, feedback, cameraContainerRef]);
 
-    const replayDocument = useCallback(() => {
-        // Document content is read by VoiceOver; no TTS replay
-    }, []);
-
     const resetDocument = useCallback(() => {
         abortControllerRef.current?.abort();
         abortControllerRef.current = null;
         setDocText('');
         setDocIsError(false);
-        setIsReading(false);
         autoCaptureFiredRef.current = false;
         
         speechController.stop();
     }, []);
 
-    const stopReading = useCallback(() => {
-        
+    const restartScan = useCallback(() => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setDocText('');
+        setDocIsError(false);
+        autoCaptureFiredRef.current = false;
+        alignedCountRef.current = 0;
+        guidanceCandidateRef.current = '';
+        consecutiveGuidanceRef.current = 0;
+        lastSpokenPageRef.current = '';
+        autoCaptureHoldUntilRef.current = Date.now() + NEXT_PAGE_HOLD_MS;
         speechController.stop();
-        
-        setIsReading(false);
-        feedback?.('success');
-    }, [feedback]);
+    }, []);
 
     useEffect(() => () => {
         abortControllerRef.current?.abort();
@@ -361,15 +371,13 @@ export function useDocumentReader(
     return {
         docText,
         docIsError,
-        isReading,
         isProcessing,
         readerGuidance,
         readerAligned,
         pageBounds,
         pageCorners,
         readDocument,
-        replayDocument,
-        stopReading,
+        restartScan,
         resetDocument,
     };
 }

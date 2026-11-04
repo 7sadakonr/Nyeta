@@ -406,6 +406,9 @@ class SpeechController {
     }
 
     public notifyUserNavigation(): void {
+        // While the microphone is open, a tap must not turn "listening" into a quiet window: the quiet timer
+        // would expire into 'idle' and let TTS speak into the open microphone.
+        if (this._state === 'listening') return;
         this._captureResultForResume();
         this._cancelInternal();
         this._activeRequest++;

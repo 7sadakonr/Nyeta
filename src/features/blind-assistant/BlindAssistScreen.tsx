@@ -1,6 +1,6 @@
 'use client';
 
-import { forwardRef, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
+import { forwardRef, useState, useRef, useEffect, useCallback, useImperativeHandle, useMemo, useSyncExternalStore, RefObject } from 'react';
 import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/HapticFeedback';
 
 // Custom Hooks
@@ -15,6 +15,8 @@ import { formatOcrText } from '@/features/blind-assistant/client/ocrText';
 import { useSpeechStatus } from '@/shared/hooks/useSpeechStatus';
 import { speechController } from '@/shared/accessibility/speechController';
 import { useResultRegionSuppression } from '@/shared/accessibility/useResultRegionSuppression';
+import { focusProgrammatically } from '@/shared/accessibility/programmaticFocus';
+import { announce } from '@/shared/accessibility/announcer';
 import { startProcessingEarcon, stopProcessingEarcon } from '@/shared/accessibility/audio';
 
 import { AssistantMode } from '@/features/blind-assistant/types/assistant';
@@ -68,22 +70,31 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
 
     // 1. Core Services
     const { feedback } = useFeedback(hapticRef);
-    const { videoRef, isReady: aiReady, error: cameraError, initCamera, stopCamera } = useCamera();
+    const { videoRef, isReady: aiReady, error: cameraError, initCamera, retryCamera, stopCamera, setHighResolution } = useCamera();
 
     useEffect(() => {
         initCamera();
         return () => stopCamera();
     }, [initCamera, stopCamera]);
     
-    // Announce camera access error if any
+    // Document reading needs the extra resolution; every other mode runs lighter at 720p.
+    useEffect(() => {
+        setHighResolution(mode === 'reader');
+    }, [mode, setHighResolution]);
 
+    // A camera failure is urgent: warn once by voice. The screen then shows the reason and a retry button.
     useEffect(() => {
         if (cameraError) {
-            speechController.speak('ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้องครับ', {
+            speechController.speak('ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้ใช้กล้องในการตั้งค่า แล้วกดลองอีกครั้ง', {
                 channel: 'critical'
             });
         }
     }, [cameraError]);
+
+    const handleRetryCamera = useCallback(() => {
+        feedback('button');
+        void retryCamera();
+    }, [feedback, retryCamera]);
 
     const { isSpeaking, isQuiet: isSpeechQuiet } = useSpeechStatus();
 
@@ -186,9 +197,16 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
-        speechController.setGuidanceMuted(false);
+        // Guidance mute is deliberately kept: it is an app-wide setting that must survive tab changes and calls.
         resetSuppression();
     }, [resetSuppression, stopWaitingSound]);
+
+    // Captures are cropped to what the preview shows. Once a result is on screen the preview shrinks to a thin strip,
+    // and cropping to that strip would send the model a sliver of the scene, so then capture the whole frame.
+    const previewExpandedRef = useRef(true);
+    const captureContainerRef = useMemo<RefObject<HTMLElement | null>>(() => ({
+        get current() { return previewExpandedRef.current ? cameraContainerRef.current : null; },
+    }), []);
 
     // B. AI Assistant
     const {
@@ -196,8 +214,9 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         messages: aiMessages,
         captureAndAsk,
         clearMessages,
-        stopSpeaking
-    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady, cameraContainerRef);
+        stopSpeaking,
+        cancel: cancelAiRequest,
+    } = useAiAssistant(videoRef, aiReady, feedback, addLog, audioReady, captureContainerRef);
 
     const latestResultRef = useRef<HTMLParagraphElement | null>(null);
     const docResultRef = useRef<HTMLParagraphElement | null>(null);
@@ -243,17 +262,19 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const handleReadAgain = useCallback(() => {
         feedback('button');
         requestAnimationFrame(() => {
-            latestResultRef.current?.focus({ preventScroll: false });
+            focusProgrammatically(latestResultRef.current, { preventScroll: false });
         });
     }, [feedback]);
 
-    const [isGuidanceMuted, setIsGuidanceMuted] = useState(false);
+    // The controller is the single source of truth for the mute switch, so every tab shows the same state.
+    const isGuidanceMuted = useSyncExternalStore(
+        speechController.subscribeGuidanceMuted.bind(speechController),
+        () => speechController.isGuidanceMuted,
+        () => false,
+    );
 
     const handleToggleGuidance = useCallback(() => {
-        // State is read from the controller (source of truth); the button's aria-pressed/label announces the change.
-        const next = !speechController.isGuidanceMuted;
-        speechController.setGuidanceMuted(next);
-        setIsGuidanceMuted(next);
+        speechController.setGuidanceMuted(!speechController.isGuidanceMuted);
         feedback('button');
     }, [feedback]);
 
@@ -271,9 +292,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                 lastFocusedMessageIdRef.current = msgId;
                 stopWaitingSound();
                 requestAnimationFrame(() => {
-                    if (latestResultRef.current) {
-                        latestResultRef.current.focus();
-                    }
+                    focusProgrammatically(latestResultRef.current);
                 });
             }
         }
@@ -292,8 +311,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             handleCaptureAndAsk(text);
         }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
-            if (type === 'start') feedback('capture');
-        }, [feedback])
+            if (type === 'start' || type === 'mic-start') feedback('capture');
+            if (type === 'error') feedback('error');
+        }, [feedback]),
+        // Microphone problems are announced through the live region; speech synthesis would end up in the open microphone.
+        useCallback((message: string) => announce(message), [])
     );
 
     // D. Currency Scanner
@@ -303,6 +325,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         currencyMonitoring,
         currencyHint,
         captureMessage: currencyCaptureMessage,
+        captureNoticeId: currencyCaptureNoticeId,
         currencyBounds,
         totalAmount,
         captureCurrency,
@@ -315,17 +338,15 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     const {
         docText,
         docIsError,
-        isReading,
         isProcessing: isDocProcessing,
         readerGuidance,
         readerAligned,
         pageBounds,
         pageCorners,
         readDocument,
-        replayDocument,
-        stopReading,
+        restartScan,
         resetDocument
-    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog, cameraContainerRef);
+    } = useDocumentReader(videoRef, mode === 'reader', aiReady, audioReady, aiStatus, feedback, addLog, cameraContainerRef, captureContainerRef);
 
     // Move focus to the OCR result once per new document so assistive tech reads it from the DOM.
     const lastFocusedDocRef = useRef('');
@@ -337,7 +358,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         if (mode !== 'reader' || lastFocusedDocRef.current === docText) return;
         lastFocusedDocRef.current = docText;
         stopWaitingSound();
-        requestAnimationFrame(() => docResultRef.current?.focus());
+        requestAnimationFrame(() => focusProgrammatically(docResultRef.current));
     }, [docText, mode, stopWaitingSound]);
 
     // 3. Mode Switcher
@@ -345,34 +366,57 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     useEffect(() => {
         if (previousModeRef.current === mode) return;
         cancelListening();
+        // Leaving a tab abandons whatever it was waiting for, so a late answer cannot land in the wrong mode.
+        cancelAiRequest();
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
         pendingObjectAnnouncementRef.current = null;
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
         resetSuppression();
-        if (mode !== 'reader') resetDocument();
+        resetDocument();
         if (mode !== 'assistant') setVoiceTranscript('');
         previousModeRef.current = mode;
-    }, [cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript, stopWaitingSound]);
+    }, [cancelAiRequest, cancelListening, mode, resetDocument, resetSuppression, setVoiceTranscript, stopWaitingSound]);
 
     const prepareForCall = useCallback(() => {
         cancelListening();
         stopWaitingSound();
         lastFocusedMessageIdRef.current = null;
         pendingObjectAnnouncementRef.current = null;
+        cancelAiRequest();
         stopSpeaking();
-        stopReading();
         resetDocument();
         stopCamera();
         speechController.stop();
         speechController.setGuidanceSuppressed(false);
         resetSuppression();
-    }, [cancelListening, resetDocument, resetSuppression, stopCamera, stopReading, stopSpeaking, stopWaitingSound]);
+    }, [cancelAiRequest, cancelListening, resetDocument, resetSuppression, stopCamera, stopSpeaking, stopWaitingSound]);
+
+    // With a result on screen the button means "next page": go back to finding one (and give the user time to
+    // turn the page). After an error, or with nothing read yet, it reads right away.
+    const handleReadDocument = useCallback(() => {
+        if (docText && !docIsError) {
+            resetSuppression();
+            restartScan();
+            feedback('button');
+            announce('พร้อมอ่านหน้าใหม่ วางเอกสารให้เห็นทั้งแผ่น');
+            return;
+        }
+        void readDocument();
+    }, [docIsError, docText, feedback, readDocument, resetSuppression, restartScan]);
+
+    // Currency results and failures are announced through the polite live region (queued, never cutting off).
+    useEffect(() => {
+        if (mode === 'currency' && currencyResult) announce(`ครั้งนี้ ${currencyResult.total.toLocaleString()} บาท`);
+    }, [mode, currencyResult?.captureId]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (mode === 'currency' && currencyCaptureMessage) announce(currencyCaptureMessage);
+    }, [mode, currencyCaptureNoticeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleReplayCurrencyDetails = useCallback(() => {
         replayCurrencyDetails();
-        requestAnimationFrame(() => currencyDetailsRef.current?.focus());
+        requestAnimationFrame(() => focusProgrammatically(currencyDetailsRef.current));
     }, [replayCurrencyDetails]);
 
     const handleClearMessages = useCallback(() => {
@@ -394,6 +438,9 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         (mode === 'assistant' && aiMessages.length > 0);
 
     const expandCameraPreview = !showCapturedText;
+    useEffect(() => {
+        previewExpandedRef.current = expandCameraPreview;
+    }, [expandCameraPreview]);
     const cameraHeightClass = getCameraHeightClass(showCapturedText, expandCameraPreview);
 
     return (
@@ -407,7 +454,11 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
             <TopNavBar />
 
             <div className="flex min-h-0 flex-1 flex-col">
-                {cameraError && <p className="sr-only">ไม่สามารถเปิดกล้องได้ กรุณาไปที่การตั้งค่าเบราว์เซอร์ แล้วอนุญาตให้ใช้กล้อง</p>}
+                {cameraError && (
+                    <p className="mx-3 mt-3 rounded-xl bg-[#3A1418] px-4 py-3 text-[17px] font-semibold text-[#FF453A]">
+                        ไม่สามารถเปิดกล้องได้ กรุณาอนุญาตให้ใช้กล้องในการตั้งค่าเบราว์เซอร์ แล้วกดลองอีกครั้ง
+                    </p>
+                )}
 
                 <section
                     className={expandCameraPreview
@@ -427,7 +478,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                             currencyResult={currencyResult}
                             currencyScanning={currencyScanning}
                             currencyHint={currencyHint}
-                            captureMessage={currencyCaptureMessage}
                             isBlocked={currencyBlocked}
                             aiStatus={aiStatus}
                             readerGuidance={readerGuidance}
@@ -469,21 +519,18 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         mode={mode}
                         aiReady={aiReady}
                         aiStatus={aiStatus}
-                        isSpeaking={isSpeaking}
                         isListening={isListening}
                         docText={docText}
-                        isReading={isReading}
                         isProcessingDoc={isDocProcessing}
                         currencyResult={currencyResult}
                         currencyScanning={currencyScanning}
-                        currencyMonitoring={currencyMonitoring}
                         totalAmount={totalAmount}
                         hasAssistantMessages={aiMessages.length > 0}
                         isGuidanceMuted={isGuidanceMuted}
-                        isBlocked={currencyBlocked}
                         readerAligned={readerAligned}
+                        cameraError={!!cameraError}
+                        onRetryCamera={handleRetryCamera}
                         onCapture={handleCaptureAndAsk}
-                        onStopSpeaking={stopSpeaking}
                         onToggleGuidance={handleToggleGuidance}
                         onStartListening={toggleListening}
                         onStopListening={toggleListening}
@@ -492,9 +539,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onClearTotal={clearTotal}
                         onClearMessages={handleClearMessages}
                         onReadAgain={handleReadAgain}
-                        onReadDocument={readDocument}
-                        onReplayDocument={replayDocument}
-                        onStopReading={stopReading}
+                        onReadDocument={handleReadDocument}
                         onDisabledPress={() => feedback('error')}
                     />
                 </div>

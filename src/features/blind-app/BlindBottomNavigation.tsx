@@ -22,7 +22,7 @@ export default function BlindBottomNavigation({ activeTab, callLocked, onSelect 
 
     return (
         <nav className="shrink-0 border-t border-white/[0.15] bg-[#090909]/80 backdrop-blur-2xl" aria-label="เมนูหลัก">
-            <div className="mx-auto grid max-w-xl grid-cols-4 px-2 pt-1.5 pb-2">
+            <div className="mx-auto grid max-w-xl grid-cols-4 px-2 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 {TABS.map((tab) => {
                     const disabled = isDisabled(tab.id);
                     const active = activeTab === tab.id;

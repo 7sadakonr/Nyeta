@@ -1,27 +1,25 @@
 import React from 'react';
 import { BlindMode, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
+import { focusProgrammatically } from '@/shared/accessibility/programmaticFocus';
 import { MicIcon, SendIcon, Volume2Icon, VolumeXIcon, TrashIcon, RotateCcwIcon } from '@/shared/ui/icons/ControlBarIcons';
 
 export interface ControlBarProps {
     mode: BlindMode;
     aiReady: boolean;
     aiStatus: AssistantStatus;
-    isSpeaking: boolean;
     isListening: boolean;
     docText: string | null;
-    isReading?: boolean;
     isProcessingDoc: boolean;
     currencyResult: CapturedCurrency | null;
     currencyScanning: boolean;
-    currencyMonitoring: boolean;
     totalAmount?: number;
     hasAssistantMessages?: boolean;
     isGuidanceMuted?: boolean;
-    isBlocked?: boolean;
     readerAligned: boolean;
+    /** The camera could not be opened: the main button becomes "try again" instead of waiting forever. */
+    cameraError?: boolean;
     onCapture: () => void;
-    onStopSpeaking: () => void;
     onToggleGuidance?: () => void;
     onStartListening: () => void;
     onStopListening: () => void;
@@ -31,8 +29,7 @@ export interface ControlBarProps {
     onClearMessages?: () => void;
     onReadAgain?: () => void;
     onReadDocument: () => void;
-    onReplayDocument?: () => void;
-    onStopReading?: () => void;
+    onRetryCamera?: () => void;
     /** Called when a locked (aria-disabled) button is pressed, so the press is never silent. */
     onDisabledPress?: () => void;
 }
@@ -65,14 +62,16 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(func
     );
 });
 
+// The describe button is focused once, the first time the app opens. Doing it on every return to the AI tab
+// would yank the VoiceOver cursor away from wherever the user had navigated to.
+let hasAutoFocusedDescribeScene = false;
+
 export default function ControlBar({
     mode,
     aiReady,
     aiStatus,
-    isSpeaking,
     isListening,
     docText,
-    isReading,
     isProcessingDoc,
     currencyResult,
     currencyScanning,
@@ -80,8 +79,8 @@ export default function ControlBar({
     hasAssistantMessages = false,
     isGuidanceMuted = false,
     readerAligned,
+    cameraError = false,
     onCapture,
-    onStopSpeaking,
     onToggleGuidance,
     onStartListening,
     onStopListening,
@@ -91,28 +90,57 @@ export default function ControlBar({
     onClearMessages,
     onReadAgain,
     onReadDocument,
-    onReplayDocument,
-    onStopReading,
+    onRetryCamera,
     onDisabledPress,
 }: ControlBarProps) {
     const isBusy = aiStatus === 'thinking';
     const canCapture = aiReady && !isBusy && !isListening;
     const canRead = aiReady && !isProcessingDoc && !isBusy;
     const describeSceneRef = React.useRef<HTMLButtonElement | null>(null);
-    const hasFocusedDescribeSceneRef = React.useRef(false);
 
     React.useEffect(() => {
-        if (mode !== 'assistant') {
-            hasFocusedDescribeSceneRef.current = false;
-            return;
-        }
-        if (canCapture && !hasFocusedDescribeSceneRef.current) {
-            hasFocusedDescribeSceneRef.current = true;
-            // Delay focus so it doesn't overlap with the audio-activation announcement.
-            const timerId = setTimeout(() => describeSceneRef.current?.focus(), 800);
-            return () => clearTimeout(timerId);
-        }
+        if (mode !== 'assistant' || !canCapture || hasAutoFocusedDescribeScene) return;
+        // Delay focus so it doesn't overlap with the audio-activation announcement.
+        const timerId = setTimeout(() => {
+            if (hasAutoFocusedDescribeScene) return;
+            // Only when nothing else has focus yet: never steal it from a control the user already reached.
+            if (document.activeElement && document.activeElement !== document.body) return;
+            hasAutoFocusedDescribeScene = true;
+            focusProgrammatically(describeSceneRef.current);
+        }, 800);
+        return () => clearTimeout(timerId);
     }, [canCapture, mode]);
+
+    const describeLabel = cameraError
+        ? 'เปิดกล้องไม่ได้ กดเพื่อลองอีกครั้ง'
+        : isBusy
+            ? 'AI กำลังคิด รอสักครู่'
+            : !aiReady
+                ? 'กล้องยังไม่พร้อม รอสักครู่'
+                : isListening
+                    ? 'กำลังฟังอยู่ กดหยุดและส่งก่อน'
+                    : 'บรรยายสิ่งที่เห็น';
+
+    const readLabel = cameraError
+        ? 'เปิดกล้องไม่ได้ กดเพื่อลองอีกครั้ง'
+        : isProcessingDoc || isBusy
+            ? 'กำลังอ่านเอกสาร รอสักครู่'
+            : docText
+                ? 'อ่านหน้าใหม่'
+                : 'อ่านเอกสาร';
+
+    // One switch for every camera mode: the setting is global, so it must be visible and reversible everywhere.
+    const guidanceSwitch = (
+        <ActionButton
+            role="switch"
+            aria-checked={!isGuidanceMuted}
+            aria-label="เสียงนำทาง"
+            tone={isGuidanceMuted ? 'danger' : 'secondary'}
+            onClick={onToggleGuidance}
+        >
+            {isGuidanceMuted ? <VolumeXIcon className="size-7" aria-hidden="true" /> : <Volume2Icon className="size-7" aria-hidden="true" />}
+        </ActionButton>
+    );
 
     return (
         <div data-testid="blind-action-dock" className="relative z-20 shrink-0 bg-[#090909]/80 px-4 pb-4 pt-3 backdrop-blur-2xl">
@@ -122,45 +150,39 @@ export default function ControlBar({
                         ref={describeSceneRef}
                         wide
                         tone="primary"
-                        disabled={!canCapture}
-                        onClick={onCapture}
+                        disabled={cameraError ? false : !canCapture}
+                        onClick={cameraError ? onRetryCamera : onCapture}
                         onDisabledPress={onDisabledPress}
                         aria-busy={isBusy}
-                        aria-label={isBusy
-                            ? 'AI กำลังคิด รอสักครู่'
-                            : !aiReady
-                                ? 'กล้องยังไม่พร้อม รอสักครู่'
-                                : isListening
-                                    ? 'กำลังฟังอยู่ กดหยุดและส่งก่อน'
-                                    : 'บรรยายสิ่งที่เห็น'}
                     >
-                        {isBusy ? 'กำลังประมวลผล...' : !aiReady ? 'กำลังเปิดกล้อง...' : 'บรรยายสิ่งที่เห็น'}
+                        {describeLabel}
                     </ActionButton>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-4 gap-3">
                         <ActionButton
                             tone={isListening ? 'danger' : 'secondary'}
+                            disabled={isBusy}
                             onClick={isListening ? onStopListening : onStartListening}
-                            aria-label={isListening ? 'หยุดและส่ง' : 'ถามด้วยเสียง'}
-                            aria-pressed={isListening}
+                            onDisabledPress={onDisabledPress}
+                            aria-label={isListening ? 'หยุดและส่งคำถาม' : 'ถามด้วยเสียง'}
                         >
-                            {isListening ? <SendIcon className="size-7" /> : <MicIcon className="size-7" />}
+                            {isListening ? <SendIcon className="size-7" aria-hidden="true" /> : <MicIcon className="size-7" aria-hidden="true" />}
                         </ActionButton>
-                        {hasAssistantMessages ? (
-                            <ActionButton disabled={!hasAssistantMessages || isBusy} onClick={onReadAgain} aria-label="อ่านใหม่">
-                                <RotateCcwIcon className="size-7" />
-                            </ActionButton>
-                        ) : (
-                            <ActionButton
-                                tone={isGuidanceMuted ? 'danger' : 'secondary'}
-                                onClick={onToggleGuidance || onStopSpeaking}
-                                aria-label={isGuidanceMuted ? 'เปิดเสียง' : 'หยุดเสียง'}
-                                aria-pressed={isGuidanceMuted}
-                            >
-                                {isGuidanceMuted ? <VolumeXIcon className="size-7" /> : <Volume2Icon className="size-7" />}
-                            </ActionButton>
-                        )}
-                        <ActionButton disabled={!hasAssistantMessages} onClick={onClearMessages} aria-label="ล้างแชท">
-                            <TrashIcon className="size-7" />
+                        {guidanceSwitch}
+                        <ActionButton
+                            disabled={!hasAssistantMessages || isBusy}
+                            onClick={onReadAgain}
+                            onDisabledPress={onDisabledPress}
+                            aria-label="อ่านใหม่"
+                        >
+                            <RotateCcwIcon className="size-7" aria-hidden="true" />
+                        </ActionButton>
+                        <ActionButton
+                            disabled={!hasAssistantMessages}
+                            onClick={onClearMessages}
+                            onDisabledPress={onDisabledPress}
+                            aria-label="ล้างแชท"
+                        >
+                            <TrashIcon className="size-7" aria-hidden="true" />
                         </ActionButton>
                     </div>
                 </div>
@@ -168,17 +190,40 @@ export default function ControlBar({
 
             {mode === 'currency' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={!aiReady} onClick={onCurrencyCapture} aria-label="ถ่ายเองเพื่อสแกนเงินตอนนี้">ถ่ายเอง</ActionButton>
-                    <div className="grid grid-cols-2 gap-3">
-                        <ActionButton disabled={!currencyResult} onClick={onReplayCurrencyDetails} aria-label="ฟังรายละเอียดเงินล่าสุด">ฟังรายละเอียด</ActionButton>
-                        <ActionButton tone="danger" disabled={totalAmount === 0 && !currencyResult} onClick={onClearTotal} aria-label={`ล้างยอดเงินสะสม ปัจจุบัน ${totalAmount} บาท`}>ล้างยอด</ActionButton>
+                    <ActionButton
+                        wide
+                        tone="primary"
+                        disabled={cameraError ? false : !aiReady}
+                        onClick={cameraError ? onRetryCamera : onCurrencyCapture}
+                        onDisabledPress={onDisabledPress}
+                        aria-label={cameraError ? 'เปิดกล้องไม่ได้ กดเพื่อลองอีกครั้ง' : currencyScanning ? 'กำลังตรวจเงิน กดเพื่อถ่ายเองใหม่' : 'ถ่ายเอง'}
+                    >
+                        {cameraError ? 'เปิดกล้องไม่ได้ กดเพื่อลองอีกครั้ง' : currencyScanning ? 'กำลังตรวจเงิน กดเพื่อถ่ายเองใหม่' : 'ถ่ายเอง'}
+                    </ActionButton>
+                    <div className="grid grid-cols-3 gap-3">
+                        <ActionButton disabled={!currencyResult} onClick={onReplayCurrencyDetails} onDisabledPress={onDisabledPress}>ฟังรายละเอียด</ActionButton>
+                        <ActionButton tone="danger" disabled={totalAmount === 0 && !currencyResult} onClick={onClearTotal} onDisabledPress={onDisabledPress}>ล้างผล</ActionButton>
+                        {guidanceSwitch}
                     </div>
                 </div>
             )}
 
             {mode === 'reader' && (
                 <div className="mx-auto w-full max-w-xl space-y-3">
-                    <ActionButton wide tone="primary" disabled={!canRead} onClick={onReadDocument} onDisabledPress={onDisabledPress} aria-busy={isProcessingDoc || isBusy} aria-label={isProcessingDoc || isBusy ? 'กำลังอ่านเอกสาร รอสักครู่' : docText ? 'อ่านหน้าใหม่' : readerAligned ? 'อ่านเอกสาร' : 'ถ่ายหน้าเอกสารเพื่ออ่าน'}>{isProcessingDoc || isBusy ? 'กำลังประมวลผล...' : docText ? 'อ่านหน้าใหม่' : 'อ่านเอกสาร'}</ActionButton>
+                    <ActionButton
+                        wide
+                        tone="primary"
+                        disabled={cameraError ? false : !canRead}
+                        onClick={cameraError ? onRetryCamera : onReadDocument}
+                        onDisabledPress={onDisabledPress}
+                        aria-busy={isProcessingDoc || isBusy}
+                        data-aligned={readerAligned || undefined}
+                    >
+                        {readLabel}
+                    </ActionButton>
+                    <div className="grid grid-cols-1 gap-3">
+                        {guidanceSwitch}
+                    </div>
                 </div>
             )}
         </div>

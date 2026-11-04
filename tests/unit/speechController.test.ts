@@ -62,8 +62,68 @@ describe('speechController navigation quiet policy', () => {
         expect(realtimeEnd).toHaveBeenCalledWith(false);
         expect(statusEnd).toHaveBeenCalledWith(false);
 
+        // Critical no longer talks over the screen reader: it waits for the quiet window to end.
         speechController.speak('ไม่สามารถเปิดกล้องได้', { channel: 'critical' });
+        expect(utterances).toHaveLength(0);
+        vi.advanceTimersByTime(3500);
         expect(utterances.map((utterance) => utterance.text)).toEqual(['ไม่สามารถเปิดกล้องได้']);
+    });
+
+    it('lets a higher-priority channel cut speech but never a lower one', () => {
+        speechController.speak('ผลลัพธ์', { channel: 'result' });
+        const statusEnd = vi.fn();
+        expect(speechController.speak('สถานะ', { channel: 'status', onEnd: statusEnd })).toBe(false);
+        expect(statusEnd).toHaveBeenCalledWith(false);
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ผลลัพธ์']);
+
+        expect(speechController.speak('เหตุด่วน', { channel: 'critical' })).toBe(true);
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ผลลัพธ์', 'เหตุด่วน']);
+        expect(speechController.speak('ผลลัพธ์ใหม่', { channel: 'result' })).toBe(false);
+    });
+
+    it('replaces speech of the same channel with the newer message', () => {
+        speechController.speak('ข้อความแรก', { channel: 'status' });
+        speechController.speak('ข้อความที่สอง', { channel: 'status' });
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ข้อความแรก', 'ข้อความที่สอง']);
+    });
+
+    it('speaks held critical before replaying an interrupted result', () => {
+        speechController.speak('ผลลัพธ์ที่ถูกขัด', { channel: 'result' });
+        speechController.notifyUserNavigation();
+        speechController.speak('กล้องใช้ไม่ได้', { channel: 'critical' });
+        expect(utterances).toHaveLength(1);
+
+        vi.advanceTimersByTime(3500);
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ผลลัพธ์ที่ถูกขัด', 'กล้องใช้ไม่ได้']);
+        utterances[1].onend?.();
+        expect(utterances.map((utterance) => utterance.text)).toEqual(['ผลลัพธ์ที่ถูกขัด', 'กล้องใช้ไม่ได้', 'ผลลัพธ์ที่ถูกขัด']);
+    });
+
+    it('drops held critical speech when stopped', () => {
+        speechController.notifyUserNavigation();
+        speechController.speak('เหตุด่วน', { channel: 'critical' });
+        speechController.stop();
+        vi.advanceTimersByTime(3500);
+        expect(utterances).toHaveLength(0);
+    });
+
+    it('splits long Thai text on word boundaries without losing characters', async () => {
+        const { splitSpeechText } = await import('@/shared/accessibility/speechController');
+        const text = 'การดูแลสุขภาพเป็นเรื่องสำคัญที่ทุกคนควรให้ความสนใจอย่างต่อเนื่อง'.repeat(8);
+        const chunks = splitSpeechText(text);
+
+        expect(chunks.length).toBeGreaterThan(1);
+        expect(chunks.every((chunk) => chunk.length <= 150)).toBe(true);
+        expect(chunks.join('')).toBe(text);
+
+        const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
+        const boundaries = new Set<number>();
+        for (const { index } of segmenter.segment(text)) boundaries.add(index);
+        let offset = 0;
+        for (const chunk of chunks) {
+            expect(boundaries.has(offset)).toBe(true);
+            offset += chunk.length;
+        }
     });
 
     it('replaces an interrupted result with a newer result received during navigation', () => {

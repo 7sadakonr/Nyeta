@@ -88,9 +88,12 @@ describe('AI camera layout', () => {
             />,
         );
 
-        const summary = screen.getByLabelText('สรุปการตรวจเงิน');
+        const summary = screen.getByText('ตรวจพบล่าสุด').parentElement!.parentElement!;
         expect(summary.className).toContain('absolute');
         expect(summary.className).toContain('bottom-4');
+        // The new result is announced politely from the DOM (not TTS) and the card has no extra landmark.
+        expect(screen.getByRole('status').textContent).toBe('ครั้งนี้ 100 บาท');
+        expect(screen.queryByRole('region')).toBeNull();
         expect(screen.getByText('ตรวจพบล่าสุด')).toBeTruthy();
         expect(screen.getByText('ที่ตรวจจับได้')).toBeTruthy();
         expect(screen.getByText('฿100')).toBeTruthy();

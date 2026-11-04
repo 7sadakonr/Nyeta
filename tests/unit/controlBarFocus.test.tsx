@@ -301,4 +301,52 @@ describe('ControlBar', () => {
         fireEvent.click(getByRole('button', { name: 'ถ่ายเองเพื่อสแกนเงินตอนนี้' }));
         expect(onCurrencyCapture).toHaveBeenCalledOnce();
     });
+    it('renders real buttons with one accessible name and aria-disabled when unavailable', () => {
+        const onClearMessages = vi.fn();
+        const onCapture = vi.fn();
+        const { getByRole, getAllByRole, queryByRole } = render(
+            <ControlBar
+                mode="assistant"
+                aiReady
+                aiStatus="idle"
+                isSpeaking={false}
+                isListening={false}
+                docText={null}
+                isReading={false}
+                isProcessingDoc={false}
+                currencyResult={null}
+                currencyScanning={false}
+                currencyMonitoring={false}
+                hasAssistantMessages={false}
+                readerAligned={false}
+                onCapture={onCapture}
+                onStopSpeaking={vi.fn()}
+                onStartListening={vi.fn()}
+                onStopListening={vi.fn()}
+                onCurrencyCapture={vi.fn()}
+                onReplayCurrencyDetails={vi.fn()}
+                onClearTotal={vi.fn()}
+                onClearMessages={onClearMessages}
+                onReadDocument={vi.fn()}
+                onReplayDocument={vi.fn()}
+                onStopReading={vi.fn()}
+            />,
+        );
+
+        expect(queryByRole('group')).toBeNull();
+        for (const button of getAllByRole('button')) {
+            expect(button.tagName).toBe('BUTTON');
+            expect(button.querySelector('.sr-only')).toBeNull();
+        }
+
+        const clear = getByRole('button', { name: 'ล้างแชท' });
+        expect(clear.getAttribute('aria-disabled')).toBe('true');
+        fireEvent.click(clear);
+        expect(onClearMessages).not.toHaveBeenCalled();
+
+        const describeScene = getByRole('button', { name: 'บรรยายสิ่งที่เห็น' });
+        expect(describeScene.getAttribute('aria-disabled')).toBeNull();
+        fireEvent.click(describeScene);
+        expect(onCapture).toHaveBeenCalledOnce();
+    });
 });

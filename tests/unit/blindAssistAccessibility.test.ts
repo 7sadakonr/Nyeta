@@ -16,6 +16,8 @@ const TTS_OWNED_SURFACES = [
     'src/features/blind-assistant/components/ControlBar.tsx',
     'src/features/calling/BlindCallScreen.tsx',
     'src/features/calling/components/BlindChatOverlay.tsx',
+    'src/shared/ui/PortraitGuardian.tsx',
+    'src/features/blind-app/BlindAppShell.tsx',
 ];
 
 describe('TTS and VoiceOver announcement ownership', () => {
@@ -64,10 +66,9 @@ describe('TTS and VoiceOver announcement ownership', () => {
         expect(modeSwitcher).toContain('role="tablist"');
         expect(modeSwitcher).toContain('role="tab"');
         expect(modeSwitcher).toContain('aria-selected={mode === item.id}');
-        expect(controlBar).toContain('role="group" aria-label="ปุ่มควบคุม"');
         expect(controlBar).toContain('aria-pressed={isListening}');
         expect(controlBar).not.toMatch(/on(?:Mouse|Touch)(?:Down|Up|Start|End|Leave)=/);
-        expect(chatHistory).toContain('aria-label="คำบรรยาย"');
+        expect(chatHistory).not.toMatch(/role\s*=\s*["']region["']/);
         expect(chatHistory).not.toContain('<details');
         expect(chatHistory).not.toContain('tabIndex={0}');
         expect(topNav).toContain('aria-hidden="true"');

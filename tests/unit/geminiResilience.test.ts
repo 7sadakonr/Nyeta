@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callGeminiVision as callServerGemini, getMaxRetries } from '@/server/ai/geminiClient';
+import { callGeminiVision as callServerGemini, DEFAULT_GEMINI_MODEL, getMaxRetries, getThinkingConfig } from '@/server/ai/geminiClient';
 import { clampGenerationConfig } from '@/server/ai/geminiValidation';
 import { GeminiRequestError, describeGeminiError, callGeminiVision as callClientGemini } from '@/features/blind-assistant/client/geminiVision';
 
@@ -83,6 +83,46 @@ describe('server Gemini client resilience', () => {
 
         expect(result.status).toBe(502);
         expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it('uses the reliable default model and turns off hidden thinking so short answers are not truncated', async () => {
+        fetchMock.mockResolvedValue(jsonResponse(200, {}));
+
+        await run('currency');
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.5-flash');
+        expect(String(url)).toContain(`/models/${DEFAULT_GEMINI_MODEL}:generateContent`);
+        const sent = JSON.parse(String((init as RequestInit).body));
+        expect(sent.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+        expect(sent.generationConfig.maxOutputTokens).toBe(100);
+    });
+
+    it('honours GEMINI_MODEL and only sends thinkingConfig to models that support it', async () => {
+        vi.stubEnv('GEMINI_MODEL', 'gemini-3.1-flash-lite');
+        fetchMock.mockResolvedValue(jsonResponse(200, {}));
+
+        await run('assistant');
+
+        const [url, init] = fetchMock.mock.calls[0];
+        expect(String(url)).toContain('/models/gemini-3.1-flash-lite:generateContent');
+        expect(JSON.parse(String((init as RequestInit).body)).generationConfig.thinkingConfig).toBeUndefined();
+        expect(getThinkingConfig('gemini-3.5-flash')).toEqual({ thinkingLevel: 'minimal' });
+        expect(getThinkingConfig('gemini-3.1-flash-lite')).toBeUndefined();
+        expect(getThinkingConfig('gemini-2.5-flash')).toBeUndefined();
+    });
+
+    it('stops retrying when the total time budget would be exceeded', async () => {
+        // Each attempt "takes" 30s before timing out, so the 54s budget (not the retry count) ends the loop.
+        fetchMock.mockImplementation(async () => {
+            vi.setSystemTime(Date.now() + 30000);
+            throw Object.assign(new Error('timeout'), { name: 'TimeoutError' });
+        });
+
+        const result = await run('assistant');
+
+        expect(result.status).toBe(504);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it('sends the API key in a header, never in the URL', async () => {

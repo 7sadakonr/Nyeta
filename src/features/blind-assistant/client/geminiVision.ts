@@ -1,7 +1,7 @@
 import { BlindMode, BoundingBox } from '@/features/blind-assistant/types/assistant';
 import { getVisibleVideoRegion } from './videoCoords';
 
-export const GEMINI_MODEL = 'gemini-3.1-flash-lite';
+export const GEMINI_MODEL = 'gemini-3.5-flash';
 
 // The server may retry transient upstream failures, so allow longer than a single upstream attempt.
 const DEFAULT_REQUEST_TIMEOUT_MS = 55000;

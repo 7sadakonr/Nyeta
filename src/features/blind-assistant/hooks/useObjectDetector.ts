@@ -12,6 +12,29 @@ import {
 } from '@/features/blind-assistant/client/objectTargeting';
 import { getVisibleVideoRegion } from '@/features/blind-assistant/client/videoCoords';
 
+// COCO-SSD is only used for coarse "something is there / move left" guidance, so ~5 checks per second is
+// plenty; running it faster just burns battery and re-renders the whole screen.
+const DETECTION_INTERVAL_MS = 200;
+// Boxes that moved less than this many video pixels are treated as unchanged to avoid pointless re-renders.
+const BOX_TOLERANCE_PX = 3;
+
+type Box = [number, number, number, number];
+const sameBox = (a: Box, b: Box) => a.every((value, index) => Math.abs(value - b[index]) <= BOX_TOLERANCE_PX);
+const sameObject = (a: DetectedObject | null, b: DetectedObject | null) =>
+    a === b || (!!a && !!b && a.class === b.class && sameBox(a.bbox as Box, b.bbox as Box));
+const sameDetections = (a: DetectedObject[], b: DetectedObject[]) =>
+    a.length === b.length && a.every((item, index) => sameObject(item, b[index]));
+
+/** Run `task` when the browser is idle so model loading does not compete with the camera starting up. */
+function whenIdle(task: () => void): () => void {
+    if (typeof window.requestIdleCallback === 'function') {
+        const handle = window.requestIdleCallback(task, { timeout: 2500 });
+        return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = window.setTimeout(task, 800);
+    return () => window.clearTimeout(handle);
+}
+
 export interface UseObjectDetectorResult {
     isLoading: boolean;
     detections: DetectedObject[];
@@ -41,6 +64,10 @@ export function useObjectDetector(
     const timeoutRef = useRef<NodeJS.Timeout | null>(null);
     const targetingStateRef = useRef<ObjectTargetingState>(createInitialObjectTargetingState());
     const detectCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    // What React currently holds, so unchanged results can be skipped.
+    const publishedRef = useRef<{ detections: DetectedObject[]; targetObject: DetectedObject | null; targetIndex: number | null; phase: TargetPhase; guidanceKey: string }>({
+        detections: [], targetObject: null, targetIndex: null, phase: 'searching', guidanceKey: '',
+    });
 
     useEffect(() => {
         if (typeof window === 'undefined' || !enabled) return;
@@ -52,9 +79,20 @@ export function useObjectDetector(
         let isMounted = true;
         const loadModel = async () => {
             try {
-                await import('@tensorflow/tfjs');
-                const cocoSsd = await import('@tensorflow-models/coco-ssd');
-                const model = await cocoSsd.load();
+                // Only the pieces COCO-SSD needs (core + converter + WebGL, CPU as fallback), not the full tfjs bundle.
+                const [tf, , , cocoSsd] = await Promise.all([
+                    import('@tensorflow/tfjs-core'),
+                    import('@tensorflow/tfjs-converter'),
+                    import('@tensorflow/tfjs-backend-webgl'),
+                    import('@tensorflow-models/coco-ssd'),
+                    import('@tensorflow/tfjs-backend-cpu'),
+                ]);
+                await tf.ready();
+                const model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+                // Compile shaders now, on a tiny canvas, so the first real frame does not freeze the UI.
+                const warmup = document.createElement('canvas');
+                warmup.width = warmup.height = 64;
+                await model.detect(warmup).catch(() => []);
                 if (isMounted) {
                     modelRef.current = model;
                     setIsLoading(false);
@@ -65,15 +103,17 @@ export function useObjectDetector(
             }
         };
 
-        loadModel();
+        const cancelIdle = whenIdle(() => { void loadModel(); });
         return () => {
             isMounted = false;
+            cancelIdle();
         };
     }, [enabled]);
 
     useEffect(() => {
         if (enabled) return;
         targetingStateRef.current = createInitialObjectTargetingState(targetingStateRef.current.eventId);
+        publishedRef.current = { detections: [], targetObject: null, targetIndex: null, phase: 'searching', guidanceKey: '' };
         setDetections([]);
         setTargetObject(null);
         setTargetIndex(null);
@@ -128,11 +168,29 @@ export function useObjectDetector(
                         getObjectLabel,
                     );
                     targetingStateRef.current = next.state;
-                    setDetections(next.detections);
-                    setTargetObject(next.targetObject);
-                    setTargetIndex(next.targetIndex);
-                    setTargetPhase(next.state.phase);
-                    setGuidance(next.guidance);
+                    // Only touch React state for values that actually changed.
+                    const published = publishedRef.current;
+                    if (!sameDetections(published.detections, next.detections)) {
+                        published.detections = next.detections;
+                        setDetections(next.detections);
+                    }
+                    if (!sameObject(published.targetObject, next.targetObject)) {
+                        published.targetObject = next.targetObject;
+                        setTargetObject(next.targetObject);
+                    }
+                    if (published.targetIndex !== next.targetIndex) {
+                        published.targetIndex = next.targetIndex;
+                        setTargetIndex(next.targetIndex);
+                    }
+                    if (published.phase !== next.state.phase) {
+                        published.phase = next.state.phase;
+                        setTargetPhase(next.state.phase);
+                    }
+                    const guidanceKey = next.guidance ? JSON.stringify(next.guidance) : '';
+                    if (published.guidanceKey !== guidanceKey) {
+                        published.guidanceKey = guidanceKey;
+                        setGuidance(next.guidance);
+                    }
                     if (next.event) setTargetingEvent(next.event);
                 } catch (error) {
                     console.error('Object detection error:', error);
@@ -142,7 +200,7 @@ export function useObjectDetector(
             if (isActive) {
                 timeoutRef.current = setTimeout(() => {
                     if (isActive) animationFrameRef.current = requestAnimationFrame(detect);
-                }, 100);
+                }, DETECTION_INTERVAL_MS);
             }
         };
 

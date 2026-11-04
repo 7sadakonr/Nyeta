@@ -4,30 +4,31 @@ import { useState, useEffect } from 'react';
 import WelcomeScreen from './WelcomeScreen';
 import BlindAppShell from './BlindAppShell';
 import PortraitGuardian from '@/shared/ui/PortraitGuardian';
+import { hasCompletedOnboarding } from './onboarding';
 import type { BlindAppTab } from './types';
 
 interface ClientEntryPointProps {
     initialTab: BlindAppTab;
 }
 
+type EntryPhase = 'checking' | 'welcome' | 'app';
+
 export default function ClientEntryPoint({ initialTab }: ClientEntryPointProps) {
-    const [started, setStarted] = useState(false);
+    // Rendered on the server before storage can be read, so the first client render must match: show nothing yet.
+    const [phase, setPhase] = useState<EntryPhase>('checking');
 
     useEffect(() => {
-        if (typeof window !== 'undefined' && (window.navigator.webdriver || window.location.search.includes('test=true'))) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setStarted(true);
-        }
+        const automated = window.navigator.webdriver || window.location.search.includes('test=true');
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPhase(automated || hasCompletedOnboarding() ? 'app' : 'welcome');
     }, []);
 
     return (
         <>
             <PortraitGuardian />
-            {!started ? (
-                <WelcomeScreen onStart={() => setStarted(true)} />
-            ) : (
-                <BlindAppShell initialTab={initialTab} />
-            )}
+            {phase === 'checking' && <div aria-hidden="true" className="min-h-dvh w-full bg-[#090909]" />}
+            {phase === 'welcome' && <WelcomeScreen onStart={() => setPhase('app')} />}
+            {phase === 'app' && <BlindAppShell initialTab={initialTab} />}
         </>
     );
 }

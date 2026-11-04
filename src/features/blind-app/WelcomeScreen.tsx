@@ -4,6 +4,10 @@ import { useState } from 'react';
 import EyeIcon from '@/shared/ui/icons/EyeIcon';
 import { speechController } from '@/shared/accessibility/speechController';
 import { playEarcon } from '@/shared/accessibility/audio';
+import { markOnboardingComplete } from './onboarding';
+
+// The iOS permission sheet can be dismissed without the request ever settling; never wait forever.
+const PERMISSION_TIMEOUT_MS = 8000;
 
 interface WelcomeScreenProps {
     onStart: () => void;
@@ -75,19 +79,29 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
         speechController.speak('นัยตา', { channel: 'status' });
 
         try {
-            // Request camera and microphone permissions upfront
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: 'environment' }, 
-                audio: true 
-            });
-            
-            // Release the devices immediately so the actual app hooks can claim them
-            stream.getTracks().forEach(track => track.stop());
-            
+            // Ask for the camera only. The microphone is requested when the user actually asks a question,
+            // so refusing it must not lock them out of the camera features.
+            const request = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            let timedOut = false;
+            const stream = await Promise.race([
+                request,
+                new Promise<null>((resolve) => setTimeout(() => { timedOut = true; resolve(null); }, PERMISSION_TIMEOUT_MS)),
+            ]);
+
+            if (stream) {
+                // Release the device immediately so the actual app hooks can claim it
+                stream.getTracks().forEach(track => track.stop());
+                markOnboardingComplete();
+            } else if (timedOut) {
+                // Enter the app anyway: the camera screen shows its own retry if the camera really is unavailable.
+                // A stream that resolves late must still be released.
+                request.then((late) => late.getTracks().forEach(track => track.stop())).catch(() => {});
+            }
+
             onStart();
         } catch (err) {
             console.error('Permission denied:', err);
-            const msg = 'ไม่สามารถเข้าถึงกล้องหรือไมโครโฟนได้ กรุณาอนุญาตในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่อีกครั้งครับ';
+            const msg = 'ไม่สามารถเข้าถึงกล้องได้ กรุณาอนุญาตในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่อีกครั้งครับ';
             setError(msg);
             speechController.speak(msg, { channel: 'critical' });
             setIsRequesting(false);
@@ -180,7 +194,7 @@ export default function WelcomeScreen({ onStart }: WelcomeScreenProps) {
                         <svg className="size-3.5 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                         </svg>
-                        <span>ระบบจะขออนุญาตใช้งานกล้องและไมโครโฟน</span>
+                        <span>ระบบจะขออนุญาตใช้งานกล้อง</span>
                     </div>
                 </div>
 

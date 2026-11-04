@@ -95,7 +95,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         targetObject,
         targetPhase,
         targetingEvent,
-    } = useObjectDetector(videoRef, mode === 'assistant', cameraContainerRef);
+    } = useObjectDetector(videoRef, mode === 'assistant' && aiReady, cameraContainerRef);
 
     const guidanceText = objGuidance?.message || '';
 

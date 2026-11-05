@@ -57,12 +57,6 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
         return () => dataChannel.offMessage(handleMessage);
     }, [dataChannel]);
 
-    const handleSendMessage = useCallback((text: string) => {
-        if (dataChannel) {
-            dataChannel.sendChat(text);
-        }
-    }, [dataChannel]);
-
     // Call status goes through the live region: speech synthesis was being dropped right after the tap that
     // started the call (the quiet window), so the user heard nothing but a ring tone.
     const speak = useCallback((text: string) => {
@@ -156,11 +150,7 @@ export default forwardRef<BlindCallHandle, BlindCallScreenProps>(function BlindC
 
             {/* Chat Overlay */}
             {status === 'connected' && (
-                <BlindChatOverlay 
-                    latestMessage={latestMessage}
-                    onSendMessage={handleSendMessage}
-                    audioReady={audioReady}
-                />
+                <BlindChatOverlay latestMessage={latestMessage} />
             )}
 
             <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">

@@ -176,7 +176,7 @@ describe('client Gemini error classification', () => {
     it('tells a daily Google quota apart from our own short rate limit', async () => {
         const quotaMessage = 'You exceeded your current quota. * Quota exceeded for metric: generate_content_free_tier_requests, limit: 20. Please retry in 15h45m12.7s.';
         fetchMock.mockResolvedValue(jsonResponse(429, { error: { message: quotaMessage, status: 'RESOURCE_EXHAUSTED' } }));
-        const quota = await callClientGemini({ mode: 'assistant', userPrompt: 'hi' }).catch((error) => error as GeminiRequestError);
+        const quota = (await callClientGemini({ mode: 'assistant', userPrompt: 'hi' }).catch((error) => error)) as GeminiRequestError;
 
         expect(quota.kind).toBe('quota');
         expect(quota.retryAfterSeconds).toBeCloseTo(15 * 3600 + 45 * 60 + 12.7, 0);
@@ -187,7 +187,7 @@ describe('client Gemini error classification', () => {
         expect(quotaText).not.toContain('30 วินาที');
 
         fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: { message: 'Too many requests. Please slow down.' } }), { status: 429, headers: { 'Retry-After': '12' } }));
-        const limited = await callClientGemini({ mode: 'assistant', userPrompt: 'hi' }).catch((error) => error as GeminiRequestError);
+        const limited = (await callClientGemini({ mode: 'assistant', userPrompt: 'hi' }).catch((error) => error)) as GeminiRequestError;
 
         expect(limited.kind).toBe('rate_limited');
         expect(describeGeminiError(limited)).toContain('12 วินาที');

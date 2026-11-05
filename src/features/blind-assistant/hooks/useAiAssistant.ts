@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, RefObject } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
-import { captureFrameFromVideo, extractGeminiText } from '@/features/blind-assistant/client/geminiVision';
+import { callGeminiVision, captureFrameFromVideo, describeGeminiError, isAbortError } from '@/features/blind-assistant/client/geminiVision';
 import { AssistantMessage, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 import { EarconType } from '@/shared/accessibility/audio';
 
@@ -11,6 +11,8 @@ export interface UseAiAssistantResult {
     askTextOnly: (userText: string) => Promise<void>;
     clearMessages: () => void;
     stopSpeaking: () => void;
+    /** Abort any request in flight (used when leaving the tab) without touching the visible messages. */
+    cancel: () => void;
 }
 
 export function useAiAssistant(
@@ -26,6 +28,8 @@ export function useAiAssistant(
 
     const statusRef = useRef<AssistantStatus>(status);
     const abortControllerRef = useRef<AbortController | null>(null);
+    // Only the newest request may reset the status; an aborted older one must not mark a running request idle.
+    const requestIdRef = useRef(0);
 
     useEffect(() => { statusRef.current = status; }, [status]);
 
@@ -48,6 +52,7 @@ export function useAiAssistant(
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
         }
+        const requestId = ++requestIdRef.current;
         const controller = new AbortController();
         abortControllerRef.current = controller;
         const signal = controller.signal;
@@ -56,7 +61,7 @@ export function useAiAssistant(
         const timeoutId = setTimeout(() => {
             timedOut = true;
             controller.abort();
-        }, 35000);
+        }, 55000);
 
         try {
             setStatus('capturing');
@@ -117,65 +122,47 @@ export function useAiAssistant(
                 },
             ];
 
-            const response = await fetch('/api/gemini', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            const replyText = await callGeminiVision({
+                mode: 'assistant',
+                contents,
+                maxTokens: 800,
+                temperature: 0.4,
                 signal,
-                body: JSON.stringify({
-                    mode: 'assistant',
-                    contents,
-                    maxTokens: 800,
-                    temperature: 0.4,
-                }),
             });
 
-            if (!response.ok) {
-                if (response.status === 429) {
-                    const msg = 'ระบบยุ่งมาก กรุณารอ 30 วินาทีแล้วลองใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                    feedback?.('error');
-                    setStatus('idle');
-                    return true;
-                }
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.error) {
-                const msg = 'เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งครับ';
-                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                feedback?.('error');
+            if (replyText) {
+                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: replyText }]);
+                feedback?.('success');
             } else {
-                const replyText = extractGeminiText(data);
-                if (replyText) {
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: replyText }]);
-                    feedback?.('success');
-                } else {
-                    const msg = 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
-                    feedback?.('error');
-                }
+                setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: 'ไม่ได้รับคำตอบ กรุณาลองถ่ายภาพแล้วถามใหม่ครับ', isError: true }]);
+                feedback?.('error');
             }
             return true;
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
+        } catch (error: unknown) {
+            if (isAbortError(error)) {
                 if (timedOut) {
-                    const msg = 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ';
-                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
+                    setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: 'ใช้เวลานานเกินไป กรุณาลองใหม่ครับ', isError: true }]);
                     feedback?.('error');
                 }
                 return true;
             }
             console.error('Capture Error:', error);
-            const msg = 'เชื่อมต่อไม่ได้ ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่ครับ';
-            setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: msg }]);
+            addLog?.(`AI request failed: ${error instanceof Error ? error.message : String(error)}`);
+            setMessages(current => [...current, { id: `ai-${Date.now()}`, role: 'ai', content: describeGeminiError(error), isError: true }]);
             feedback?.('error');
             return true;
         } finally {
             clearTimeout(timeoutId);
-            setStatus('idle');
+            if (requestIdRef.current === requestId) setStatus('idle');
         }
     }, [videoRef, isReady, feedback, addLog, cameraContainerRef]);
+
+    const cancel = useCallback(() => {
+        requestIdRef.current += 1;
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setStatus('idle');
+    }, []);
 
     const askTextOnly = useCallback(async (userText: string) => {
         const question = userText.trim();
@@ -194,5 +181,5 @@ export function useAiAssistant(
         feedback?.('button');
     }, [feedback]);
 
-    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking };
+    return { status, messages, captureAndAsk, askTextOnly, clearMessages, stopSpeaking, cancel };
 }

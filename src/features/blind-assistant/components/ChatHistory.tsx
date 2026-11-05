@@ -21,7 +21,10 @@ function MessageContent({
     contentRef?: React.Ref<HTMLParagraphElement>;
     blockId?: string;
 }) {
-    const isError = message.content.startsWith('Error') || message.content.startsWith('ขอโทษ') || message.content.startsWith('เกิดข้อผิดพลาด');
+    const isError = message.isError === true;
+
+    // Voice questions are stored as `(พูด): "<question>"`; show what the user actually asked.
+    const spokenQuestion = message.content.match(/^\(พูด\): "([\s\S]*)"$/)?.[1]?.trim();
 
     if (message.role === 'user' && message.image) {
         return (
@@ -30,7 +33,7 @@ function MessageContent({
                 tabIndex={-1}
                 className="text-[15px] font-medium text-[#8E8E93] outline-none"
             >
-                คุณส่งภาพเพื่อให้บรรยาย
+                {spokenQuestion ? `คุณถามว่า ${spokenQuestion}` : 'คุณส่งภาพเพื่อให้บรรยาย'}
             </p>
         );
     }
@@ -55,10 +58,8 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
     const latestId = latestMessage.id || `msg-${aiMessages.length - 1}`;
 
     return (
-        <section
+        <div
             className="space-y-4 px-4 pb-3 pt-4"
-            aria-label="คำบรรยาย"
-            role="region"
             tabIndex={-1}
             {...resultRegionProps}
         >
@@ -75,6 +76,6 @@ export default function ChatHistory({ aiMessages, resultRegionProps, latestResul
                     />
                 </div>
             </div>
-        </section>
+        </div>
     );
 }

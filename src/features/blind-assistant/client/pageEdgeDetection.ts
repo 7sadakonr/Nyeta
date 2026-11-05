@@ -35,6 +35,8 @@ export interface PageAnalysisResult {
     bounds: BoundingBox | null;
     corners: QuadCorners | null;
     aligned: boolean;
+    /** The page is readable (fully in frame and a sensible size) even if not perfectly aligned. */
+    capturable: boolean;
     guidance: string;
     metrics: PageAlignmentMetrics | null;
 }
@@ -45,6 +47,7 @@ function notDetectedResult(): PageAnalysisResult {
         bounds: null,
         corners: null,
         aligned: false,
+        capturable: false,
         guidance: '',
         metrics: null,
     };
@@ -100,7 +103,18 @@ function isValidQuadShape(corners: QuadCorners): boolean {
     return quadArea(corners) >= 1;
 }
 
-function buildGuidance(metrics: PageAlignmentMetrics): { aligned: boolean; guidance: string } {
+export const MIN_CAPTURE_COVERAGE = 0.2;
+export const MAX_CAPTURE_COVERAGE = 0.9;
+
+/** Whether the page is worth capturing now: fully in frame and neither tiny nor filling the whole view. */
+export function isCapturable(metrics: Pick<PageAlignmentMetrics, 'detected' | 'cutoff' | 'coverage'>): boolean {
+    return metrics.detected
+        && metrics.cutoff.length === 0
+        && metrics.coverage >= MIN_CAPTURE_COVERAGE
+        && metrics.coverage <= MAX_CAPTURE_COVERAGE;
+}
+
+export function buildGuidance(metrics: PageAlignmentMetrics): { aligned: boolean; guidance: string } {
     if (!metrics.detected) {
         return { aligned: false, guidance: '' };
     }
@@ -128,11 +142,12 @@ function buildGuidance(metrics: PageAlignmentMetrics): { aligned: boolean; guida
 
     if (Math.abs(centerOffset.x) > cxTol || Math.abs(centerOffset.y) > cyTol) {
         let dir = 'เลื่อนกล้อง';
+        const offX = Math.abs(centerOffset.x) > cxTol;
         if (centerOffset.x < -cxTol) dir += 'ไปทางขวา';
         else if (centerOffset.x > cxTol) dir += 'ไปทางซ้าย';
 
-        if (centerOffset.y < -cyTol) dir += centerOffset.x !== 0 ? ' และลงล่าง' : 'ลงล่าง';
-        else if (centerOffset.y > cyTol) dir += centerOffset.x !== 0 ? ' และขึ้นบน' : 'ขึ้นบน';
+        if (centerOffset.y < -cyTol) dir += offX ? ' และลงล่าง' : 'ลงล่าง';
+        else if (centerOffset.y > cyTol) dir += offX ? ' และขึ้นบน' : 'ขึ้นบน';
 
         return { aligned: false, guidance: dir };
     }
@@ -224,6 +239,7 @@ function computeAlignmentFromCorners(corners: QuadCorners, vw: number, vh: numbe
         bounds,
         corners,
         aligned,
+        capturable: isCapturable(metrics),
         guidance,
         metrics,
     };

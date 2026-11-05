@@ -88,9 +88,14 @@ describe('AI camera layout', () => {
             />,
         );
 
-        const summary = screen.getByLabelText('สรุปการตรวจเงิน');
+        const summary = screen.getByText('ตรวจพบล่าสุด').parentElement!.parentElement!;
         expect(summary.className).toContain('absolute');
         expect(summary.className).toContain('bottom-4');
+        // The tiles are decorative duplicates; the result is read from one focusable paragraph, with no landmark.
+        expect(summary.getAttribute('aria-hidden')).toBe('true');
+        expect(screen.queryByRole('region')).toBeNull();
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(screen.getByText(/^ตรวจพบล่าสุด ธนบัตร 100/).getAttribute('tabindex')).toBe('-1');
         expect(screen.getByText('ตรวจพบล่าสุด')).toBeTruthy();
         expect(screen.getByText('ที่ตรวจจับได้')).toBeTruthy();
         expect(screen.getByText('฿100')).toBeTruthy();

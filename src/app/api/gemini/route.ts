@@ -7,10 +7,17 @@ import { callGeminiVision } from '@/server/ai/geminiClient';
 export { validateAndSanitizeContents, ALLOWED_MIME_TYPES, MAX_IMAGE_BASE64_LENGTH };
 export type { ContentItem, ContentPart, ValidationResult } from '@/server/ai/geminiTypes';
 
+// Retries and a 20s upstream timeout must fit inside the function budget.
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
     try {
         const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown-ip';
-        const rateLimitResult = await checkRateLimit(clientIp, 'gemini');
+        const body = await request.json().catch(() => null);
+        const limiter = body && typeof body === 'object' && (body as { mode?: unknown }).mode === 'currency'
+            ? 'gemini_currency'
+            : 'gemini';
+        const rateLimitResult = await checkRateLimit(clientIp, limiter);
 
         if (!rateLimitResult.success) {
             return NextResponse.json(
@@ -24,7 +31,6 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const body = await request.json().catch(() => null);
         const validation = validateRequestBody(body);
 
         if (!validation.valid || !validation.options) {

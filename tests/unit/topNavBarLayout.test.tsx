@@ -16,7 +16,8 @@ describe('TopNavBar safe-area layout', () => {
             />,
         );
 
-        const header = screen.getByRole('banner', { hidden: true });
+        const header = screen.getByTestId('top-safe-area');
+        expect(screen.queryByRole('banner', { hidden: true })).toBeNull();
         expect(header.className).toContain('bg-[#090909]');
         expect(header.className).toContain('pt-[calc(env(safe-area-inset-top)+0.75rem)]');
         expect(header.className).not.toContain('border-b');

@@ -1,23 +1,54 @@
 import { useState, useEffect, useRef, useCallback, RefObject } from 'react';
 import { analyzePageAlignment, preloadPageScanner } from '@/features/blind-assistant/client/pageEdgeDetection';
-import { callGeminiVision, captureFrameFromVideo } from '@/features/blind-assistant/client/geminiVision';
+import { callGeminiVision, captureSharpestFrame, describeGeminiError, isAbortError } from '@/features/blind-assistant/client/geminiVision';
 import { speechController } from '@/shared/accessibility/speechController';
 
 import { AssistantStatus, BoundingBox, QuadCorners } from '@/features/blind-assistant/types/assistant';
-import { EarconType } from '@/shared/accessibility/audio';
+import { EarconType, startProcessingEarcon } from '@/shared/accessibility/audio';
 
 export interface UseDocumentReaderResult {
     docText: string;
-    isReading: boolean;
+    docIsError: boolean;
     isProcessing: boolean;
     readerGuidance: string;
     readerAligned: boolean;
     pageBounds: BoundingBox | null;
     pageCorners: QuadCorners | null;
     readDocument: () => Promise<void>;
-    replayDocument: () => void;
-    stopReading: () => void;
-    resetDocument: () => void;
+    /** Leave the current result and go back to finding the next page. */
+    restartScan: () => void;
+    /** Cancel any read in progress and clear the result. `holdMs` delays automatic capture (time to move the page away). */
+    resetDocument: (holdMs?: number) => void;
+}
+
+const DOCUMENT_IMAGE_MAX_DIMENSION = 2048;
+const DOCUMENT_IMAGE_QUALITY = 0.88;
+const DOCUMENT_REQUEST_TIMEOUT_MS = 55000;
+const PAGE_CROP_PADDING = 0.04;
+
+// A page with usable framing must be seen this many analysis frames in a row before auto-capture.
+const CAPTURABLE_FRAMES_REQUIRED = 2;
+// Guidance is spoken once it is stable for this many frames, and may repeat after this interval.
+const GUIDANCE_STABLE_FRAMES = 2;
+const GUIDANCE_REPEAT_MS = 6000;
+const NO_PAGE_HINT_AFTER_MS = 3000;
+const NEXT_PAGE_HOLD_MS = 3000;
+const NO_PAGE_HINT_REPEAT_MS = 10000;
+const NO_PAGE_HINT_MAX_PER_ABSENCE = 2;
+const NO_PAGE_HINT = 'ยังไม่เจอเอกสาร วางเอกสารบนพื้นเรียบให้เห็นทั้งแผ่น แล้วยกโทรศัพท์ขึ้นตรงๆ';
+
+/** Expand a box by a fraction of its size on every side, clamped to the video frame. */
+export function padBounds(box: BoundingBox, ratio: number, maxWidth: number, maxHeight: number): BoundingBox {
+    const padX = box.width * ratio;
+    const padY = box.height * ratio;
+    const x = Math.max(0, box.x - padX);
+    const y = Math.max(0, box.y - padY);
+    return {
+        x,
+        y,
+        width: Math.min(maxWidth - x, box.width + padX * 2),
+        height: Math.min(maxHeight - y, box.height + padY * 2),
+    };
 }
 
 export function useDocumentReader(
@@ -28,10 +59,12 @@ export function useDocumentReader(
     aiStatus: AssistantStatus,
     feedback?: (type: EarconType) => void,
     addLog?: (msg: string) => void,
-    cameraContainerRef?: RefObject<HTMLElement | null>
+    cameraContainerRef?: RefObject<HTMLElement | null>,
+    /** Container to crop the captured photo to. Defaults to the camera container; null means the whole frame. */
+    captureContainerRef?: RefObject<HTMLElement | null>,
 ): UseDocumentReaderResult {
     const [docText, setDocText] = useState<string>('');
-    const [isReading, setIsReading] = useState<boolean>(false);
+    const [docIsError, setDocIsError] = useState<boolean>(false);
     const [isProcessing, setIsProcessing] = useState<boolean>(false);
     const [readerGuidance, setReaderGuidance] = useState<string>('');
     const [readerAligned, setReaderAligned] = useState<boolean>(false);
@@ -44,6 +77,12 @@ export function useDocumentReader(
     audioReadyRef.current = audioReady;
 
     const lastSpokenPageRef = useRef<string>('');
+    const lastSpokenPageAtRef = useRef<number>(0);
+    const noPageSinceRef = useRef<number>(0);
+    // After "read a new page" give the user time to turn the page before automatic capture may fire again.
+    const autoCaptureHoldUntilRef = useRef<number>(0);
+    const lastNoPageHintAtRef = useRef<number>(0);
+    const noPageHintCountRef = useRef<number>(0);
     const alignedCountRef = useRef<number>(0);
     const pageSeenCountRef = useRef<number>(0);
     const pageOverlayActiveRef = useRef<boolean>(false);
@@ -56,70 +95,104 @@ export function useDocumentReader(
 
     // Status refs for effect closures
     const aiStatusRef = useRef<AssistantStatus>(aiStatus);
-    const isReadingRef = useRef<boolean>(isReading);
     useEffect(() => { aiStatusRef.current = aiStatus; }, [aiStatus]);
-    useEffect(() => { isReadingRef.current = isReading; }, [isReading]);
+
+    const pageBoundsRef = useRef<BoundingBox | null>(null);
+    useEffect(() => { pageBoundsRef.current = pageBounds; }, [pageBounds]);
 
     const readDocument = useCallback(async () => {
-        if (isProcessing || !enabled) return;
+        if (isProcessing || !enabled || speechController.isOrientationBlocked) return;
         if (!isReady || !videoRef.current) {
             feedback?.('error');
             if (audioReadyRef.current) speechController.speak('กล้องยังไม่พร้อม กรุณารอสักครู่ครับ', { channel: 'critical' });
             return;
         }
 
+        // Registered before any await so leaving the tab (resetDocument) can cancel even the frame capture.
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        let timedOut = false;
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, DOCUMENT_REQUEST_TIMEOUT_MS);
+        let stopProcessingSound: (() => void) | null = null;
+
         try {
             setIsProcessing(true);
-            const captureOptions: { container?: HTMLElement | null; maxDimension: number; quality: number } = {
-                maxDimension: 1024,
-                quality: 0.75,
+            feedback?.('capture');
+            addLog?.('Capturing document...');
+
+            const captureOptions: { container?: HTMLElement | null; cropRegion?: BoundingBox | null; maxDimension: number; quality: number } = {
+                maxDimension: DOCUMENT_IMAGE_MAX_DIMENSION,
+                quality: DOCUMENT_IMAGE_QUALITY,
             };
-            if (cameraContainerRef?.current) {
-                captureOptions.container = cameraContainerRef.current;
+            const captureContainer = captureContainerRef ? captureContainerRef.current : cameraContainerRef?.current;
+            if (captureContainer) {
+                captureOptions.container = captureContainer;
             }
-            const imageDataUrl = captureFrameFromVideo(videoRef.current, captureOptions);
+            // Crop to the detected page so the OCR model sees the text at the highest possible resolution.
+            const video = videoRef.current;
+            if (pageBoundsRef.current && video.videoWidth && video.videoHeight) {
+                captureOptions.cropRegion = padBounds(pageBoundsRef.current, PAGE_CROP_PADDING, video.videoWidth, video.videoHeight);
+            }
+            const imageDataUrl = await captureSharpestFrame(video, captureOptions);
+            if (controller.signal.aborted) return;
             if (!imageDataUrl) {
+                // Capture failed before anything was sent: automatic capture must be able to try again.
+                autoCaptureFiredRef.current = false;
                 feedback?.('error');
                 if (audioReadyRef.current) speechController.speak('จับภาพไม่ได้ ถือโทรศัพท์ให้นิ่งแล้วกดใหม่ครับ', { channel: 'critical' });
-                setIsProcessing(false);
                 return;
             }
 
             autoCaptureFiredRef.current = true;
             speechController.stop();
-            setIsReading(false);
-            feedback?.('capture');
-            addLog?.('Capturing document...');
-            setDocText('กำลังอ่านเอกสาร รอสักครู่...');
+            setDocIsError(false);
+            setDocText('');
 
-            abortControllerRef.current?.abort();
-            const controller = new AbortController();
-            abortControllerRef.current = controller;
+            stopProcessingSound = startProcessingEarcon();
+
             const text = await callGeminiVision({
                 mode: 'reader',
                 imageDataUrl,
                 userPrompt: 'อ่านข้อความทั้งหมดในภาพนี้',
-                maxTokens: 1500,
+                maxTokens: 4096,
                 temperature: 0,
                 signal: controller.signal,
             });
+
+            if (!text.trim()) {
+                setDocIsError(true);
+                setDocText('ไม่พบข้อความในภาพ ลองถือกล้องให้นิ่งและให้เห็นตัวหนังสือชัดขึ้นแล้วกดอ่านใหม่');
+                feedback?.('error');
+                return;
+            }
 
             setDocText(text);
             feedback?.('success');
 
             // Do not auto-speak OCR document text; VoiceOver will read from the semantic DOM.
-        } catch (error: any) {
-            if (error?.name === 'AbortError') return;
+        } catch (error: unknown) {
+            if (isAbortError(error)) {
+                if (timedOut) {
+                    setDocIsError(true);
+                    setDocText('ใช้เวลานานเกินไป กรุณากดอ่านใหม่ครับ');
+                    feedback?.('error');
+                }
+                return;
+            }
             console.error('Read document error:', error);
-            setDocText(`เกิดข้อผิดพลาด: ${error.message}`);
-            addLog?.(`Read document error: ${error.message}`);
+            setDocIsError(true);
+            // Error text is placed in docText; focus moves there so it is read from the DOM.
+            setDocText(describeGeminiError(error));
+            addLog?.(`Read document error: ${error instanceof Error ? error.message : String(error)}`);
             feedback?.('error');
-            if (audioReadyRef.current) speechController.speak('อ่านเอกสารไม่สำเร็จ กรุณาลองใหม่ครับ', { channel: 'critical' });
         } finally {
-            abortControllerRef.current = null;
+            clearTimeout(timeoutId);
+            stopProcessingSound?.();
+            if (abortControllerRef.current === controller) abortControllerRef.current = null;
             setIsProcessing(false);
         }
-    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog, cameraContainerRef]);
+    }, [isReady, isProcessing, enabled, videoRef, feedback, addLog, cameraContainerRef, captureContainerRef]);
 
     // Use a stable ref for readDocument to use inside the interval
     const readDocumentRef = useRef<() => Promise<void>>(readDocument);
@@ -141,8 +214,8 @@ export function useDocumentReader(
         preloadPageScanner().catch(() => {});
 
         const speakPageGuidance = (text: string) => {
-            if (!text || text === lastSpokenPageRef.current) return;
-            if (aiStatusRef.current !== 'idle' || isReadingRef.current) return;
+            if (!text) return;
+            if (aiStatusRef.current !== 'idle') return;
 
             if (text !== guidanceCandidateRef.current) {
                 guidanceCandidateRef.current = text;
@@ -151,14 +224,32 @@ export function useDocumentReader(
             }
 
             consecutiveGuidanceRef.current += 1;
-            if (consecutiveGuidanceRef.current < 3) {
+            if (consecutiveGuidanceRef.current < GUIDANCE_STABLE_FRAMES) {
                 return;
             }
 
             if (text.includes('ตรงแล้ว')) return;
             if (!audioReadyRef.current) return;
+            // The same guidance may be repeated after a while, so a user who missed it is not left in silence.
+            const now = Date.now();
+            if (text === lastSpokenPageRef.current && now - lastSpokenPageAtRef.current < GUIDANCE_REPEAT_MS) return;
             if (speechController.speak(text, { channel: 'realtime', dedupeMs: 1200 })) {
                 lastSpokenPageRef.current = text;
+                lastSpokenPageAtRef.current = now;
+            }
+        };
+
+        // With no page in view the guidance is empty, which used to leave the user in silence.
+        const hintNoPage = () => {
+            const now = Date.now();
+            if (!noPageSinceRef.current) { noPageSinceRef.current = now; noPageHintCountRef.current = 0; }
+            if (noPageHintCountRef.current >= NO_PAGE_HINT_MAX_PER_ABSENCE) return;
+            if (docTextRef.current || aiStatusRef.current !== 'idle' || !audioReadyRef.current) return;
+            if (now - noPageSinceRef.current < NO_PAGE_HINT_AFTER_MS) return;
+            if (now - lastNoPageHintAtRef.current < NO_PAGE_HINT_REPEAT_MS) return;
+            if (speechController.speak(NO_PAGE_HINT, { channel: 'realtime', key: 'reader-no-page', dedupeMs: NO_PAGE_HINT_REPEAT_MS })) {
+                lastNoPageHintAtRef.current = now;
+                noPageHintCountRef.current += 1;
             }
         };
 
@@ -185,7 +276,7 @@ export function useDocumentReader(
         const analyze = async () => {
             if (scanBusyRef.current) return;
             if (!videoRef.current || videoRef.current.readyState < 2) return;
-            if (aiStatusRef.current === 'thinking' || isReadingRef.current) return;
+            if (aiStatusRef.current === 'thinking' || speechController.isOrientationBlocked) return;
 
             scanBusyRef.current = true;
             try {
@@ -195,8 +286,10 @@ export function useDocumentReader(
                     pageSeenCountRef.current = 0;
                     alignedCountRef.current = 0;
                     clearPageOverlay();
+                    hintNoPage();
                     return;
                 }
+                noPageSinceRef.current = 0;
 
                 pageSeenCountRef.current += 1;
                 if (pageSeenCountRef.current < 2) {
@@ -206,20 +299,20 @@ export function useDocumentReader(
                 }
 
                 applyPageOverlay(result);
-                speakPageGuidance(result.guidance);
 
-                const canAutoCapture = !autoCaptureFiredRef.current && !docTextRef.current;
-                if (result.aligned && canAutoCapture && aiStatusRef.current === 'idle') {
+                // Capture as soon as the page is readable (fully in frame, reasonable size); exact alignment is not required.
+                const canAutoCapture = !autoCaptureFiredRef.current && !docTextRef.current && aiStatusRef.current === 'idle' && Date.now() >= autoCaptureHoldUntilRef.current;
+                if (!(result.capturable && canAutoCapture)) speakPageGuidance(result.guidance);
+
+                if (result.capturable && canAutoCapture) {
                     alignedCountRef.current += 1;
-                    if (alignedCountRef.current >= 3) {
+                    if (alignedCountRef.current >= CAPTURABLE_FRAMES_REQUIRED) {
                         autoCaptureFiredRef.current = true;
                         alignedCountRef.current = 0;
                         feedback?.('success');
-                        speechController.stop();
-                        if (audioReadyRef.current) speechController.speak('ตรงแล้ว กำลังถ่ายเอกสาร', { channel: 'status' });
                         readDocumentRef.current?.();
                     }
-                } else if (!result.aligned) {
+                } else if (!result.capturable) {
                     alignedCountRef.current = 0;
                 }
             } finally {
@@ -237,6 +330,7 @@ export function useDocumentReader(
             consecutiveGuidanceRef.current = 0;
             guidanceCandidateRef.current = '';
             lastSpokenPageRef.current = '';
+            noPageSinceRef.current = 0;
             setPageBounds(null);
             setPageCorners(null);
             setReaderGuidance('');
@@ -246,27 +340,30 @@ export function useDocumentReader(
         };
     }, [enabled, isReady, videoRef, feedback, cameraContainerRef]);
 
-    const replayDocument = useCallback(() => {
-        // Document content is read by VoiceOver; no TTS replay
-    }, []);
-
-    const resetDocument = useCallback(() => {
+    const resetDocument = useCallback((holdMs = 0) => {
         abortControllerRef.current?.abort();
         abortControllerRef.current = null;
         setDocText('');
-        setIsReading(false);
+        setDocIsError(false);
         autoCaptureFiredRef.current = false;
+        autoCaptureHoldUntilRef.current = holdMs > 0 ? Date.now() + holdMs : 0;
         
         speechController.stop();
     }, []);
 
-    const stopReading = useCallback(() => {
-        
+    const restartScan = useCallback(() => {
+        abortControllerRef.current?.abort();
+        abortControllerRef.current = null;
+        setDocText('');
+        setDocIsError(false);
+        autoCaptureFiredRef.current = false;
+        alignedCountRef.current = 0;
+        guidanceCandidateRef.current = '';
+        consecutiveGuidanceRef.current = 0;
+        lastSpokenPageRef.current = '';
+        autoCaptureHoldUntilRef.current = Date.now() + NEXT_PAGE_HOLD_MS;
         speechController.stop();
-        
-        setIsReading(false);
-        feedback?.('success');
-    }, [feedback]);
+    }, []);
 
     useEffect(() => () => {
         abortControllerRef.current?.abort();
@@ -275,15 +372,14 @@ export function useDocumentReader(
 
     return {
         docText,
-        isReading,
+        docIsError,
         isProcessing,
         readerGuidance,
         readerAligned,
         pageBounds,
         pageCorners,
         readDocument,
-        replayDocument,
-        stopReading,
+        restartScan,
         resetDocument,
     };
 }

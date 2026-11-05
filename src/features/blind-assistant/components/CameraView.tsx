@@ -1,6 +1,6 @@
 import React, { RefObject } from 'react';
 import DetectionOverlay from './DetectionOverlay';
-import { formatCurrencyDisplay } from '@/features/blind-assistant/client/currencyUtils';
+import { formatCurrencyDisplay, formatCurrencySpeech } from '@/features/blind-assistant/client/currencyUtils';
 import { CapturedCurrency } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { BlindMode, BoundingBox, QuadCorners, AssistantStatus } from '@/features/blind-assistant/types/assistant';
 
@@ -20,6 +20,7 @@ export interface CameraViewProps {
     aiStatus?: AssistantStatus;
     readerGuidance?: string;
     showCapturedText?: boolean;
+    currencyDetailsRef?: RefObject<HTMLParagraphElement | null>;
 }
 
 export default function CameraView({
@@ -38,6 +39,7 @@ export default function CameraView({
     aiStatus = 'idle',
     readerGuidance = '',
     showCapturedText = false,
+    currencyDetailsRef,
 }: CameraViewProps) {
     return (
         <div
@@ -50,6 +52,9 @@ export default function CameraView({
                 muted
                 playsInline
                 className="absolute inset-0 h-full w-full object-cover"
+                // Not left to the utility classes alone: a stalled iOS video must still fill the card, not sit small in the middle.
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                {...{ 'webkit-playsinline': 'true' }}
                 aria-hidden="true"
             />
             <DetectionOverlay
@@ -103,9 +108,13 @@ export default function CameraView({
                         </div>
                     )}
 
-                    <section
+                    {/* The one readable form of the result (the visible tiles below are decorative duplicates). */}
+                    <p ref={currencyDetailsRef} tabIndex={-1} className="sr-only">
+                        {currencyResult ? `ตรวจพบล่าสุด ${formatCurrencySpeech(currencyResult, null, true)}` : ''}
+                    </p>
+                    <div
+                        aria-hidden="true"
                         className="pointer-events-none absolute bottom-4 left-4 right-4 z-30 grid grid-cols-2 gap-3"
-                        aria-label="สรุปการตรวจเงิน"
                     >
                         <div className="rounded-xl bg-[#090909]/60 px-3 py-3 text-center backdrop-blur-2xl">
                             <p className="text-[13px] font-semibold text-[#EBEBF5]/60">ตรวจพบล่าสุด</p>
@@ -119,7 +128,7 @@ export default function CameraView({
                                 {currencyResult ? formatCurrencyDisplay(currencyResult) : '—'}
                             </p>
                         </div>
-                    </section>
+                    </div>
                 </>
             )}
         </div>

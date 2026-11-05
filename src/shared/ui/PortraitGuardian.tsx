@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { speechController } from '@/shared/accessibility/speechController';
 import { playEarcon } from '@/shared/accessibility/audio';
 
@@ -12,6 +12,7 @@ import { playEarcon } from '@/shared/accessibility/audio';
  */
 export default function PortraitGuardian() {
     const [isLandscape, setIsLandscape] = useState(false);
+    const announcedRef = useRef(false);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -22,16 +23,7 @@ export default function PortraitGuardian() {
             const isPhoneHeight = window.innerHeight <= 600;
 
             const landscapeDetected: boolean = Boolean(isHorizontal && isPhoneHeight && isTouch);
-            setIsLandscape((prev) => {
-                if (!prev && landscapeDetected) {
-                    speechController.setOrientationBlocked(true);
-                    playEarcon('error');
-                    speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
-                } else if (prev && !landscapeDetected) {
-                    speechController.setOrientationBlocked(false);
-                }
-                return landscapeDetected;
-            });
+            setIsLandscape(landscapeDetected);
         };
 
         checkOrientation();
@@ -60,11 +52,32 @@ export default function PortraitGuardian() {
         };
     }, []);
 
+    // Side effects live here (not in a state updater) so strict mode cannot double-fire them.
+    // TTS + earcon are the single announcement path; the overlay itself is not a live region.
+    useEffect(() => {
+        if (isLandscape && !announcedRef.current) {
+            announcedRef.current = true;
+            speechController.setOrientationBlocked(true);
+            playEarcon('error');
+            speechController.speak('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+        } else if (!isLandscape && announcedRef.current) {
+            announcedRef.current = false;
+            speechController.setOrientationBlocked(false);
+        }
+    }, [isLandscape]);
+
+    // While the overlay is up the app behind it must not be reachable by VoiceOver or touch.
+    useEffect(() => {
+        const app = document.getElementById('nyeta-app');
+        if (!app) return;
+        if (isLandscape) app.setAttribute('inert', '');
+        else app.removeAttribute('inert');
+        return () => app.removeAttribute('inert');
+    }, [isLandscape]);
+
     return (
-        <aside
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
+        <div
+            data-testid="portrait-guardian"
             className={`${isLandscape ? 'flex' : 'hidden'} portrait-guardian-auto fixed inset-0 z-[99999] flex-col items-center justify-center bg-[#090909] px-6 text-center text-white select-none backdrop-blur-md`}
         >
             <div className="mb-6 flex size-20 items-center justify-center rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
@@ -92,9 +105,9 @@ export default function PortraitGuardian() {
             <p className="text-base text-gray-300 max-w-sm leading-relaxed mb-2">
                 ระบบ Nyeta ใช้งานได้เฉพาะในแนวตั้งเท่านั้น
             </p>
-            <p className="text-xs text-gray-500 tracking-wide">
+            <p lang="en" className="text-xs text-gray-500 tracking-wide">
                 Please rotate your device back to portrait mode
             </p>
-        </aside>
+        </div>
     );
 }

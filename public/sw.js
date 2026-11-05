@@ -2,6 +2,7 @@
 const CACHE_VERSION = 'nyeta-v1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const NAVIGATION_CACHE = `${CACHE_VERSION}-navigation`;
+const NAVIGATION_TIMEOUT_MS = 4000;
 const PRECACHE = ['/', '/offline.html', '/icons/nyeta-192.png', '/icons/nyeta-512.png', '/icons/nyeta-maskable-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -40,7 +41,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).then((response) => putIfOk(NAVIGATION_CACHE, request, response)).catch(async () => (await caches.match(request)) || (await caches.match('/')) || (await caches.match('/offline.html'))));
+    // Network first, but never let a slow or dead connection hang the launch: after the timeout use the cached shell.
+    const fromCache = async () => (await caches.match(request)) || (await caches.match('/')) || (await caches.match('/offline.html'));
+    const network = fetch(request).then((response) => putIfOk(NAVIGATION_CACHE, request, response));
+    const timeout = new Promise((resolve) => setTimeout(resolve, NAVIGATION_TIMEOUT_MS, null));
+    event.respondWith(
+      Promise.race([network, timeout]).then(async (response) => {
+        if (response) return response;
+        const cached = await fromCache();
+        return cached || network;
+      }).catch(async () => (await fromCache()) || Response.error())
+    );
     return;
   }
   if (isStaticAsset(request, url)) {

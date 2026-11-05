@@ -8,6 +8,9 @@ import { createPeerConnection, closePeerConnection } from '@/features/calling/cl
 import { CallStatus } from '@/features/calling/types';
 
 const RING_TIMEOUT_MS = 40000;
+// Once a volunteer accepted, the media connection must come up within this time or the call is reported as failed;
+// otherwise the tabs stay locked on "connecting" and hang-up is the only way out.
+const CONNECT_TIMEOUT_MS = 30000;
 
 export interface UseBlindHelpResult {
     status: CallStatus;
@@ -40,6 +43,7 @@ export function useBlindHelp(): UseBlindHelpResult {
     const sessionTokenRef = useRef<string | null>(null);
     const acceptedVolunteerRef = useRef<string | null>(null);
     const ringTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const connectTimerRef = useRef<NodeJS.Timeout | null>(null);
     const candidateQueueRef = useRef<RTCIceCandidateInit[]>([]);
     const statusRef = useRef<CallStatus>('idle');
     const mountedRef = useRef(false);
@@ -55,6 +59,10 @@ export function useBlindHelp(): UseBlindHelpResult {
         if (ringTimerRef.current) {
             clearTimeout(ringTimerRef.current);
             ringTimerRef.current = null;
+        }
+        if (connectTimerRef.current) {
+            clearTimeout(connectTimerRef.current);
+            connectTimerRef.current = null;
         }
         if (pcRef.current) {
             closePeerConnection(pcRef.current);
@@ -97,6 +105,20 @@ export function useBlindHelp(): UseBlindHelpResult {
         }
         setStatusSafe('connecting');
 
+        const connectOperationId = operationIdRef.current;
+        connectTimerRef.current = setTimeout(() => {
+            connectTimerRef.current = null;
+            if (!mountedRef.current || connectOperationId !== operationIdRef.current) return;
+            if (statusRef.current !== 'connecting') return;
+            const id = callIdRef.current;
+            if (id) {
+                sendEvent(callChannel(id), EVENTS.CALL_ENDED, { from: 'blind' }, sessionTokenRef.current || undefined);
+                callIdRef.current = null;
+            }
+            setError('เชื่อมต่อกับอาสาสมัครไม่สำเร็จ กรุณาลองใหม่');
+            cleanup('error');
+        }, CONNECT_TIMEOUT_MS);
+
         const token = sessionTokenRef.current;
         sendEvent(VOLUNTEERS_CHANNEL, EVENTS.CALL_CLAIMED, {
             callId: callIdRef.current,
@@ -134,8 +156,10 @@ export function useBlindHelp(): UseBlindHelpResult {
             }
         } catch (err) {
             console.error('setRemoteDescription error', err);
+            setError('เชื่อมต่อกับอาสาสมัครไม่สำเร็จ กรุณาลองใหม่');
+            cleanup('error');
         }
-    }, []);
+    }, [cleanup]);
 
     const handleIce = useCallback(async (data: any) => {
         if (data?.from !== acceptedVolunteerRef.current || !data?.candidate) return;
@@ -225,7 +249,13 @@ export function useBlindHelp(): UseBlindHelpResult {
                 }
             },
             onConnectionStateChange: (state) => {
-                if (state === 'connected') setStatusSafe('connected');
+                if (state === 'connected') {
+                    if (connectTimerRef.current) {
+                        clearTimeout(connectTimerRef.current);
+                        connectTimerRef.current = null;
+                    }
+                    setStatusSafe('connected');
+                }
                 else if (['failed', 'closed'].includes(state)) {
                     if (['connected', 'connecting'].includes(statusRef.current)) cleanup('ended');
                 }

@@ -7,7 +7,9 @@ import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/Hap
 import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { useOrientationLock } from '@/shared/hooks/useOrientationLock';
+import { useAppViewportHeight } from '@/shared/hooks/useAppViewportHeight';
 import { playEarcon } from '@/shared/accessibility/audio';
+import { announce } from '@/shared/accessibility/announcer';
 import BlindBottomNavigation from './BlindBottomNavigation';
 import PwaControls from './PwaControls';
 import { ACTIVE_CALL_STATUSES, ASSISTANT_TABS, BlindAppTab } from './types';
@@ -17,11 +19,19 @@ export interface BlindAppShellProps {
     initialTab?: BlindAppTab;
 }
 
+const TAB_TITLES: Record<BlindAppTab, string> = {
+    assistant: 'AI ผู้ช่วย',
+    currency: 'สแกนธนบัตร',
+    reader: 'อ่านเอกสาร',
+    volunteer: 'ขอความช่วยเหลือจากอาสา',
+};
+
 const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] =>
     (ASSISTANT_TABS as readonly string[]).includes(tab);
 
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
     useOrientationLock();
+    useAppViewportHeight();
 
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -38,7 +48,10 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
     const selectTab = useCallback((nextTab: BlindAppTab) => {
         if (nextTab === activeTab) return;
         if (callLocked && nextTab !== 'volunteer') {
+            // iPhone has no vibration API, so the refusal must be audible too.
             void hapticRef.current?.trigger(2);
+            playEarcon('error');
+            announce('วางสายก่อนเปลี่ยนเมนู');
             return;
         }
 
@@ -51,36 +64,37 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
             assistantRef.current?.prepareForCall();
         }
 
-        let tabName = '';
         switch(nextTab) {
             case 'assistant': {
                 playEarcon('mode-assistant');
-                tabName = 'AI ผู้ช่วย';
                 break;
             }
             case 'reader': {
                 playEarcon('mode-reader');
-                tabName = 'อ่านเอกสาร';
                 break;
             }
             case 'currency': {
                 playEarcon('mode-currency');
-                tabName = 'สแกนธนบัตร';
                 break;
             }
             case 'volunteer': {
                 playEarcon('mode-volunteer');
-                tabName = 'ขอความช่วยเหลือ';
                 break;
             }
         }
-        speechController.speak(tabName, { channel: 'status' });
-
         if (isAssistantTab(nextTab)) {
             window.localStorage.setItem('nyeta_blind_mode', nextTab);
         }
         void hapticRef.current?.trigger(1);
         setActiveTab(nextTab);
+        // Keep the address in step with the tab so a reload (e.g. after an update) comes back to the same tab.
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', nextTab);
+            window.history.replaceState(window.history.state, '', url);
+        } catch {
+            // Ignore: only the reload target is affected.
+        }
     }, [activeTab, callLocked]);
 
     useEffect(() => {
@@ -110,18 +124,20 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
 
     return (
         <div
-            className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-[#090909] text-white"
+            className="nyeta-surface fixed inset-x-0 top-0 flex h-[var(--nyeta-app-h,100dvh)] w-full flex-col overflow-hidden bg-[#090909] text-white"
             {...accessibilityNavigationHandlers}
         >
             <HapticFeedback ref={hapticRef} />
             <PwaControls callActive={callLocked} audioReady={true} />
-            <section id="blind-app-panel" role="tabpanel" aria-labelledby={`blind-app-tab-${activeTab}`} className="min-h-0 flex-1 overflow-hidden">
+            {/* The single main landmark and page heading; VoiceOver's rotor can jump straight to the current mode. */}
+            <main id="blind-app-panel" className="min-h-0 flex-1 overflow-hidden">
+                <h1 className="sr-only">{TAB_TITLES[activeTab]}</h1>
                 {activeTab === 'volunteer' ? (
                     <BlindCallScreen ref={callRef} presentation="embedded" onStatusChange={setCallStatus} audioReady={true} />
                 ) : (
                     <BlindAssistScreen ref={assistantRef} mode={activeTab} presentation="embedded" audioReady={true} />
                 )}
-            </section>
+            </main>
             <BlindBottomNavigation activeTab={activeTab} callLocked={callLocked} onSelect={selectTab} />
         </div>
     );

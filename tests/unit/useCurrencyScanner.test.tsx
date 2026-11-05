@@ -27,10 +27,10 @@ describe('Currency auto-scan safeguards', () => {
         expect(source).toContain('requestRef.current?.controller.abort()');
     });
 
-    it('requires removal confirmation before re-arming a next scan', () => {
+    it('re-arms the next scan once the scene changed and no currency is left', () => {
         const source = readSource('src/features/blind-assistant/hooks/useCurrencyScanner.ts');
         expect(source).toContain("if (token.returnPhase === 'waiting-removal')");
-        expect(source).toContain('removalNotFoundCountRef.current >= 2');
+        expect(source).toContain('finishRemoval();');
         expect(source).toContain('พร้อมสแกนใบถัดไป');
     });
 

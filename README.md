@@ -225,7 +225,7 @@ Create a `.env.local` file based on `.env.local.example`:
 ```env
 # Gemini API (Server-side ONLY)
 GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_MODEL=gemini-3.5-flash
 
 # Pusher Signaling
 PUSHER_APP_ID=your_pusher_app_id

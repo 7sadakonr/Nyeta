@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { StrictMode } from 'react';
 import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,10 +40,10 @@ describe('PortraitGuardian', () => {
     });
 
     it('renders guardian element in DOM with hidden class when in portrait', () => {
-        const { getByRole } = render(<PortraitGuardian />);
-        const alert = getByRole('alert');
-        expect(alert).not.toBeNull();
-        expect(alert.className).toContain('hidden');
+        const { getByTestId, queryByRole } = render(<PortraitGuardian />);
+        const guardian = getByTestId('portrait-guardian');
+        expect(guardian.className).toContain('hidden');
+        expect(queryByRole('alert')).toBeNull();
         expect(speak).not.toHaveBeenCalled();
     });
 
@@ -52,11 +53,16 @@ describe('PortraitGuardian', () => {
         Object.defineProperty(window, 'innerHeight', { writable: true, configurable: true, value: 380 });
         Object.defineProperty(navigator, 'maxTouchPoints', { writable: true, configurable: true, value: 5 });
 
-        const { getByRole } = render(<PortraitGuardian />);
-        const alert = getByRole('alert');
-        expect(alert.className).toContain('flex');
+        const { getByTestId, queryByRole } = render(<StrictMode><PortraitGuardian /></StrictMode>);
+        const guardian = getByTestId('portrait-guardian');
+        expect(guardian.className).toContain('flex');
+        // TTS + earcon are the single announcement path: no live region, and strict mode must not double-fire.
+        expect(queryByRole('alert')).toBeNull();
+        expect(guardian.getAttribute('aria-live')).toBeNull();
         expect(setOrientationBlocked).toHaveBeenCalledWith(true);
+        expect(speak).toHaveBeenCalledTimes(1);
         expect(speak).toHaveBeenCalledWith('กรุณาหมุนโทรศัพท์เป็นแนวตั้ง', { channel: 'critical' });
+        expect(playEarcon).toHaveBeenCalledTimes(1);
         expect(playEarcon).toHaveBeenCalledWith('error');
     });
 });

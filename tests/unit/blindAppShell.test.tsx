@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const assistantPrepareForCall = vi.fn();
 const callPrepareForExit = vi.fn();
 let audioReady = false;
+const { announceMock, playEarcon } = vi.hoisted(() => ({ announceMock: vi.fn(), playEarcon: vi.fn() }));
 const { speak, stop, notifyUserNavigation, unlockAudio } = vi.hoisted(() => ({
     speak: vi.fn(),
     stop: vi.fn(),
@@ -54,6 +55,9 @@ vi.mock('@/shared/hooks/useSpeechStatus', () => ({
     }),
 }));
 
+vi.mock('@/shared/accessibility/audio', () => ({ playEarcon }));
+vi.mock('@/shared/accessibility/announcer', () => ({ announce: (...args: unknown[]) => announceMock(...args) }));
+
 import BlindAppShell from '@/features/blind-app/BlindAppShell';
 
 describe('BlindAppShell', () => {
@@ -64,13 +68,13 @@ describe('BlindAppShell', () => {
     afterEach(() => vi.clearAllMocks());
 
     it('keeps entry silent while delegating navigation from content and tabs once', () => {
-        const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
+        const { getByRole, queryByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 
-        expect(getByRole('tablist', { name: 'เมนูหลักสำหรับผู้พิการทางสายตา' })).toBeTruthy();
-        expect(getByRole('tab', { name: 'AI ผู้ช่วย' }).getAttribute('aria-selected')).toBe('true');
-        expect(getByRole('tab', { name: 'สแกนธนบัตร' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByRole('tab', { name: 'อ่านเอกสาร' }).getAttribute('aria-controls')).toBe('blind-app-panel');
-        expect(getByRole('tab', { name: 'ขอความช่วยเหลือจากอาสา' }).getAttribute('aria-controls')).toBe('blind-app-panel');
+        expect(getByRole('navigation', { name: 'เมนูหลัก' })).toBeTruthy();
+        expect(queryByRole('tab')).toBeNull();
+        expect(queryByRole('tablist')).toBeNull();
+        expect(getByRole('button', { name: 'AI ผู้ช่วย' }).getAttribute('aria-current')).toBe('page');
+        expect(getByRole('button', { name: 'สแกนธนบัตร' }).getAttribute('aria-current')).toBeNull();
         expect(getByTestId('mock-assistant').textContent).toBe('assistant:ready');
         expect(queryByTestId('mock-call')).toBeNull();
         expect(speak).not.toHaveBeenCalledWith('ผู้ช่วยพร้อม', { channel: 'status' });
@@ -78,44 +82,72 @@ describe('BlindAppShell', () => {
         fireEvent.focusIn(getByTestId('mock-assistant'));
         expect(notifyUserNavigation).not.toHaveBeenCalled();
 
-        fireEvent.focusIn(getByRole('tab', { name: 'สแกนธนบัตร' }));
+        fireEvent.focusIn(getByRole('button', { name: 'สแกนธนบัตร' }));
         expect(notifyUserNavigation).toHaveBeenCalledTimes(1);
-        fireEvent.click(getByRole('tab', { name: 'สแกนธนบัตร' }));
+        fireEvent.click(getByRole('button', { name: 'สแกนธนบัตร' }));
         expect(getByTestId('mock-assistant').textContent).toBe('currency:ready');
         expect(queryByTestId('mock-call')).toBeNull();
-        expect(speak).toHaveBeenCalledWith('สแกนธนบัตร', { channel: 'status' });
+        expect(getByRole('button', { name: 'สแกนธนบัตร' }).getAttribute('aria-current')).toBe('page');
+        // VoiceOver reads the tab name itself; TTS must not repeat it.
+        expect(speak).not.toHaveBeenCalled();
     });
 
     it('anchors the shell to the viewport with standard tabbar placement', () => {
         const { container, getByRole } = render(<BlindAppShell initialTab="assistant" />);
 
         const shell = container.firstElementChild as HTMLElement;
-        const tablist = getByRole('tablist', { name: 'เมนูหลักสำหรับผู้พิการทางสายตา' });
+        const tablist = getByRole('navigation', { name: 'เมนูหลัก' });
         const tabContent = tablist.firstElementChild as HTMLElement;
 
         expect(shell.className).toContain('fixed');
-        expect(shell.className).toContain('inset-0');
+        // Pinned to the top with an explicit height, so the bottom edge never depends on the layout viewport iOS reports.
+        expect(shell.className).toContain('inset-x-0');
+        expect(shell.className).toContain('top-0');
+        expect(shell.className).toContain('h-[var(--nyeta-app-h,100dvh)]');
         expect(shell.className).toContain('bg-[#090909]');
         expect(document.documentElement.style.backgroundColor).toBe('rgb(9, 9, 9)');
         expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#090909');
         expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('');
         expect(tablist.className).toContain('bg-[#090909]/80');
-        expect(tabContent.className).toContain('pb-2');
+        // A fixed lift above the Home indicator (never env(), which iOS reports as 0 then 34px).
+        expect(tabContent.className).toContain('pb-5');
+        expect(tabContent.className).not.toContain('env(');
     });
 
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {
         const { getByRole, getByTestId, queryByTestId } = render(<BlindAppShell initialTab="assistant" />);
 
-        fireEvent.click(getByRole('tab', { name: 'ขอความช่วยเหลือจากอาสา' }));
+        fireEvent.click(getByRole('button', { name: 'ขอความช่วยเหลือจากอาสา' }));
         expect(assistantPrepareForCall).toHaveBeenCalledTimes(1);
         expect(queryByTestId('mock-assistant')).toBeNull();
         fireEvent.click(getByTestId('mock-call'));
 
-        const currencyTab = getByRole('tab', { name: 'สแกนธนบัตร' });
+        const currencyTab = getByRole('button', { name: 'สแกนธนบัตร' });
         expect(currencyTab.getAttribute('aria-disabled')).toBe('true');
         fireEvent.click(currencyTab);
         expect(getByTestId('mock-call')).toBeTruthy();
         expect(callPrepareForExit).not.toHaveBeenCalled();
         expect(speak).not.toHaveBeenCalledWith('กรุณาวางสายก่อนเปลี่ยนเมนู', expect.anything());
+    });
+    it('has one main landmark whose heading names the current mode, and keeps the address in step with the tab', () => {
+        const { getByRole } = render(<BlindAppShell initialTab="assistant" />);
+
+        expect(getByRole('main').querySelectorAll('h1')).toHaveLength(1);
+        expect(getByRole('heading', { level: 1 }).textContent).toBe('AI ผู้ช่วย');
+
+        fireEvent.click(getByRole('button', { name: 'อ่านเอกสาร' }));
+        expect(getByRole('heading', { level: 1 }).textContent).toBe('อ่านเอกสาร');
+        expect(new URL(window.location.href).searchParams.get('tab')).toBe('reader');
+    });
+
+    it('says why a locked tab does not respond during a call, audibly', () => {
+        const { getByRole, getByTestId } = render(<BlindAppShell initialTab="assistant" />);
+        fireEvent.click(getByRole('button', { name: 'ขอความช่วยเหลือจากอาสา' }));
+        fireEvent.click(getByTestId('mock-call'));
+
+        fireEvent.click(getByRole('button', { name: 'สแกนธนบัตร' }));
+
+        expect(announceMock).toHaveBeenCalledWith('วางสายก่อนเปลี่ยนเมนู');
+        expect(playEarcon).toHaveBeenCalledWith('error');
     });
 });

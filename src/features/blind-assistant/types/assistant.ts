@@ -12,6 +12,8 @@ export interface AssistantMessage {
   role: 'user' | 'ai' | 'model';
   content: string;
   image?: string;
+  /** True for system-generated failure messages (shown in the error colour). */
+  isError?: boolean;
 }
 
 export interface BoundingBox {

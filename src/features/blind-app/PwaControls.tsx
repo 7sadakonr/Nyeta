@@ -14,14 +14,22 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
     const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
     const [showIosInstall, setShowIosInstall] = useState(() => {
         if (typeof window === 'undefined') return false;
-        if (sessionStorage.getItem('hide_pwa_prompt') === 'true') return false;
+        try {
+            if (window.localStorage.getItem('hide_pwa_prompt') === 'true') return false;
+        } catch {
+            // Storage can be blocked; show the hint.
+        }
         const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
         return isIos && !isStandalone;
     });
 
     const dismissIosPrompt = () => {
-        sessionStorage.setItem('hide_pwa_prompt', 'true');
+        try {
+            window.localStorage.setItem('hide_pwa_prompt', 'true');
+        } catch {
+            // Ignore: the hint just shows again next visit.
+        }
         setShowIosInstall(false);
     };
     const explicitUpdateRef = useRef(false);
@@ -33,7 +41,6 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
         };
         const onOffline = () => {
             setOnline(false);
-            if (audioReady) speechController.speak('ขณะนี้ออฟไลน์ ฟังก์ชัน AI และการโทรใช้งานไม่ได้', { channel: 'critical' });
         };
         const onBeforeInstallPrompt = (event: Event) => {
             event.preventDefault();
@@ -55,7 +62,8 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
     }, [audioReady, online]);
 
     useEffect(() => {
-        if (!('serviceWorker' in navigator)) return;
+        // A cached service worker on a dev server or tunnel keeps serving old code, so only use it in production.
+        if (process.env.NODE_ENV !== 'production' || !('serviceWorker' in navigator)) return;
         let registration: ServiceWorkerRegistration | undefined;
         const onControllerChange = () => {
             if (explicitUpdateRef.current && !callActive) window.location.reload();
@@ -77,6 +85,18 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
         };
     }, [callActive]);
 
+    // Apply a waiting update while the app is in the background and no call is running, so users never have to find the button.
+    useEffect(() => {
+        if (!waitingWorker || callActive) return;
+        const applyWhenHidden = () => {
+            if (document.visibilityState !== 'hidden') return;
+            explicitUpdateRef.current = true;
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+        };
+        document.addEventListener('visibilitychange', applyWhenHidden);
+        return () => document.removeEventListener('visibilitychange', applyWhenHidden);
+    }, [waitingWorker, callActive]);
+
     const install = async () => {
         if (!installPrompt) return;
         await installPrompt.prompt();
@@ -91,16 +111,17 @@ export default function PwaControls({ callActive, audioReady }: { callActive: bo
     };
 
     return (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-50 mx-auto flex w-full max-w-xl flex-col items-center gap-2 px-4">
-            {!online && <p className="pointer-events-auto rounded-full bg-[#0F172A] px-4 py-2 text-center text-sm font-semibold text-white" aria-label="สถานะเครือข่าย: ออฟไลน์">ออฟไลน์ — AI และการโทรต้องใช้อินเทอร์เน็ต</p>}
-            {installPrompt && <button type="button" onClick={install} className="pointer-events-auto rounded-full bg-[#1D4ED8] px-4 py-2 text-sm font-bold text-white">ติดตั้ง Nyeta</button>}
+        // In normal flow above the content (not floating over the controls), hidden when there is nothing to show.
+        <div className="mx-auto flex w-full max-w-xl shrink-0 flex-col items-center gap-2 px-4 empty:hidden [&:not(:empty)]:pt-2">
+            {!online && <p className="rounded-full bg-[#0F172A] px-4 py-2 text-center text-sm font-semibold text-white">ออฟไลน์ — AI และการโทรต้องใช้อินเทอร์เน็ต</p>}
+            {installPrompt && <button type="button" onClick={install} className="min-h-11 rounded-full bg-[#1D4ED8] px-5 py-2 text-sm font-bold text-white">ติดตั้ง Nyeta</button>}
             {showIosInstall && (
-                <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-white px-4 py-2 shadow">
+                <div className="flex items-center gap-2 rounded-full bg-white px-4 py-1 shadow">
                     <p className="text-center text-sm font-semibold text-[#0F172A]">บน iPhone: กด Share แล้วเลือก Add to Home Screen</p>
-                    <button type="button" onClick={dismissIosPrompt} className="ml-2 px-2 text-gray-500 font-bold" aria-label="ปิดแถบแจ้งเตือนชั่วคราว">X</button>
+                    <button type="button" onClick={dismissIosPrompt} className="ml-2 flex min-h-11 min-w-11 items-center justify-center text-gray-500 font-bold" aria-label="ปิดคำแนะนำการติดตั้ง">X</button>
                 </div>
             )}
-            {waitingWorker && <button type="button" disabled={callActive} onClick={applyUpdate} className="pointer-events-auto rounded-full bg-[#0F172A] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{callActive ? 'วางสายก่อนอัปเดต' : 'มีเวอร์ชันใหม่'}</button>}
+            {waitingWorker && <button type="button" disabled={callActive} onClick={applyUpdate} className="min-h-11 rounded-full bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{callActive ? 'วางสายก่อนอัปเดต' : 'มีเวอร์ชันใหม่'}</button>}
         </div>
     );
 }

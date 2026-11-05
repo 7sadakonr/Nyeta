@@ -24,9 +24,14 @@ const getSpeechRecognitionSupport = () => (
 
 const getServerSpeechRecognitionSupport = () => false;
 
+// Errors after which listening again cannot work until the user changes a setting: stop instead of restarting forever.
+const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture', 'language-not-supported']);
+
 export function useSpeechInput(
     onResult?: (transcript: string) => void,
     onFeedback?: (type: string) => void,
+    /** Spoken/announced status for the user, e.g. "no question heard" or "microphone unavailable". */
+    onMessage?: (message: string) => void,
 ): UseSpeechInputResult {
     const [state, setState] = useState<SpeechInputState>('idle');
     const [transcript, setTranscript] = useState('');
@@ -38,6 +43,7 @@ export function useSpeechInput(
     const recognitionRef = useRef<any>(null);
     const onResultRef = useRef(onResult);
     const onFeedbackRef = useRef(onFeedback);
+    const onMessageRef = useRef(onMessage);
     const finalTranscriptRef = useRef('');
     const interimTranscriptRef = useRef('');
     const submitOnEndRef = useRef(false);
@@ -46,6 +52,7 @@ export function useSpeechInput(
 
     useEffect(() => { onResultRef.current = onResult; }, [onResult]);
     useEffect(() => { onFeedbackRef.current = onFeedback; }, [onFeedback]);
+    useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
     const finishSession = useCallback(() => {
         if (!sessionActiveRef.current) return;
@@ -75,7 +82,15 @@ export function useSpeechInput(
             recognitionRef.current = null;
         }
 
-        if (shouldSubmit) onResultRef.current?.(finalTranscript);
+        if (shouldSubmit) {
+            if (finalTranscript) {
+                onResultRef.current?.(finalTranscript);
+            } else {
+                // Sending an empty question would silently turn into "describe the whole scene".
+                onFeedbackRef.current?.('error');
+                onMessageRef.current?.('ไม่ได้ยินคำถาม ลองกดถามด้วยเสียงอีกครั้ง');
+            }
+        }
     }, []);
 
     const createRecognition = useCallback(() => {
@@ -130,6 +145,13 @@ export function useSpeechInput(
             interimTranscriptRef.current = '';
             setTranscript('ไม่สามารถใช้ไมโครโฟนได้');
             onFeedbackRef.current?.('error');
+            if (FATAL_ERRORS.has(event.error)) {
+                onMessageRef.current?.(event.error === 'language-not-supported'
+                    ? 'อุปกรณ์นี้ไม่รองรับการฟังภาษาไทย'
+                    : 'ไมโครโฟนใช้ไม่ได้ กรุณาอนุญาตการใช้ไมโครโฟนในการตั้งค่า แล้วลองใหม่');
+                // End the session now; otherwise onend restarts recognition and the button stays on "listening".
+                finishSession();
+            }
         };
 
         recognition.onend = () => {

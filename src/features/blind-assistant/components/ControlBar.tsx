@@ -118,11 +118,10 @@ export default function ControlBar({
         ? 'เปิดกล้องไม่ได้ กดเพื่อลองอีกครั้ง'
         : isBusy
             ? 'AI กำลังคิด รอสักครู่'
-            : isListening
-                // The camera is released while listening, so it is expected not to be ready then.
-                ? 'กำลังฟังอยู่ กดหยุดและส่งก่อน'
-                : !aiReady
-                    ? 'กล้องยังไม่พร้อม รอสักครู่'
+            : !aiReady
+                ? 'กล้องยังไม่พร้อม รอสักครู่'
+                : isListening
+                    ? 'กำลังฟังอยู่ กดหยุดและส่งก่อน'
                     : 'บรรยายสิ่งที่เห็น';
 
     const readLabel = cameraError

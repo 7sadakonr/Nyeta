@@ -158,13 +158,6 @@ describe('ControlBar', () => {
         expect(onCapture).not.toHaveBeenCalled();
     });
 
-    it('says it is listening (not "camera not ready") while the camera is released for the microphone', () => {
-        const { getByRole, queryByRole } = renderBar({ aiReady: false, isListening: true });
-
-        expect(getByRole('button', { name: 'กำลังฟังอยู่ กดหยุดและส่งก่อน' })).toBeTruthy();
-        expect(queryByRole('button', { name: 'กล้องยังไม่พร้อม รอสักครู่' })).toBeNull();
-    });
-
     it('locks the microphone while the AI is thinking and gives the listening state its own name (no aria-pressed)', () => {
         const onDisabledPress = vi.fn();
         const onStartListening = vi.fn();

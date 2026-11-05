@@ -9,7 +9,6 @@ import { useFeedback } from '@/features/blind-assistant/hooks/useFeedback';
 import { useSpeechInput } from '@/features/blind-assistant/hooks/useSpeechInput';
 import { useObjectDetector } from '@/features/blind-assistant/hooks/useObjectDetector';
 import { useAiAssistant } from '@/features/blind-assistant/hooks/useAiAssistant';
-import { useCameraPauseForMic } from '@/features/blind-assistant/hooks/useCameraPauseForMic';
 import { useCurrencyScanner } from '@/features/blind-assistant/hooks/useCurrencyScanner';
 import { useDocumentReader } from '@/features/blind-assistant/hooks/useDocumentReader';
 import { formatOcrText } from '@/features/blind-assistant/client/ocrText';
@@ -302,11 +301,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     }, [aiMessages, stopWaitingSound]);
 
     // C. Speech Input
-    // The newest capture handler, so a question that waited for the camera uses the up-to-date (ready) one.
-    const latestCaptureRef = useRef(handleCaptureAndAsk);
-    useEffect(() => { latestCaptureRef.current = handleCaptureAndAsk; }, [handleCaptureAndAsk]);
-    const waitUntilReadyRef = useRef<(timeoutMs?: number) => Promise<boolean>>(async () => true);
-
     const {
         isListening,
         transcript: voiceTranscript,
@@ -316,14 +310,8 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
     } = useSpeechInput(
         useCallback((text: string) => {
             feedback('capture');
-            // The camera was released while listening; send the question once it is live again.
-            void (async () => {
-                await waitUntilReadyRef.current(4000);
-                // Let the render that marked the camera ready commit, so the ready handler is the current one.
-                await new Promise((resolve) => setTimeout(resolve, 0));
-                await latestCaptureRef.current(text);
-            })();
-        }, [feedback]),
+            handleCaptureAndAsk(text);
+        }, [feedback, handleCaptureAndAsk]),
         useCallback((type: string) => {
             if (type === 'start' || type === 'mic-start') feedback('capture');
             if (type === 'error') feedback('error');
@@ -331,15 +319,6 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
         // Microphone problems are announced through the live region; speech synthesis would end up in the open microphone.
         useCallback((message: string) => announce(message), [])
     );
-
-    // iOS can freeze the camera when the microphone opens next to it, so they are never open together.
-    const { pauseForListening, waitUntilReady } = useCameraPauseForMic({ isListening, isReady: aiReady, stopCamera, initCamera });
-    useEffect(() => { waitUntilReadyRef.current = waitUntilReady; }, [waitUntilReady]);
-
-    const handleStartListening = useCallback(() => {
-        pauseForListening();
-        toggleListening();
-    }, [pauseForListening, toggleListening]);
 
     // D. Currency Scanner
     const {
@@ -576,7 +555,7 @@ export default forwardRef<BlindAssistHandle, BlindAssistScreenProps>(function Bl
                         onRetryCamera={handleRetryCamera}
                         onCapture={handleCaptureAndAsk}
                         onToggleGuidance={handleToggleGuidance}
-                        onStartListening={handleStartListening}
+                        onStartListening={toggleListening}
                         onStopListening={toggleListening}
                         onCurrencyCapture={captureCurrency}
                         onReplayCurrencyDetails={handleReplayCurrencyDetails}

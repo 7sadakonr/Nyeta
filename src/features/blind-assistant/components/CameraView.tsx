@@ -52,6 +52,9 @@ export default function CameraView({
                 muted
                 playsInline
                 className="absolute inset-0 h-full w-full object-cover"
+                // Not left to the utility classes alone: a stalled iOS video must still fill the card, not sit small in the middle.
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                {...{ 'webkit-playsinline': 'true' }}
                 aria-hidden="true"
             />
             <DetectionOverlay

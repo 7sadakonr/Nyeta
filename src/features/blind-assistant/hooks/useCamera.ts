@@ -17,6 +17,9 @@ const STANDARD_RESOLUTION = { width: 1280, height: 720 };
 const HIGH_RESOLUTION = { width: 1920, height: 1080 };
 // A stream that dies repeatedly is not going to recover by itself; stop retrying and report it.
 const MAX_AUTOMATIC_RESTARTS = 2;
+// A stream that is attached but never starts playing (the frozen preview on iOS) is retried, then restarted.
+const PLAY_RETRY_AFTER_MS = 4000;
+const RESTART_AFTER_MS = 3000;
 
 function videoTracksOf(stream: MediaStream | null): MediaStreamTrack[] {
     return stream?.getVideoTracks?.() ?? [];
@@ -101,9 +104,27 @@ export function useCamera(): UseCameraResult {
         video.srcObject = stream;
         video.muted = true;
 
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
         const markReady = () => {
+            if (watchdog) clearTimeout(watchdog);
             restartCountRef.current = 0;
             setIsReady(true);
+        };
+        const armWatchdog = () => {
+            watchdog = setTimeout(() => {
+                if (document.visibilityState === 'hidden') return;
+                Promise.resolve(video.play?.()).catch(() => {});
+                watchdog = setTimeout(() => {
+                    if (!mountedRef.current || streamRef.current !== stream || !wantedRef.current) return;
+                    if (document.visibilityState === 'hidden') return;
+                    if (restartCountRef.current >= MAX_AUTOMATIC_RESTARTS) {
+                        setError(new Error('Camera did not start'));
+                        return;
+                    }
+                    restartCountRef.current += 1;
+                    void initCamera();
+                }, RESTART_AFTER_MS);
+            }, PLAY_RETRY_AFTER_MS);
         };
 
         let removeGestureRetry: (() => void) | null = null;
@@ -128,8 +149,12 @@ export function useCamera(): UseCameraResult {
         };
 
         video.addEventListener('playing', markReady);
-        if (!video.paused && video.readyState >= 2) markReady();
-        else play();
+        if (!video.paused && video.readyState >= 2) {
+            markReady();
+        } else {
+            play();
+            armWatchdog();
+        }
 
         // An interruption (phone call, Siri, another app) can end or mute the track without any error.
         const tracks = videoTracksOf(stream);
@@ -156,6 +181,7 @@ export function useCamera(): UseCameraResult {
 
         return () => {
             video.removeEventListener('playing', markReady);
+            if (watchdog) clearTimeout(watchdog);
             removeGestureRetry?.();
             tracks.forEach((track) => {
                 track.removeEventListener?.('ended', handleEnded);

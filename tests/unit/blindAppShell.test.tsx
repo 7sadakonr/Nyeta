@@ -100,13 +100,18 @@ describe('BlindAppShell', () => {
         const tabContent = tablist.firstElementChild as HTMLElement;
 
         expect(shell.className).toContain('fixed');
-        expect(shell.className).toContain('inset-0');
+        // Pinned to the top with an explicit height, so the bottom edge never depends on the layout viewport iOS reports.
+        expect(shell.className).toContain('inset-x-0');
+        expect(shell.className).toContain('top-0');
+        expect(shell.className).toContain('h-[var(--nyeta-app-h,100dvh)]');
         expect(shell.className).toContain('bg-[#090909]');
         expect(document.documentElement.style.backgroundColor).toBe('rgb(9, 9, 9)');
         expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#090909');
         expect(document.documentElement.style.getPropertyValue('--app-h')).toBe('');
         expect(tablist.className).toContain('bg-[#090909]/80');
-        expect(tabContent.className).toContain('safe-area-inset-bottom');
+        // A fixed lift above the Home indicator (never env(), which iOS reports as 0 then 34px).
+        expect(tabContent.className).toContain('pb-5');
+        expect(tabContent.className).not.toContain('env(');
     });
 
     it('unmounts assistant before mounting call and locks other tabs while calling', () => {

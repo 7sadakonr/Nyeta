@@ -7,6 +7,7 @@ import HapticFeedback, { HapticFeedbackHandle } from '@/shared/accessibility/Hap
 import { speechController } from '@/shared/accessibility/speechController';
 import { useAccessibilitySpeechNavigation } from '@/shared/accessibility/useAccessibilitySpeechNavigation';
 import { useOrientationLock } from '@/shared/hooks/useOrientationLock';
+import { useAppViewportHeight } from '@/shared/hooks/useAppViewportHeight';
 import { playEarcon } from '@/shared/accessibility/audio';
 import { announce } from '@/shared/accessibility/announcer';
 import BlindBottomNavigation from './BlindBottomNavigation';
@@ -30,6 +31,7 @@ const isAssistantTab = (tab: BlindAppTab): tab is typeof ASSISTANT_TABS[number] 
 
 export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShellProps) {
     useOrientationLock();
+    useAppViewportHeight();
 
     const [activeTab, setActiveTab] = useState<BlindAppTab>(initialTab);
     const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -122,7 +124,7 @@ export default function BlindAppShell({ initialTab = 'assistant' }: BlindAppShel
 
     return (
         <div
-            className="nyeta-surface fixed inset-0 flex w-full flex-col overflow-hidden bg-[#090909] text-white"
+            className="nyeta-surface fixed inset-x-0 top-0 flex h-[var(--nyeta-app-h,100dvh)] w-full flex-col overflow-hidden bg-[#090909] text-white"
             {...accessibilityNavigationHandlers}
         >
             <HapticFeedback ref={hapticRef} />
